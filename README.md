@@ -138,7 +138,42 @@ npm install
 npm run compile
 ```
 
-### Running
+### Packaging & Installing
+
+To build a `.vsix` file for installation in VS Code:
+
+```bash
+# Install the packaging tool (globally)
+npm install -g @vscode/vsce
+
+# Build the .vsix file
+vsce package
+
+# This creates forgejo-vscode-0.1.0.vsix (version from package.json)
+```
+
+To install the `.vsix` file in VS Code:
+
+**Option 1: Command Line**
+```bash
+code --install-extension forgejo-vscode-0.1.0.vsix
+```
+
+**Option 2: VS Code UI**
+1. Open VS Code
+2. Go to Extensions view (Ctrl+Shift+X / Cmd+Shift+X)
+3. Click the "..." menu at the top of the Extensions view
+4. Select "Install from VSIX..."
+5. Choose the `forgejo-vscode-0.1.0.vsix` file
+
+**Option 3: Command Palette**
+1. Open Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+2. Type "Extensions: Install from VSIX..."
+3. Select the `.vsix` file
+
+After installation, reload VS Code to activate the extension.
+
+### Running for Development
 
 Press F5 in VS Code to launch the Extension Development Host.
 
