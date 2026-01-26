@@ -19,6 +19,8 @@ Browse Forgejo Pull Requests and Issues directly within VS Code.
 - A Forgejo repository (local or remote)
 - Forgejo personal access token (optional, for private repositories)
 
+
+
 ## Installation
 
 1. Clone this repository
