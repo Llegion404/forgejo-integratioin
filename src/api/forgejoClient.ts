@@ -61,11 +61,15 @@ export class ForgejoClient {
   }
 
   /**
-   * Get list of issues for a repository
+   * Get list of issues for a repository (excludes pull requests)
    */
   async getIssues(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<IssueListItem[]> {
     const endpoint = `/repos/${owner}/${repo}/issues?state=${state}&limit=50`;
-    return this.request<IssueListItem[]>(endpoint);
+    const items = await this.request<IssueListItem[]>(endpoint);
+    // Filter out pull requests - they have a pull_request field
+    const issues = items.filter(item => !item.pull_request);
+    console.log(`[Forgejo] Fetched ${items.length} items from issues API, filtered to ${issues.length} actual issues (excluded ${items.length - issues.length} PRs)`);
+    return issues;
   }
 
   /**
