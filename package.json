@@ -1,0 +1,117 @@
+{
+  "name": "forgejo-vscode",
+  "displayName": "Forgejo Integration",
+  "description": "Browse Forgejo Pull Requests and Issues directly in VS Code",
+  "version": "0.1.0",
+  "publisher": "forgejo",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:forgejoExplorer"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "forgejoExplorer",
+          "title": "Forgejo",
+          "icon": "$(git-pull-request)"
+        }
+      ]
+    },
+    "views": {
+      "forgejoExplorer": [
+        {
+          "id": "forgejoPullRequests",
+          "name": "Pull Requests"
+        },
+        {
+          "id": "forgejoIssues",
+          "name": "Issues"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "forgejo.refreshPullRequests",
+        "title": "Forgejo: Refresh Pull Requests",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.refreshIssues",
+        "title": "Forgejo: Refresh Issues",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.configureInstanceUrl",
+        "title": "Forgejo: Configure Instance URL"
+      },
+      {
+        "command": "forgejo.setAuthToken",
+        "title": "Forgejo: Set Authentication Token"
+      },
+      {
+        "command": "forgejo.openPrInBrowser",
+        "title": "Forgejo: Open PR in Browser"
+      },
+      {
+        "command": "forgejo.openIssueInBrowser",
+        "title": "Forgejo: Open Issue in Browser"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "forgejo.refreshPullRequests",
+          "when": "view == forgejoPullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "forgejo.refreshIssues",
+          "when": "view == forgejoIssues",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Forgejo",
+      "properties": {
+        "forgejo.instanceUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Forgejo instance URL (e.g., https://codeberg.org)"
+        },
+        "forgejo.token": {
+          "type": "string",
+          "default": "",
+          "description": "Personal access token for authentication"
+        },
+        "forgejo.autoDetectFromRemote": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-detect Forgejo instance from git remote"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.3.0"
+  }
+}
