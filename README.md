@@ -142,6 +142,46 @@ npm run compile
 
 Press F5 in VS Code to launch the Extension Development Host.
 
+### Testing
+
+The project uses a dual-track testing strategy:
+- **Jest** for fast unit tests of pure logic (git parsing, API filtering, configuration)
+- **Mocha + @vscode/test-cli** for integration tests requiring VSCode API
+
+#### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run unit tests only (fast)
+npm run test:unit
+
+# Run unit tests in watch mode
+npm run test:unit:watch
+
+# Run integration tests
+npm run test:integration
+
+# Check coverage
+npm run test:unit:coverage
+```
+
+#### Test Structure
+
+- **Unit tests** (`src/__tests__/`): Test pure logic without VSCode instance (Jest)
+- **Integration tests** (`src/test/`): Test VSCode API integration (Mocha + @vscode/test-cli)
+
+#### Coverage
+
+The project maintains the following coverage targets:
+- Git utilities: 95%+
+- API client: 85%+
+- Configuration: 80%+
+- Overall: 70%+
+
+View the coverage report by running `npm run test:unit:coverage` and opening `coverage/lcov-report/index.html`.
+
 ## License
 
 MIT
@@ -149,3 +189,26 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+### Before Submitting a PR
+
+All pull requests must:
+- Pass linting: `npm run lint`
+- Pass all tests: `npm test`
+- Maintain or improve code coverage (70%+ overall)
+- Include tests for new features or bug fixes
+
+### Development Workflow
+
+```bash
+# During development (TDD workflow)
+npm run test:unit:watch      # Watch mode, instant feedback
+
+# Before committing
+npm run lint                 # Check code style
+npm run test:unit            # Run unit tests
+npm run compile              # Ensure TypeScript compiles
+
+# Before pushing
+npm test                     # Run full test suite
+```

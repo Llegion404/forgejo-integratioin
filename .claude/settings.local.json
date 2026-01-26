@@ -6,7 +6,14 @@
       "Bash(npm run compile:*)",
       "Bash(vsce package:*)",
       "Bash(ls:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "WebSearch",
+      "WebFetch(domain:code.visualstudio.com)",
+      "WebFetch(domain:www.richardkotze.com)",
+      "Bash(npm install:*)",
+      "Bash(npm run test:unit:*)",
+      "Bash(npm run test:unit:coverage:*)",
+      "Bash(tree:*)"
     ]
   }
 }
