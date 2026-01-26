@@ -1,14 +1,21 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { PullRequestListItem } from '../models/pullRequest';
+import { PullRequestListItem, PullRequestFile } from '../models/pullRequest';
 import { getForgejoConfig } from '../utils/config';
 
 export class PRTreeItem extends vscode.TreeItem {
+  public files?: PullRequestFile[];
+  public filesError?: string;
+  public baseRef?: string;
+  public headRef?: string;
+
   constructor(
     public readonly pr: PullRequestListItem,
-    public readonly htmlUrl: string
+    public readonly htmlUrl: string,
+    public readonly owner: string,
+    public readonly repo: string
   ) {
-    super(`#${pr.number}: ${pr.title}`, vscode.TreeItemCollapsibleState.None);
+    super(`#${pr.number}: ${pr.title}`, vscode.TreeItemCollapsibleState.Collapsed);
 
     this.tooltip = `${pr.title}\nby ${pr.user.login}\nState: ${pr.state}${pr.merged ? ' (merged)' : ''}${pr.draft ? ' (draft)' : ''}`;
     this.description = `by ${pr.user.login}`;
@@ -25,12 +32,9 @@ export class PRTreeItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon('git-pull-request', new vscode.ThemeColor('gitDecoration.modifiedResourceForeground'));
     }
 
-    // Make clickable - opens in browser
-    this.command = {
-      command: 'forgejo.openPrInBrowser',
-      title: 'Open PR in Browser',
-      arguments: [htmlUrl]
-    };
+    // Remove command - expand/collapse instead of opening browser
+    // Users can right-click to open in browser via context menu
+    this.command = undefined;
   }
 }
 
@@ -56,7 +60,63 @@ class PRMessageItem extends vscode.TreeItem {
   }
 }
 
-type PRTreeElement = PRTreeItem | PRGroupItem | PRMessageItem;
+/**
+ * Represents a file changed in a PR
+ */
+class PRFileItem extends vscode.TreeItem {
+  constructor(
+    public readonly file: PullRequestFile,
+    public readonly pr: PullRequestListItem,
+    public readonly owner: string,
+    public readonly repo: string,
+    public readonly baseRef: string,
+    public readonly headRef: string
+  ) {
+    super(file.filename, vscode.TreeItemCollapsibleState.None);
+
+    this.description = `+${file.additions} -${file.deletions}`;
+    this.tooltip = `${file.filename}\nStatus: ${file.status}\n+${file.additions} -${file.deletions}`;
+    this.contextValue = 'prFile';
+
+    // Set icon based on file status
+    switch (file.status) {
+      case 'added':
+        this.iconPath = new vscode.ThemeIcon('diff-added', new vscode.ThemeColor('gitDecoration.addedResourceForeground'));
+        break;
+      case 'removed':
+        this.iconPath = new vscode.ThemeIcon('diff-removed', new vscode.ThemeColor('gitDecoration.deletedResourceForeground'));
+        break;
+      case 'modified':
+        this.iconPath = new vscode.ThemeIcon('diff-modified', new vscode.ThemeColor('gitDecoration.modifiedResourceForeground'));
+        break;
+      case 'renamed':
+        this.iconPath = new vscode.ThemeIcon('diff-renamed', new vscode.ThemeColor('gitDecoration.renamedResourceForeground'));
+        break;
+      default:
+        this.iconPath = new vscode.ThemeIcon('file');
+    }
+
+    // Command to open diff view
+    this.command = {
+      command: 'forgejo.showPrFileDiff',
+      title: 'Show Diff',
+      arguments: [this.file, this.pr, this.owner, this.repo, this.baseRef, this.headRef]
+    };
+  }
+}
+
+/**
+ * Loading indicator item
+ */
+class PRLoadingItem extends vscode.TreeItem {
+  constructor() {
+    super('Loading files...', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('loading~spin');
+    this.contextValue = 'loading';
+  }
+}
+
+type PRTreeElement = PRTreeItem | PRGroupItem | PRMessageItem | PRFileItem | PRLoadingItem;
 
 export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<PRTreeElement | undefined | null | void> = new vscode.EventEmitter<PRTreeElement | undefined | null | void>();
@@ -120,13 +180,82 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       }
     } else if (element instanceof PRGroupItem) {
       // Show PRs in this group
-      return element.pullRequests.map(pr => new PRTreeItem(pr, pr.html_url));
-    } else if (element instanceof PRMessageItem) {
+      const config = await getForgejoConfig();
+      if (!config) {
+        return [];
+      }
+      return element.pullRequests.map(pr => new PRTreeItem(pr, pr.html_url, config.owner, config.repo));
+    } else if (element instanceof PRTreeItem) {
+      // Fetch and show files for this PR
+      return this.getPRFiles(element);
+    } else if (element instanceof PRMessageItem || element instanceof PRLoadingItem) {
       // Message items have no children
       return [];
     }
 
     return [];
+  }
+
+  /**
+   * Fetch files for a PR (lazy loading with caching)
+   */
+  private async getPRFiles(prItem: PRTreeItem): Promise<PRTreeElement[]> {
+    // Return cached files if available
+    if (prItem.files && prItem.baseRef && prItem.headRef) {
+      const baseRef = prItem.baseRef;
+      const headRef = prItem.headRef;
+      return prItem.files.map(file =>
+        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef)
+      );
+    }
+
+    // Return error if previous fetch failed
+    if (prItem.filesError) {
+      return [new PRMessageItem(prItem.filesError, true)];
+    }
+
+    // Fetch files from API
+    try {
+      const config = await getForgejoConfig();
+      if (!config) {
+        return [new PRMessageItem('Configuration not available', true)];
+      }
+
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      console.log(`[Forgejo] Fetching files for PR #${prItem.pr.number}...`);
+
+      // Fetch both files and PR details (for refs)
+      const [files, refs] = await Promise.all([
+        client.getPullRequestFiles(prItem.owner, prItem.repo, prItem.pr.number),
+        client.getPullRequestRefs(prItem.owner, prItem.repo, prItem.pr.number)
+      ]);
+
+      // Cache the results
+      prItem.files = files;
+      prItem.baseRef = refs.base;
+      prItem.headRef = refs.head;
+
+      console.log(`[Forgejo] Fetched ${files.length} files for PR #${prItem.pr.number}`);
+
+      if (files.length === 0) {
+        return [new PRMessageItem('No files changed', false)];
+      }
+
+      // Sort files: added, modified, renamed, removed
+      const statusOrder: Record<string, number> = { added: 0, modified: 1, renamed: 2, removed: 3 };
+      const sortedFiles = files.sort((a, b) => {
+        return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
+      });
+
+      return sortedFiles.map(file =>
+        new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head)
+      );
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to fetch files';
+      prItem.filesError = errorMsg;
+      console.error(`[Forgejo] Error fetching files for PR #${prItem.pr.number}:`, error);
+      return [new PRMessageItem(errorMsg, true)];
+    }
   }
 
   private async fetchPullRequests(): Promise<void> {

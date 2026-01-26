@@ -63,6 +63,18 @@
       {
         "command": "forgejo.openIssueInBrowser",
         "title": "Forgejo: Open Issue in Browser"
+      },
+      {
+        "command": "forgejo.showPrFileDiff",
+        "title": "Show Diff"
+      },
+      {
+        "command": "forgejo.openPrInBrowserFromContext",
+        "title": "Open PR in Browser"
+      },
+      {
+        "command": "forgejo.openPrFileInBrowser",
+        "title": "Open File in Browser"
       }
     ],
     "menus": {
@@ -75,6 +87,18 @@
         {
           "command": "forgejo.refreshIssues",
           "when": "view == forgejoIssues",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "forgejo.openPrInBrowserFromContext",
+          "when": "viewItem == pullRequest",
+          "group": "navigation"
+        },
+        {
+          "command": "forgejo.openPrFileInBrowser",
+          "when": "viewItem == prFile",
           "group": "navigation"
         }
       ]

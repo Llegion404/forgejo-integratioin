@@ -1,0 +1,90 @@
+import * as vscode from 'vscode';
+import { ForgejoClient } from '../api/forgejoClient';
+import { getForgejoConfig } from '../utils/config';
+
+/**
+ * Custom URI scheme for PR diff virtual documents
+ * Format: forgejo-pr://owner/repo/ref/filepath
+ */
+export const PR_DIFF_SCHEME = 'forgejo-pr';
+
+/**
+ * Provides virtual document content for PR diffs
+ */
+export class PRDiffContentProvider implements vscode.TextDocumentContentProvider {
+  private cache: Map<string, string> = new Map();
+  private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
+  readonly onDidChange = this._onDidChange.event;
+
+  async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+    console.log('[Forgejo] Providing content for:', uri.toString());
+
+    // Check cache first
+    const cached = this.cache.get(uri.toString());
+    if (cached) {
+      console.log('[Forgejo] Returning cached content');
+      return cached;
+    }
+
+    // Parse URI: forgejo-pr://owner/repo/ref/filepath
+    const parts = uri.path.split('/').filter(p => p);
+    if (parts.length < 3) {
+      throw new Error('Invalid PR diff URI format');
+    }
+
+    const owner = parts[0];
+    const repo = parts[1];
+    const ref = parts[2];
+    const filepath = parts.slice(3).join('/');
+
+    console.log('[Forgejo] Fetching file:', { owner, repo, ref, filepath });
+
+    try {
+      const config = await getForgejoConfig();
+      if (!config) {
+        throw new Error('Forgejo configuration not found');
+      }
+
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const content = await client.getFileContents(owner, repo, filepath, ref);
+
+      // Cache the result
+      this.cache.set(uri.toString(), content);
+
+      return content;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Failed to fetch file content';
+      console.error('[Forgejo] Error fetching file content:', error);
+
+      // Return error message as content
+      return `// Error: ${errorMsg}\n// URI: ${uri.toString()}`;
+    }
+  }
+
+  clearCache(uri?: vscode.Uri): void {
+    if (uri) {
+      this.cache.delete(uri.toString());
+    } else {
+      this.cache.clear();
+    }
+  }
+
+  refresh(uri: vscode.Uri): void {
+    this.clearCache(uri);
+    this._onDidChange.fire(uri);
+  }
+}
+
+/**
+ * Helper to create forgejo-pr:// URIs
+ */
+export function createPRFileUri(
+  owner: string,
+  repo: string,
+  ref: string,
+  filepath: string
+): vscode.Uri {
+  const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
+  const path = `/${owner}/${repo}/${ref}/${encodedPath}`;
+  return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
+}
