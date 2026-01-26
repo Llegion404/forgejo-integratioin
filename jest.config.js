@@ -11,9 +11,10 @@ module.exports = {
     'src/**/*.ts',
     '!src/test/**',           // Exclude integration tests
     '!src/**/*.test.ts',      // Exclude test files
+    '!src/__tests__/**',      // Exclude test infrastructure
     '!src/models/**',         // Exclude interfaces (no logic)
     '!src/extension.ts',      // Tested by integration tests
-    '!src/providers/**',      // Tested by integration tests
+    // Note: providers now included with unit test coverage
   ],
   coverageThreshold: {
     global: {
