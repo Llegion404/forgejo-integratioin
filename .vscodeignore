@@ -1,0 +1,40 @@
+# Build and test artifacts
+.vscode/**
+.vscode-test/**
+src/**
+out/test/**
+coverage/**
+.nyc_output/**
+
+# Test files
+src/__tests__/**
+src/test/**
+**/*.test.ts
+**/*.test.js
+**/*.spec.ts
+**/*.spec.js
+
+# Development files
+.gitignore
+.gitattributes
+.editorconfig
+.eslintrc.json
+tsconfig.json
+jest.config.js
+.prettierrc
+
+# CI/CD
+.github/**
+.forgejo/**
+
+# Documentation
+CLAUDE.md
+TESTING.md
+
+# Dependencies
+node_modules/**
+
+# Logs and temp files
+*.log
+*.vsix
+.DS_Store
