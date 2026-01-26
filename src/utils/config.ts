@@ -12,11 +12,18 @@ export interface ForgejoConfig {
  * Get Forgejo configuration from VS Code settings
  */
 export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
+  console.log('[Forgejo] Getting configuration...');
   const config = vscode.workspace.getConfiguration('forgejo');
 
   let instanceUrl = config.get<string>('instanceUrl') || '';
   let token = config.get<string>('token') || '';
   const autoDetect = config.get<boolean>('autoDetectFromRemote', true);
+
+  console.log('[Forgejo] Settings:', {
+    instanceUrl: instanceUrl || '(not set)',
+    hasToken: !!token,
+    autoDetect
+  });
 
   let gitInfo: GitRemoteInfo | null = null;
 
@@ -28,12 +35,14 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
       // Use git remote URL if instance URL is not configured
       if (!instanceUrl) {
         instanceUrl = gitInfo.instanceUrl;
+        console.log('[Forgejo] Using auto-detected instance URL:', instanceUrl);
       }
     }
   }
 
   // Check if we have the minimum required configuration
   if (!instanceUrl) {
+    console.log('[Forgejo] No instance URL configured');
     return null;
   }
 
@@ -43,15 +52,19 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
   }
 
   if (!gitInfo) {
+    console.log('[Forgejo] Could not determine owner/repo from git remote');
     return null;
   }
 
-  return {
+  const finalConfig = {
     instanceUrl: instanceUrl.replace(/\/$/, ''), // Remove trailing slash
     token,
     owner: gitInfo.owner,
     repo: gitInfo.repo
   };
+
+  console.log('[Forgejo] Final configuration:', finalConfig);
+  return finalConfig;
 }
 
 /**

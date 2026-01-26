@@ -32,4 +32,8 @@ export interface IssueListItem {
   html_url: string;
   created_at: string;
   comments: number;
+  pull_request?: {
+    // This field exists if the issue is actually a PR
+    url: string;
+  };
 }

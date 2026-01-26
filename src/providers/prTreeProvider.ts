@@ -45,9 +45,22 @@ class PRGroupItem extends vscode.TreeItem {
   }
 }
 
-export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeItem | PRGroupItem> {
-  private _onDidChangeTreeData: vscode.EventEmitter<PRTreeItem | PRGroupItem | undefined | null | void> = new vscode.EventEmitter<PRTreeItem | PRGroupItem | undefined | null | void>();
-  readonly onDidChangeTreeData: vscode.Event<PRTreeItem | PRGroupItem | undefined | null | void> = this._onDidChangeTreeData.event;
+class PRMessageItem extends vscode.TreeItem {
+  constructor(
+    public readonly message: string,
+    public readonly isError: boolean = false
+  ) {
+    super(message, vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon(isError ? 'error' : 'info');
+    this.contextValue = isError ? 'error' : 'info';
+  }
+}
+
+type PRTreeElement = PRTreeItem | PRGroupItem | PRMessageItem;
+
+export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
+  private _onDidChangeTreeData: vscode.EventEmitter<PRTreeElement | undefined | null | void> = new vscode.EventEmitter<PRTreeElement | undefined | null | void>();
+  readonly onDidChangeTreeData: vscode.Event<PRTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
 
   private pullRequests: PullRequestListItem[] = [];
   private error: string | null = null;
@@ -60,22 +73,23 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeItem | PRGr
     this._onDidChangeTreeData.fire();
   }
 
-  getTreeItem(element: PRTreeItem | PRGroupItem): vscode.TreeItem {
+  getTreeItem(element: PRTreeElement): vscode.TreeItem {
     return element;
   }
 
-  async getChildren(element?: PRTreeItem | PRGroupItem): Promise<(PRTreeItem | PRGroupItem)[]> {
+  async getChildren(element?: PRTreeElement): Promise<PRTreeElement[]> {
     if (!element) {
       // Root level - fetch PRs and group them
       try {
         await this.fetchPullRequests();
 
         if (this.error) {
-          return [];
+          console.error('Forgejo PR fetch error:', this.error);
+          return [new PRMessageItem(this.error, true)];
         }
 
         if (this.pullRequests.length === 0) {
-          return [];
+          return [new PRMessageItem('No pull requests found', false)];
         }
 
         // Group by state
@@ -107,27 +121,41 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeItem | PRGr
     } else if (element instanceof PRGroupItem) {
       // Show PRs in this group
       return element.pullRequests.map(pr => new PRTreeItem(pr, pr.html_url));
+    } else if (element instanceof PRMessageItem) {
+      // Message items have no children
+      return [];
     }
 
     return [];
   }
 
   private async fetchPullRequests(): Promise<void> {
+    console.log('[Forgejo] Fetching pull requests...');
     const config = await getForgejoConfig();
 
     if (!config) {
       this.error = 'No Forgejo configuration found. Please configure instance URL or open a git repository.';
       this.pullRequests = [];
+      console.warn('[Forgejo] No config found');
       return;
     }
+
+    console.log('[Forgejo] Using config:', {
+      instanceUrl: config.instanceUrl,
+      owner: config.owner,
+      repo: config.repo,
+      hasToken: !!config.token
+    });
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       this.pullRequests = await client.getPullRequests(config.owner, config.repo, 'all');
       this.error = null;
+      console.log(`[Forgejo] Fetched ${this.pullRequests.length} pull requests`);
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Failed to fetch pull requests';
       this.pullRequests = [];
+      console.error('[Forgejo] Error fetching PRs:', error);
       throw error;
     }
   }

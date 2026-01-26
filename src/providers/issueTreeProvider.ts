@@ -41,9 +41,22 @@ class IssueGroupItem extends vscode.TreeItem {
   }
 }
 
-export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeItem | IssueGroupItem> {
-  private _onDidChangeTreeData: vscode.EventEmitter<IssueTreeItem | IssueGroupItem | undefined | null | void> = new vscode.EventEmitter<IssueTreeItem | IssueGroupItem | undefined | null | void>();
-  readonly onDidChangeTreeData: vscode.Event<IssueTreeItem | IssueGroupItem | undefined | null | void> = this._onDidChangeTreeData.event;
+class IssueMessageItem extends vscode.TreeItem {
+  constructor(
+    public readonly message: string,
+    public readonly isError: boolean = false
+  ) {
+    super(message, vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon(isError ? 'error' : 'info');
+    this.contextValue = isError ? 'error' : 'info';
+  }
+}
+
+type IssueTreeElement = IssueTreeItem | IssueGroupItem | IssueMessageItem;
+
+export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeElement> {
+  private _onDidChangeTreeData: vscode.EventEmitter<IssueTreeElement | undefined | null | void> = new vscode.EventEmitter<IssueTreeElement | undefined | null | void>();
+  readonly onDidChangeTreeData: vscode.Event<IssueTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
 
   private issues: IssueListItem[] = [];
   private error: string | null = null;
@@ -56,22 +69,23 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeItem 
     this._onDidChangeTreeData.fire();
   }
 
-  getTreeItem(element: IssueTreeItem | IssueGroupItem): vscode.TreeItem {
+  getTreeItem(element: IssueTreeElement): vscode.TreeItem {
     return element;
   }
 
-  async getChildren(element?: IssueTreeItem | IssueGroupItem): Promise<(IssueTreeItem | IssueGroupItem)[]> {
+  async getChildren(element?: IssueTreeElement): Promise<IssueTreeElement[]> {
     if (!element) {
       // Root level - fetch issues and group them
       try {
         await this.fetchIssues();
 
         if (this.error) {
-          return [];
+          console.error('Forgejo Issue fetch error:', this.error);
+          return [new IssueMessageItem(this.error, true)];
         }
 
         if (this.issues.length === 0) {
-          return [];
+          return [new IssueMessageItem('No issues found', false)];
         }
 
         // Group by state
@@ -95,27 +109,41 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeItem 
     } else if (element instanceof IssueGroupItem) {
       // Show issues in this group
       return element.issues.map(issue => new IssueTreeItem(issue, issue.html_url));
+    } else if (element instanceof IssueMessageItem) {
+      // Message items have no children
+      return [];
     }
 
     return [];
   }
 
   private async fetchIssues(): Promise<void> {
+    console.log('[Forgejo] Fetching issues...');
     const config = await getForgejoConfig();
 
     if (!config) {
       this.error = 'No Forgejo configuration found. Please configure instance URL or open a git repository.';
       this.issues = [];
+      console.warn('[Forgejo] No config found');
       return;
     }
+
+    console.log('[Forgejo] Using config:', {
+      instanceUrl: config.instanceUrl,
+      owner: config.owner,
+      repo: config.repo,
+      hasToken: !!config.token
+    });
 
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       this.issues = await client.getIssues(config.owner, config.repo, 'all');
       this.error = null;
+      console.log(`[Forgejo] Fetched ${this.issues.length} issues`);
     } catch (error) {
       this.error = error instanceof Error ? error.message : 'Failed to fetch issues';
       this.issues = [];
+      console.error('[Forgejo] Error fetching issues:', error);
       throw error;
     }
   }

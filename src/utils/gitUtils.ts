@@ -14,10 +14,12 @@ export async function detectGitRemote(): Promise<GitRemoteInfo | null> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
 
   if (!workspaceFolders || workspaceFolders.length === 0) {
+    console.log('[Forgejo] No workspace folders found');
     return null;
   }
 
   const workspaceRoot = workspaceFolders[0].uri.fsPath;
+  console.log('[Forgejo] Detecting git remote in:', workspaceRoot);
 
   try {
     // Get the remote URL
@@ -26,16 +28,20 @@ export async function detectGitRemote(): Promise<GitRemoteInfo | null> {
       encoding: 'utf-8'
     }).trim();
 
-    return parseRemoteUrl(remoteUrl);
+    console.log('[Forgejo] Found git remote URL:', remoteUrl);
+    const parsed = parseRemoteUrl(remoteUrl);
+    console.log('[Forgejo] Parsed remote info:', parsed);
+    return parsed;
   } catch (error) {
     // Not a git repository or no remote configured
+    console.log('[Forgejo] No git repository or remote found:', error instanceof Error ? error.message : error);
     return null;
   }
 }
 
 /**
  * Parse git remote URL to extract instance URL, owner, and repo
- * Supports both HTTPS and SSH formats
+ * Supports HTTPS and SSH formats (both scp-style and ssh:// protocol)
  */
 export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
   if (!remoteUrl) {
@@ -55,7 +61,18 @@ export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
     };
   }
 
-  // SSH format: git@codeberg.org:owner/repo.git
+  // SSH protocol format: ssh://git@host/owner/repo.git
+  match = remoteUrl.match(/ssh:\/\/(?:git@)?([^\/]+)\/([^\/]+)\/([^\/\.]+)(\.git)?/);
+  if (match) {
+    const [, host, owner, repo] = match;
+    return {
+      instanceUrl: `https://${host}`,
+      owner,
+      repo: repo.replace(/\.git$/, '')
+    };
+  }
+
+  // SSH scp-style format: git@codeberg.org:owner/repo.git
   match = remoteUrl.match(/git@([^:]+):([^\/]+)\/([^\/\.]+)(\.git)?/);
   if (match) {
     const [, host, owner, repo] = match;
@@ -66,6 +83,7 @@ export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
     };
   }
 
+  console.warn('[Forgejo] Could not parse git remote URL:', remoteUrl);
   return null;
 }
 

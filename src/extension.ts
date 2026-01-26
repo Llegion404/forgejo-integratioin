@@ -4,7 +4,9 @@ import { IssueTreeProvider } from './providers/issueTreeProvider';
 import { setInstanceUrl, setAuthToken } from './utils/config';
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log('Forgejo extension is now active');
+  console.log('[Forgejo] Extension is now active');
+  console.log('[Forgejo] VS Code version:', vscode.version);
+  console.log('[Forgejo] Workspace folders:', vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath));
 
   // Create tree data providers
   const prTreeProvider = new PRTreeProvider();
