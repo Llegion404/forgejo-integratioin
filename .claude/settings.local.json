@@ -19,7 +19,9 @@
       "WebFetch(domain:forgejo.org)",
       "WebFetch(domain:docs.gitea.com)",
       "Bash(npm run lint:*)",
-      "Bash(npm run test:integration:*)"
+      "Bash(npm run test:integration:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.eliostruyf.com)"
     ]
   }
 }
