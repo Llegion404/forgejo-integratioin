@@ -402,11 +402,8 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(prTreeView);
   context.subscriptions.push(issueTreeView);
 
-  // Register PR detail webview provider
+  // Create PR detail webview provider (not registered as WebviewViewProvider since we use WebviewPanel)
   const prDetailWebviewProvider = new PRDetailWebviewProvider(context.extensionUri);
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(PRDetailWebviewProvider.viewType, prDetailWebviewProvider)
-  );
 
   // Add logger to subscriptions for proper cleanup
   context.subscriptions.push(logger);

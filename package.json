@@ -234,7 +234,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test:unit": "jest",

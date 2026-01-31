@@ -4,9 +4,6 @@ import { getForgejoConfig } from '../../utils/config';
 import { PullRequest, CommitStatus } from '../../models/pullRequest';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 
-/**
- * Message types for communication between extension and webview
- */
 export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'checkout' }
@@ -25,9 +22,6 @@ export type ExtensionMessage =
   | { type: 'error'; message: string }
   | { type: 'theme'; theme: 'light' | 'dark' | 'high-contrast' };
 
-/**
- * Activity item in the PR timeline
- */
 export interface PRActivity {
   type: 'comment' | 'review' | 'commit' | 'timeline';
   id: number;
@@ -47,9 +41,6 @@ export interface PRActivity {
   html_url?: string;
 }
 
-/**
- * Data structure for the PR detail view
- */
 export interface PRDetailViewData {
   pr: PullRequest;
   activities: PRActivity[];
@@ -58,153 +49,152 @@ export interface PRDetailViewData {
   repo: string;
 }
 
-/**
- * Provider for the rich PR detail webview
- */
-export class PRDetailWebviewProvider implements vscode.WebviewViewProvider {
+interface PanelState {
+  panel: vscode.WebviewPanel;
+  owner: string;
+  repo: string;
+  number: number;
+  isReady: boolean;
+  pendingData?: PRDetailViewData | null;
+}
+
+export class PRDetailWebviewProvider {
   public static readonly viewType = 'forgejo.prDetail';
-  private _view?: vscode.WebviewView;
-  private _currentPR?: { owner: string; repo: string; number: number };
-  private _disposables: vscode.Disposable[] = [];
+  private _panels = new Map<string, PanelState>();
 
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
-  /**
-   * Resolve the webview view
-   */
-  public resolveWebviewView(
-    webviewView: vscode.WebviewView,
-    _context: vscode.WebviewViewResolveContext,
-    _token: vscode.CancellationToken
-  ): void {
-    this._view = webviewView;
-
-    webviewView.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [this._extensionUri]
-    };
-
-    webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-
-    // Set up message handler
-    webviewView.webview.onDidReceiveMessage(
-      async (message: WebviewMessage) => {
-        await this._handleMessage(message);
-      },
-      undefined,
-      this._disposables
-    );
-
-    // Listen for theme changes
-    this._disposables.push(
-      vscode.window.onDidChangeActiveColorTheme(theme => {
-        this._postMessage({
-          type: 'theme',
-          theme: this._getThemeName(theme.kind)
-        });
-      })
-    );
-  }
-
-  /**
-   * Show PR details in the webview
-   */
   public async showPRDetails(owner: string, repo: string, number: number): Promise<void> {
     logInfo('Showing PR details in webview:', { owner, repo, number });
 
-    this._currentPR = { owner, repo, number };
+    const panelKey = `${owner}/${repo}/${number}`;
 
-    if (this._view) {
-      this._view.show?.(true);
-      this._postMessage({ type: 'loading', show: true });
+    if (this._panels.has(panelKey)) {
+      const state = this._panels.get(panelKey)!;
+      state.panel.reveal(vscode.ViewColumn.One);
+      await this._loadPRData(panelKey);
+      return;
     }
+
+    const panel = vscode.window.createWebviewPanel(
+      PRDetailWebviewProvider.viewType,
+      `PR #${number}: ${owner}/${repo}`,
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [this._extensionUri]
+      }
+    );
+
+    const state: PanelState = {
+      panel,
+      owner,
+      repo,
+      number,
+      isReady: false,
+      pendingData: null
+    };
+    this._panels.set(panelKey, state);
+
+    panel.webview.html = this._getHtmlForWebview(panel.webview);
+
+    panel.webview.onDidReceiveMessage(
+      async (message: WebviewMessage) => {
+        await this._handleMessage(message, panelKey);
+      },
+      undefined,
+      []
+    );
+
+    panel.onDidDispose(() => {
+      logInfo('Webview panel disposed:', panelKey);
+      this._panels.delete(panelKey);
+    }, undefined, []);
+
+    this._fetchPRData(panelKey);
+  }
+
+  private async _fetchPRData(panelKey: string): Promise<void> {
+    const state = this._panels.get(panelKey);
+    if (!state) return;
+
+    const { panel, owner, repo, number } = state;
+    logInfo('_fetchPRData starting:', { panelKey, isReady: state.isReady });
 
     try {
       const config = await getForgejoConfig();
-      if (!config) {
-        throw new Error('Forgejo configuration not found');
-      }
+      if (!config) throw new Error('Forgejo configuration not found');
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
-
-      // Fetch PR details first
+      logInfo('Fetching PR details from API...');
       const prDetails = await client.getPullRequestDetails(owner, repo, number);
+      logInfo('PR details fetched:', { title: prDetails.title });
 
-      // Fetch all data in parallel
       const [activities, statuses] = await Promise.all([
         this._fetchActivities(client, owner, repo, number),
-        prDetails.head?.sha
-          ? client.getCommitStatuses(owner, repo, prDetails.head.sha)
-          : Promise.resolve([])
+        prDetails.head?.sha ? client.getCommitStatuses(owner, repo, prDetails.head.sha) : Promise.resolve([])
       ]);
+      logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length });
 
-      const data: PRDetailViewData = {
-        pr: prDetails,
-        activities,
-        statuses,
-        owner,
-        repo
-      };
+      state.pendingData = { pr: prDetails, activities, statuses, owner, repo };
+      logInfo('pendingData set, isReady:', state.isReady);
 
-      this._postMessage({
-        type: 'update',
-        data
-      });
+      if (state.isReady) {
+        logInfo('Webview is ready, sending data...');
+        await this._sendDataToPanel(panelKey);
+      } else {
+        logInfo('Webview not ready yet, data will be sent when ready');
+      }
     } catch (error) {
-      logError('Failed to load PR details:', error);
-      this._postMessage({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Failed to load PR details'
-      });
-    } finally {
-      this._postMessage({ type: 'loading', show: false });
+      logError('Failed to fetch PR data:', error);
+      if (state.isReady) {
+        panel.webview.postMessage({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Failed to load PR details'
+        });
+      }
     }
   }
 
-  /**
-   * Fetch all PR activities (comments, reviews, commits, timeline events)
-   */
-  private async _fetchActivities(
-    client: ForgejoClient,
-    owner: string,
-    repo: string,
-    number: number
-  ): Promise<PRActivity[]> {
-    const activities: PRActivity[] = [];
+  private async _sendDataToPanel(panelKey: string): Promise<void> {
+    const state = this._panels.get(panelKey);
+    if (!state || !state.pendingData) {
+      logInfo('_sendDataToPanel: no state or pendingData');
+      return;
+    }
 
+    const { panel } = state;
+    logInfo('Posting messages to webview:', { prTitle: state.pendingData.pr.title });
+    panel.webview.postMessage({ type: 'theme', theme: this._getThemeName(vscode.window.activeColorTheme.kind) });
+    panel.webview.postMessage({ type: 'loading', show: true });
+    panel.webview.postMessage({ type: 'update', data: state.pendingData });
+    panel.webview.postMessage({ type: 'loading', show: false });
+    logInfo('All messages posted to webview');
+  }
+
+  private async _loadPRData(panelKey: string): Promise<void> {
+    await this._fetchPRData(panelKey);
+  }
+
+  private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<PRActivity[]> {
+    const activities: PRActivity[] = [];
     try {
-      // Fetch comments
       const comments = await client.getIssueComments(owner, repo, number);
       activities.push(...comments.map((c: any) => ({ ...c, type: 'comment' as const })));
-    } catch (error) {
-      logDebug('Could not fetch comments:', error);
-    }
-
+    } catch (e) { logDebug('Could not fetch comments:', e); }
     try {
-      // Fetch reviews
       const reviews = await client.getPullRequestReviews(owner, repo, number);
       activities.push(...reviews.map((r: any) => ({ ...r, type: 'review' as const })));
-    } catch (error) {
-      logDebug('Could not fetch reviews:', error);
-    }
-
+    } catch (e) { logDebug('Could not fetch reviews:', e); }
     try {
-      // Fetch commits
       const commits = await client.getPullRequestCommits(owner, repo, number);
       activities.push(...commits.map((c: any) => ({ ...c, type: 'commit' as const })));
-    } catch (error) {
-      logDebug('Could not fetch commits:', error);
-    }
-
+    } catch (e) { logDebug('Could not fetch commits:', e); }
     try {
-      // Fetch timeline events
       const timeline = await client.getIssueTimeline(owner, repo, number);
       activities.push(...timeline.map((t: any) => ({ ...t, type: 'timeline' as const })));
-    } catch (error) {
-      logDebug('Could not fetch timeline:', error);
-    }
-
-    // Sort by date (newest first)
+    } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at || a.submitted_at || a.committed_at || 0);
       const dateB = new Date(b.created_at || b.submitted_at || b.committed_at || 0);
@@ -212,228 +202,128 @@ export class PRDetailWebviewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  /**
-   * Handle messages from the webview
-   */
-  private async _handleMessage(message: WebviewMessage): Promise<void> {
-    logDebug('Received message from webview:', message);
+  private async _handleMessage(message: WebviewMessage, panelKey: string): Promise<void> {
+    logDebug('Received message from webview:', message.type);
+    const state = this._panels.get(panelKey);
+    if (!state) return;
 
-    if (!this._currentPR) {
-      vscode.window.showErrorMessage('No PR is currently loaded');
-      return;
-    }
-
-    const { owner, repo, number } = this._currentPR;
+    const { panel, owner, repo, number } = state;
 
     switch (message.type) {
       case 'ready':
-        // Webview is ready, send initial theme
-        this._postMessage({
-          type: 'theme',
-          theme: this._getThemeName(vscode.window.activeColorTheme.kind)
-        });
+        logInfo('Webview ready message received, pendingData exists:', !!state.pendingData);
+        state.isReady = true;
+        if (state.pendingData) {
+          logInfo('Sending pending data to webview...');
+          await this._sendDataToPanel(panelKey);
+        } else {
+          logInfo('No pending data yet, showing loading state');
+          panel.webview.postMessage({ type: 'loading', show: true });
+        }
         break;
-
-      case 'checkout':
-        await this._checkoutBranch(owner, repo, number);
-        break;
-
-      case 'refresh':
-        await this.showPRDetails(owner, repo, number);
-        break;
-
-      case 'merge':
-        await this._mergePR(owner, repo, number, message.strategy, message.message);
-        break;
-
-      case 'revert':
-        await this._revertCommit(message.commitSha);
-        break;
-
-      case 'addComment':
-        await this._addComment(owner, repo, number, message.body);
-        break;
-
-      case 'addReview':
-        await this._addReview(owner, repo, number, message.state, message.body);
-        break;
-
-      case 'openInBrowser':
-        await this._openInBrowser(owner, repo, number);
-        break;
-
-      case 'viewCommit':
-        // Open commit in browser or git view
-        vscode.env.openExternal(vscode.Uri.parse(`https://${owner}/${repo}/commit/${message.sha}`));
-        break;
-
-      case 'viewFile':
-        // Open file diff
-        vscode.commands.executeCommand('forgejo.showPrFileDiff', owner, repo, number, message.filename);
-        break;
+      case 'checkout': await this._checkoutBranch(owner, repo, number); break;
+      case 'refresh': await this._fetchPRData(panelKey); break;
+      case 'merge': await this._mergePR(owner, repo, number, message.strategy, message.message, panelKey); break;
+      case 'revert': await this._revertCommit(message.commitSha); break;
+      case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey); break;
+      case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey); break;
+      case 'openInBrowser': await this._openInBrowser(owner, repo, number); break;
     }
   }
 
-  /**
-   * Checkout the PR branch
-   */
   private async _checkoutBranch(owner: string, repo: string, number: number): Promise<void> {
     try {
       const config = await getForgejoConfig();
-      if (!config) {
-        throw new Error('Forgejo configuration not found');
-      }
-
+      if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       const refs = await client.getPullRequestRefs(owner, repo, number);
-
-      // Execute git checkout via VS Code API
       const terminal = vscode.window.createTerminal('Forgejo Checkout');
       terminal.sendText(`git fetch origin ${refs.head}:${refs.head}`);
       terminal.sendText(`git checkout ${refs.head}`);
       terminal.show();
-
       vscode.window.showInformationMessage(`Checked out branch: ${refs.head}`);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to checkout: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  /**
-   * Merge the PR
-   */
-  private async _mergePR(
-    owner: string,
-    repo: string,
-    number: number,
-    strategy: string,
-    message?: string
-  ): Promise<void> {
+  private async _mergePR(owner: string, repo: string, number: number, strategy: string, message?: string, panelKey?: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
-      if (!config) {
-        throw new Error('Forgejo configuration not found');
-      }
-
+      if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.mergePullRequest(owner, repo, number, strategy as any, false);
-
       vscode.window.showInformationMessage('Pull request merged successfully');
-      await this.showPRDetails(owner, repo, number);
+      if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to merge: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  /**
-   * Revert a commit
-   */
   private async _revertCommit(commitSha: string): Promise<void> {
     const terminal = vscode.window.createTerminal('Forgejo Revert');
     terminal.sendText(`git revert ${commitSha}`);
     terminal.show();
   }
 
-  /**
-   * Add a comment to the PR
-   */
-  private async _addComment(owner: string, repo: string, number: number, body: string): Promise<void> {
+  private async _addComment(owner: string, repo: string, number: number, body: string, panelKey?: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
-      if (!config) {
-        throw new Error('Forgejo configuration not found');
-      }
-
+      if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.createComment(owner, repo, number, body);
-
       vscode.window.showInformationMessage('Comment added');
-      await this.showPRDetails(owner, repo, number);
+      if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to add comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  /**
-   * Add a review to the PR
-   */
-  private async _addReview(
-    owner: string,
-    repo: string,
-    number: number,
-    state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
-    body: string
-  ): Promise<void> {
+  private async _addReview(owner: string, repo: string, number: number, state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, panelKey?: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
-      if (!config) {
-        throw new Error('Forgejo configuration not found');
-      }
-
+      if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.createReview(owner, repo, number, state, body);
-
-      vscode.window.showInformationMessage(`Review ${state.toLowerCase().replace('_', ' ')}`);
-      await this.showPRDetails(owner, repo, number);
+      vscode.window.showInformationMessage(`Review ${state.toLowerCase().replace(/_/g, ' ')}`);
+      if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to add review: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  /**
-   * Open PR in browser
-   */
   private async _openInBrowser(owner: string, repo: string, number: number): Promise<void> {
     try {
       const config = await getForgejoConfig();
-      if (!config) {
-        throw new Error('Forgejo configuration not found');
-      }
-
+      if (!config) throw new Error('No config');
       const url = `${config.instanceUrl}/${owner}/${repo}/pulls/${number}`;
       vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to open in browser: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      vscode.window.showErrorMessage(`Failed to open: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  /**
-   * Post a message to the webview
-   */
-  private _postMessage(message: ExtensionMessage): void {
-    if (this._view) {
-      this._view.webview.postMessage(message);
-    }
-  }
-
-  /**
-   * Get theme name from VS Code color theme kind
-   */
   private _getThemeName(kind: vscode.ColorThemeKind): 'light' | 'dark' | 'high-contrast' {
     switch (kind) {
-      case vscode.ColorThemeKind.Light:
-        return 'light';
-      case vscode.ColorThemeKind.HighContrast:
-        return 'high-contrast';
-      case vscode.ColorThemeKind.HighContrastLight:
-        return 'high-contrast';
-      default:
-        return 'dark';
+      case vscode.ColorThemeKind.Light: return 'light';
+      case vscode.ColorThemeKind.HighContrast: return 'high-contrast';
+      case vscode.ColorThemeKind.HighContrastLight: return 'high-contrast';
+      default: return 'dark';
     }
   }
 
-  /**
-   * Generate HTML for the webview
-   */
   private _getHtmlForWebview(webview: vscode.Webview): string {
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'src', 'webview', 'prDetail', 'styles.css'));
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'src', 'webview', 'prDetail', 'index.js'));
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'prDetail', 'styles.css'));
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'prDetail', 'index.js'));
+
+    const nonce = this._getNonce();
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https:;">
   <title>PR Details</title>
   <link rel="stylesheet" href="${styleUri}">
 </head>
@@ -446,11 +336,10 @@ export class PRDetailWebviewProvider implements vscode.WebviewViewProvider {
   <div id="error" class="error" style="display: none;">
     <h3>Error</h3>
     <p id="error-message"></p>
-    <button id="retry-btn">Retry</button>
+    <button id="retry-btn" class="btn btn-primary">Retry</button>
   </div>
 
   <div id="content" style="display: none;">
-    <!-- Header Section -->
     <header class="pr-header">
       <div class="pr-title-row">
         <h1 id="pr-title"></h1>
@@ -461,7 +350,7 @@ export class PRDetailWebviewProvider implements vscode.WebviewViewProvider {
       <div class="pr-meta">
         <span id="pr-status-badge" class="status-badge"></span>
         <span class="pr-author">
-          by <img id="author-avatar" src="" alt="" class="avatar">
+          by <img id="author-avatar" src="" alt="" class="avatar" style="display:none">
           <span id="author-name"></span>
         </span>
         <span class="pr-branch">
@@ -472,7 +361,6 @@ export class PRDetailWebviewProvider implements vscode.WebviewViewProvider {
       </div>
     </header>
 
-    <!-- Action Bar -->
     <nav class="action-bar">
       <button id="checkout-btn" class="btn btn-primary">Checkout</button>
       <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
@@ -486,25 +374,21 @@ export class PRDetailWebviewProvider implements vscode.WebviewViewProvider {
       </div>
     </nav>
 
-    <!-- Description Section -->
     <section class="description-section">
       <h2>Description</h2>
       <div id="pr-description" class="markdown-body"></div>
     </section>
 
-    <!-- CI Status Section -->
     <section id="ci-section" class="ci-section" style="display: none;">
       <h2>CI Status</h2>
       <div id="ci-status-list"></div>
     </section>
 
-    <!-- Activity Timeline -->
     <section class="activity-section">
       <h2>Activity <span id="activity-count"></span></h2>
       <div id="activity-timeline"></div>
     </section>
 
-    <!-- Comment Input -->
     <div id="comment-input-container" class="comment-input-container" style="display: none;">
       <textarea id="comment-input" placeholder="Write a comment..."></textarea>
       <div class="comment-actions">
@@ -513,7 +397,6 @@ export class PRDetailWebviewProvider implements vscode.WebviewViewProvider {
       </div>
     </div>
 
-    <!-- Review Dialog -->
     <div id="review-dialog" class="review-dialog" style="display: none;">
       <h3>Submit Review</h3>
       <select id="review-state">
@@ -528,7 +411,6 @@ export class PRDetailWebviewProvider implements vscode.WebviewViewProvider {
       </div>
     </div>
 
-    <!-- Merge Dialog -->
     <div id="merge-dialog" class="merge-dialog" style="display: none;">
       <h3>Merge Pull Request</h3>
       <select id="merge-strategy">
@@ -544,16 +426,17 @@ export class PRDetailWebviewProvider implements vscode.WebviewViewProvider {
     </div>
   </div>
 
-  <script src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
   }
 
-  /**
-   * Dispose of resources
-   */
-  public dispose(): void {
-    this._disposables.forEach(d => d.dispose());
-    this._disposables = [];
+  private _getNonce(): string {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+      text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
   }
 }
