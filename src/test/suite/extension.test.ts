@@ -23,6 +23,8 @@ suite('Extension Activation Test Suite', () => {
 
     const commands = await vscode.commands.getCommands(true);
     const forgejoCommands = [
+      'forgejo.addInstance',
+      'forgejo.manageInstances',
       'forgejo.refreshPullRequests',
       'forgejo.refreshIssues',
       'forgejo.configureInstanceUrl',

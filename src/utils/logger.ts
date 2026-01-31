@@ -1,0 +1,122 @@
+import * as vscode from 'vscode';
+
+/**
+ * Centralized logging for the Forgejo extension using VS Code's Output API
+ */
+class Logger {
+	private outputChannel: vscode.OutputChannel | null = null;
+	private isDebugEnabled: boolean = false;
+
+	/**
+	 * Lazy initialization of the output channel
+	 */
+	private getOutputChannel(): vscode.OutputChannel {
+		if (!this.outputChannel) {
+			this.outputChannel = vscode.window.createOutputChannel('Forgejo');
+			// Check if debug mode is enabled
+			const config = vscode.workspace.getConfiguration('forgejo');
+			this.isDebugEnabled = config.get<boolean>('debug', false);
+		}
+		return this.outputChannel;
+	}
+
+	/**
+	 * Log an info message
+	 */
+	info(message: string, ...args: any[]): void {
+		const formatted = this.format('INFO', message, args);
+		this.getOutputChannel().appendLine(formatted);
+	}
+
+	/**
+	 * Log a warning message
+	 */
+	warn(message: string, ...args: any[]): void {
+		const formatted = this.format('WARN', message, args);
+		this.getOutputChannel().appendLine(formatted);
+		// Also log to console for visibility
+		console.warn(`[Forgejo] ${message}`, ...args);
+	}
+
+	/**
+	 * Log an error message
+	 */
+	error(message: string, ...args: any[]): void {
+		const formatted = this.format('ERROR', message, args);
+		this.getOutputChannel().appendLine(formatted);
+		// Also log to console for visibility
+		console.error(`[Forgejo] ${message}`, ...args);
+	}
+
+	/**
+	 * Log a debug message (only if debug mode is enabled)
+	 */
+	debug(message: string, ...args: any[]): void {
+		if (!this.isDebugEnabled) {
+			return;
+		}
+		const formatted = this.format('DEBUG', message, args);
+		this.getOutputChannel().appendLine(formatted);
+	}
+
+	/**
+	 * Show the output channel
+	 */
+	show(): void {
+		this.getOutputChannel().show();
+	}
+
+	/**
+	 * Clear the output channel
+	 */
+	clear(): void {
+		this.getOutputChannel().clear();
+	}
+
+	/**
+	 * Format a log message with timestamp and level
+	 */
+	private format(level: string, message: string, args: any[]): string {
+		const timestamp = new Date().toISOString();
+		const argsStr = args.length > 0 ? ' ' + args.map(arg =>
+			typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+		).join(' ') : '';
+
+		return `[${timestamp}] [${level}] ${message}${argsStr}`;
+	}
+
+	/**
+	 * Dispose the output channel
+	 */
+	dispose(): void {
+		if (this.outputChannel) {
+			this.outputChannel.dispose();
+		}
+	}
+}
+
+// Create a singleton instance
+export const logger = new Logger();
+
+/**
+ * Convenience functions for logging
+ */
+export function logInfo(message: string, ...args: any[]): void {
+	logger.info(message, ...args);
+}
+
+export function logWarn(message: string, ...args: any[]): void {
+	logger.warn(message, ...args);
+}
+
+export function logError(message: string, ...args: any[]): void {
+	logger.error(message, ...args);
+}
+
+export function logDebug(message: string, ...args: any[]): void {
+	logger.debug(message, ...args);
+}
+
+export function showOutput(): void {
+	logger.show();
+}

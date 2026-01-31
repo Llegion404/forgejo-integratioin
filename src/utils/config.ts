@@ -1,70 +1,89 @@
 import * as vscode from 'vscode';
-import { detectGitRemote, GitRemoteInfo } from './gitUtils';
+import { detectGitRemote } from './gitUtils';
+import { ForgejoInstance } from '../models/instance';
+import {
+	getAllInstances,
+	getDefaultOrFirstInstance,
+	findBestInstanceMatch,
+	normalizeUrl
+} from './instanceHelpers';
+import { logInfo, logDebug } from './logger';
 
 export interface ForgejoConfig {
-  instanceUrl: string;
-  token: string;
-  owner: string;
-  repo: string;
+	instanceUrl: string;
+	token: string;
+	owner: string;
+	repo: string;
+	instanceId?: string;
+	matchConfidence?: 'exact' | 'domain' | 'default' | 'first';
 }
 
 /**
  * Get Forgejo configuration from VS Code settings
  */
 export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
-  console.log('[Forgejo] Getting configuration...');
-  const config = vscode.workspace.getConfiguration('forgejo');
+	logDebug('Getting configuration...');
 
-  let instanceUrl = config.get<string>('instanceUrl') || '';
-  let token = config.get<string>('token') || '';
-  const autoDetect = config.get<boolean>('autoDetectFromRemote', true);
+	// Get all configured instances
+	const instances = await getAllInstances();
 
-  console.log('[Forgejo] Settings:', {
-    instanceUrl: instanceUrl || '(not set)',
-    hasToken: !!token,
-    autoDetect
-  });
+	if (instances.length === 0) {
+		logInfo('No instances configured');
+		return null;
+	}
 
-  let gitInfo: GitRemoteInfo | null = null;
+	// Get git remote info
+	const gitInfo = await detectGitRemote();
 
-  // Try to auto-detect from git remote if enabled
-  if (autoDetect) {
-    gitInfo = await detectGitRemote();
+	let selectedInstance: ForgejoInstance | undefined;
+	let confidence: 'exact' | 'domain' | 'default' | 'first' = 'first';
 
-    if (gitInfo) {
-      // Use git remote URL if instance URL is not configured
-      if (!instanceUrl) {
-        instanceUrl = gitInfo.instanceUrl;
-        console.log('[Forgejo] Using auto-detected instance URL:', instanceUrl);
-      }
-    }
-  }
+	// Try to match instance to git remote
+	if (gitInfo) {
+		const match = findBestInstanceMatch(instances, gitInfo.instanceUrl);
+		if (match) {
+			selectedInstance = match.instance;
+			confidence = match.confidence;
+			logInfo(`Matched instance: ${selectedInstance.name} (${confidence} match)`);
+		}
+	}
 
-  // Check if we have the minimum required configuration
-  if (!instanceUrl) {
-    console.log('[Forgejo] No instance URL configured');
-    return null;
-  }
+	// Fall back to default or first instance
+	if (!selectedInstance) {
+		selectedInstance = await getDefaultOrFirstInstance();
+		confidence = selectedInstance?.isDefault ? 'default' : 'first';
 
-  // If we don't have git info yet, we can't determine owner/repo
-  if (!gitInfo) {
-    gitInfo = await detectGitRemote();
-  }
+		if (selectedInstance) {
+			logInfo(`Using ${confidence} instance: ${selectedInstance.name}`);
+		}
+	}
 
-  if (!gitInfo) {
-    console.log('[Forgejo] Could not determine owner/repo from git remote');
-    return null;
-  }
+	if (!selectedInstance) {
+		logInfo('No instance available');
+		return null;
+	}
 
-  const finalConfig = {
-    instanceUrl: instanceUrl.replace(/\/$/, ''), // Remove trailing slash
-    token,
-    owner: gitInfo.owner,
-    repo: gitInfo.repo
-  };
+	// If we don't have git info, we can't determine owner/repo
+	if (!gitInfo) {
+		logInfo('Could not determine owner/repo from git remote');
+		return null;
+	}
 
-  console.log('[Forgejo] Final configuration:', finalConfig);
-  return finalConfig;
+	const finalConfig: ForgejoConfig = {
+		instanceUrl: normalizeUrl(selectedInstance.instanceUrl),
+		token: selectedInstance.token,
+		owner: gitInfo.owner,
+		repo: gitInfo.repo,
+		instanceId: selectedInstance.id,
+		matchConfidence: confidence
+	};
+
+	logDebug('Final configuration:', {
+		...finalConfig,
+		token: finalConfig.token ? '***' : '(not set)'
+	});
+
+	return finalConfig;
 }
 
 /**

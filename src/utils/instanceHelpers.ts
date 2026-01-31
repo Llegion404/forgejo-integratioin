@@ -1,0 +1,368 @@
+import * as vscode from 'vscode';
+import { ForgejoInstance, InstanceMatch } from '../models/instance';
+import { ForgejoClient } from '../api/forgejoClient';
+import { logInfo, logWarn, logError } from './logger';
+
+/**
+ * Generates a UUID v4
+ */
+export function generateUUID(): string {
+	return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+		const r = Math.random() * 16 | 0;
+		const v = c === 'x' ? r : (r & 0x3 | 0x8);
+		return v.toString(16);
+	});
+}
+
+/**
+ * Normalizes a URL by removing trailing slashes and ensuring protocol
+ */
+export function normalizeUrl(url: string): string {
+	let normalized = url.trim();
+
+	// Add https:// if no protocol
+	if (!normalized.match(/^https?:\/\//)) {
+		normalized = `https://${normalized}`;
+	}
+
+	// Remove trailing slash
+	normalized = normalized.replace(/\/$/, '');
+
+	return normalized;
+}
+
+/**
+ * Validates that an instance has all required fields
+ */
+export function isValidInstance(instance: any): instance is ForgejoInstance {
+	return (
+		instance &&
+		typeof instance === 'object' &&
+		typeof instance.id === 'string' &&
+		instance.id.trim() !== '' &&
+		typeof instance.name === 'string' &&
+		instance.name.trim() !== '' &&
+		typeof instance.instanceUrl === 'string' &&
+		instance.instanceUrl.trim() !== '' &&
+		typeof instance.token === 'string'
+	);
+}
+
+/**
+ * Gets all configured instances, filtering out any invalid ones
+ */
+export async function getAllInstances(): Promise<ForgejoInstance[]> {
+	const config = vscode.workspace.getConfiguration('forgejo');
+	const instances = config.get<any[]>('instances', []);
+
+	// Filter and validate instances
+	const validInstances = instances.filter(instance => {
+		const valid = isValidInstance(instance);
+		if (!valid) {
+			logWarn('Found and skipped invalid instance:', instance);
+		}
+		return valid;
+	});
+
+	// If we filtered out any invalid instances, save the cleaned list
+	if (validInstances.length !== instances.length && instances.length > 0) {
+		logInfo(`Cleaned up ${instances.length - validInstances.length} invalid instance(s)`);
+		await config.update('instances', validInstances, vscode.ConfigurationTarget.Global);
+	}
+
+	return validInstances;
+}
+
+/**
+ * Gets instance by ID
+ */
+export async function getInstanceById(id: string): Promise<ForgejoInstance | undefined> {
+	const instances = await getAllInstances();
+	return instances.find(i => i.id === id);
+}
+
+/**
+ * Gets the default instance or the first one if no default is set
+ */
+export async function getDefaultOrFirstInstance(): Promise<ForgejoInstance | undefined> {
+	const instances = await getAllInstances();
+	if (instances.length === 0) {
+		return undefined;
+	}
+
+	const defaultInstance = instances.find(i => i.isDefault);
+	return defaultInstance || instances[0];
+}
+
+/**
+ * Adds a new instance
+ */
+export async function addInstance(instance: ForgejoInstance): Promise<void> {
+	logInfo('Adding instance:', { id: instance.id, name: instance.name, url: instance.instanceUrl });
+
+	const config = vscode.workspace.getConfiguration('forgejo');
+	const instances = await getAllInstances();
+
+	logInfo('Current instances count:', instances.length);
+
+	// If this is the first instance, make it default
+	if (instances.length === 0) {
+		instance.isDefault = true;
+		logInfo('Set as default (first instance)');
+	}
+
+	instances.push(instance);
+	logInfo('Saving instances array with', instances.length, 'instance(s)');
+
+	try {
+		await config.update('instances', instances, vscode.ConfigurationTarget.Global);
+		logInfo('Config updated successfully');
+
+		// Verify the save worked
+		const verification = await getAllInstances();
+		logInfo('Verification: found', verification.length, 'instance(s) after save');
+
+		if (verification.find(i => i.id === instance.id)) {
+			logInfo('✓ Instance successfully saved and verified');
+		} else {
+			logError('✗ Instance was NOT saved properly!');
+			throw new Error('Instance save verification failed');
+		}
+
+		// Sync to legacy settings for backward compatibility
+		await syncToLegacySettings(instance);
+		logInfo('Legacy settings synced');
+	} catch (error) {
+		logError('Error saving instance:', error);
+		throw error;
+	}
+}
+
+/**
+ * Updates an existing instance
+ */
+export async function updateInstance(instance: ForgejoInstance): Promise<void> {
+	const config = vscode.workspace.getConfiguration('forgejo');
+	const instances = await getAllInstances();
+
+	const index = instances.findIndex(i => i.id === instance.id);
+	if (index === -1) {
+		throw new Error(`Instance ${instance.id} not found`);
+	}
+
+	instances[index] = instance;
+	await config.update('instances', instances, vscode.ConfigurationTarget.Global);
+
+	// Sync to legacy settings if this is the default
+	if (instance.isDefault) {
+		await syncToLegacySettings(instance);
+	}
+}
+
+/**
+ * Removes an instance
+ */
+export async function removeInstance(id: string): Promise<void> {
+	const config = vscode.workspace.getConfiguration('forgejo');
+	const instances = await getAllInstances();
+
+	const filtered = instances.filter(i => i.id !== id);
+	await config.update('instances', filtered, vscode.ConfigurationTarget.Global);
+
+	// If we removed the default, make the first remaining instance default
+	if (filtered.length > 0 && !filtered.some(i => i.isDefault)) {
+		filtered[0].isDefault = true;
+		await config.update('instances', filtered, vscode.ConfigurationTarget.Global);
+		await syncToLegacySettings(filtered[0]);
+	}
+}
+
+/**
+ * Sets an instance as the default
+ */
+export async function setDefaultInstance(id: string): Promise<void> {
+	const config = vscode.workspace.getConfiguration('forgejo');
+	const instances = await getAllInstances();
+
+	// Clear all defaults and set the new one
+	instances.forEach(i => {
+		i.isDefault = i.id === id;
+	});
+
+	await config.update('instances', instances, vscode.ConfigurationTarget.Global);
+
+	// Sync to legacy settings
+	const defaultInstance = instances.find(i => i.id === id);
+	if (defaultInstance) {
+		await syncToLegacySettings(defaultInstance);
+	}
+}
+
+/**
+ * Tests connection to an instance
+ * @param instance The instance to test
+ * @param saveResult Whether to save the test result to config (default: true, set to false for temporary instances)
+ */
+export async function testInstanceConnection(instance: ForgejoInstance, saveResult: boolean = true): Promise<boolean> {
+	logInfo('Testing connection to:', instance.instanceUrl);
+
+	try {
+		const client = new ForgejoClient(instance.instanceUrl, instance.token);
+		logInfo('Calling testConnection API...');
+		const success = await client.testConnection();
+
+		logInfo('Connection test result:', success ? 'SUCCESS' : 'FAILED');
+
+		// Update instance with test result
+		instance.lastConnectionTest = {
+			success,
+			timestamp: Date.now(),
+			error: success ? undefined : 'Connection failed'
+		};
+
+		// Only save if the instance exists in config
+		if (saveResult) {
+			const existing = await getInstanceById(instance.id);
+			if (existing) {
+				logInfo('Saving test result to instance config');
+				await updateInstance(instance);
+			} else {
+				logInfo('Skipping save (temporary instance)');
+			}
+		}
+
+		return success;
+	} catch (error) {
+		logError('Connection test error:', error);
+
+		// Update instance with error
+		instance.lastConnectionTest = {
+			success: false,
+			timestamp: Date.now(),
+			error: error instanceof Error ? error.message : 'Unknown error'
+		};
+
+		// Only save if the instance exists in config
+		if (saveResult) {
+			const existing = await getInstanceById(instance.id);
+			if (existing) {
+				await updateInstance(instance);
+			}
+		}
+
+		return false;
+	}
+}
+
+/**
+ * Finds the best matching instance for a given remote URL
+ */
+export function findBestInstanceMatch(
+	instances: ForgejoInstance[],
+	remoteUrl: string | null
+): InstanceMatch | null {
+	if (!remoteUrl || instances.length === 0) {
+		return null;
+	}
+
+	const normalizedRemote = normalizeUrl(remoteUrl);
+
+	// Try exact match first
+	for (const instance of instances) {
+		if (normalizeUrl(instance.instanceUrl) === normalizedRemote) {
+			return { instance, confidence: 'exact' };
+		}
+	}
+
+	// Try domain match (handle http vs https, www vs non-www)
+	try {
+		const remoteHost = new URL(normalizedRemote).hostname;
+
+		for (const instance of instances) {
+			try {
+				const instanceHost = new URL(normalizeUrl(instance.instanceUrl)).hostname;
+				if (instanceHost === remoteHost) {
+					return { instance, confidence: 'domain' };
+				}
+			} catch {
+				continue;
+			}
+		}
+	} catch {
+		// Invalid URL, fall through
+	}
+
+	return null;
+}
+
+/**
+ * Syncs instance to legacy settings for backward compatibility
+ */
+async function syncToLegacySettings(instance: ForgejoInstance): Promise<void> {
+	const config = vscode.workspace.getConfiguration('forgejo');
+	await config.update('instanceUrl', instance.instanceUrl, vscode.ConfigurationTarget.Global);
+	await config.update('token', instance.token, vscode.ConfigurationTarget.Global);
+}
+
+/**
+ * Generates a default instance name from URL
+ */
+export function getDefaultInstanceName(instanceUrl: string): string {
+	try {
+		const url = new URL(instanceUrl);
+		const hostname = url.hostname;
+
+		// Known instances
+		const knownInstances: Record<string, string> = {
+			'codeberg.org': 'Codeberg',
+			'gitea.com': 'Gitea',
+			'git.disroot.org': 'Disroot',
+		};
+
+		return knownInstances[hostname] || hostname;
+	} catch {
+		return 'Default Instance';
+	}
+}
+
+/**
+ * Gets connection status string for display
+ */
+export function getConnectionStatus(instance: ForgejoInstance): string {
+	if (!instance.lastConnectionTest) {
+		return '$(question) Not tested';
+	}
+
+	const { success, timestamp, error } = instance.lastConnectionTest;
+	const timeAgo = getTimeAgo(timestamp);
+
+	if (success) {
+		return `$(check) Connected (${timeAgo})`;
+	} else {
+		return `$(x) Failed (${timeAgo})${error ? ': ' + error : ''}`;
+	}
+}
+
+/**
+ * Formats a timestamp as "time ago"
+ */
+function getTimeAgo(timestamp: number): string {
+	const seconds = Math.floor((Date.now() - timestamp) / 1000);
+
+	if (seconds < 60) {
+		return 'just now';
+	}
+
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) {
+		return `${minutes}m ago`;
+	}
+
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) {
+		return `${hours}h ago`;
+	}
+
+	const days = Math.floor(hours / 24);
+	return `${days}d ago`;
+}

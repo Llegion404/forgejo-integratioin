@@ -4,15 +4,49 @@ import { IssueTreeProvider } from './providers/issueTreeProvider';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
 import { setInstanceUrl, setAuthToken } from './utils/config';
+import { migrateToMultiInstance } from './utils/migration';
+import { getAllInstances } from './utils/instanceHelpers';
+import { startOnboarding } from './commands/onboarding';
+import { manageInstances } from './commands/instanceManager';
+import { showDiagnostics } from './commands/diagnostics';
+import { logger, logInfo } from './utils/logger';
 
-export function activate(context: vscode.ExtensionContext) {
-  console.log('[Forgejo] Extension is now active');
-  console.log('[Forgejo] VS Code version:', vscode.version);
-  console.log('[Forgejo] Workspace folders:', vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath));
+export async function activate(context: vscode.ExtensionContext) {
+  logInfo('Extension is now active');
+  logInfo('VS Code version:', vscode.version);
+  logInfo('Workspace folders:', vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath));
+
+  // Migrate legacy config first (before creating tree providers)
+  await migrateToMultiInstance();
 
   // Create tree data providers
   const prTreeProvider = new PRTreeProvider();
   const issueTreeProvider = new IssueTreeProvider();
+
+  // Check for first-time setup asynchronously (after tree providers are created)
+  // This way the dialog doesn't block extension activation
+  (async () => {
+    const instances = await getAllInstances();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const isTest = process.env.NODE_ENV === 'test' || typeof (global as any).it === 'function';
+
+    if (instances.length === 0 && !isTest) {
+      const action = await vscode.window.showInformationMessage(
+        'Welcome to Forgejo! Configure your first instance to get started.',
+        'Get Started',
+        'Later'
+      );
+
+      if (action === 'Get Started') {
+        const success = await vscode.commands.executeCommand('forgejo.addInstance');
+        // Refresh tree providers after adding first instance
+        if (success) {
+          prTreeProvider.refresh();
+          issueTreeProvider.refresh();
+        }
+      }
+    }
+  })();
 
   // Register tree views
   const prTreeView = vscode.window.createTreeView('forgejoPullRequests', {
@@ -29,6 +63,37 @@ export function activate(context: vscode.ExtensionContext) {
   const prDiffProvider = new PRDiffContentProvider();
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(PR_DIFF_SCHEME, prDiffProvider)
+  );
+
+  // Register instance management commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.addInstance', async () => {
+      const success = await startOnboarding();
+      if (success) {
+        prTreeProvider.refresh();
+        issueTreeProvider.refresh();
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.manageInstances', async () => {
+      await manageInstances();
+      prTreeProvider.refresh();
+      issueTreeProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.showDiagnostics', async () => {
+      await showDiagnostics();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.showOutput', () => {
+      logger.show();
+    })
   );
 
   // Register refresh commands
@@ -206,10 +271,12 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(prTreeView);
   context.subscriptions.push(issueTreeView);
 
-  // Show welcome message
-  vscode.window.showInformationMessage('Forgejo extension activated! Configure your instance URL to get started.');
+  // Add logger to subscriptions for proper cleanup
+  context.subscriptions.push(logger);
+
+  logInfo('Extension activation complete');
 }
 
 export function deactivate() {
-  console.log('Forgejo extension is now deactivated');
+  logInfo('Extension is now deactivated');
 }

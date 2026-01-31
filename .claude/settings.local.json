@@ -21,7 +21,8 @@
       "Bash(npm run lint:*)",
       "Bash(npm run test:integration:*)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:www.eliostruyf.com)"
+      "WebFetch(domain:www.eliostruyf.com)",
+      "Bash(npm test:*)"
     ]
   }
 }

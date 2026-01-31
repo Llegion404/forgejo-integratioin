@@ -39,6 +39,26 @@
     },
     "commands": [
       {
+        "command": "forgejo.addInstance",
+        "title": "Forgejo: Add Instance",
+        "icon": "$(add)"
+      },
+      {
+        "command": "forgejo.manageInstances",
+        "title": "Forgejo: Manage Instances",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "forgejo.showDiagnostics",
+        "title": "Forgejo: Show Diagnostics",
+        "icon": "$(info)"
+      },
+      {
+        "command": "forgejo.showOutput",
+        "title": "Forgejo: Show Output Channel",
+        "icon": "$(output)"
+      },
+      {
         "command": "forgejo.refreshPullRequests",
         "title": "Forgejo: Refresh Pull Requests",
         "icon": "$(refresh)"
@@ -50,11 +70,11 @@
       },
       {
         "command": "forgejo.configureInstanceUrl",
-        "title": "Forgejo: Configure Instance URL"
+        "title": "Forgejo: Configure Instance URL (Legacy)"
       },
       {
         "command": "forgejo.setAuthToken",
-        "title": "Forgejo: Set Authentication Token"
+        "title": "Forgejo: Set Authentication Token (Legacy)"
       },
       {
         "command": "forgejo.openPrInBrowser",
@@ -82,12 +102,22 @@
         {
           "command": "forgejo.refreshPullRequests",
           "when": "view == forgejoPullRequests",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.manageInstances",
+          "when": "view == forgejoPullRequests",
+          "group": "navigation@2"
         },
         {
           "command": "forgejo.refreshIssues",
           "when": "view == forgejoIssues",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.manageInstances",
+          "when": "view == forgejoIssues",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -106,20 +136,55 @@
     "configuration": {
       "title": "Forgejo",
       "properties": {
+        "forgejo.instances": {
+          "type": "array",
+          "default": [],
+          "description": "Configured Forgejo instances",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "instanceUrl": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              },
+              "isDefault": {
+                "type": "boolean"
+              },
+              "lastConnectionTest": {
+                "type": "object"
+              }
+            }
+          }
+        },
         "forgejo.instanceUrl": {
           "type": "string",
           "default": "",
-          "description": "Forgejo instance URL (e.g., https://codeberg.org)"
+          "description": "[DEPRECATED] Use forgejo.instances instead. Forgejo instance URL (e.g., https://codeberg.org)",
+          "deprecationMessage": "Use 'forgejo.instances' for multi-instance support. This setting is kept for backward compatibility."
         },
         "forgejo.token": {
           "type": "string",
           "default": "",
-          "description": "Personal access token for authentication"
+          "description": "[DEPRECATED] Use forgejo.instances instead. Personal access token for authentication",
+          "deprecationMessage": "Use 'forgejo.instances' for multi-instance support. This setting is kept for backward compatibility."
         },
         "forgejo.autoDetectFromRemote": {
           "type": "boolean",
           "default": true,
           "description": "Auto-detect Forgejo instance from git remote"
+        },
+        "forgejo.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging in the Forgejo output channel"
         }
       }
     }

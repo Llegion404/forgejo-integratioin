@@ -7,6 +7,13 @@ module.exports = {
   moduleNameMapper: {
     '^vscode$': '<rootDir>/__mocks__/vscode.js'
   },
+  globals: {
+    'ts-jest': {
+      tsconfig: {
+        types: ['jest', 'node']
+      }
+    }
+  },
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/test/**',           // Exclude integration tests

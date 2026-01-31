@@ -21,6 +21,9 @@
     "out",
     "dist",
     "**/*.d.ts",
-    "node_modules"
+    "node_modules",
+    "src/test/**",
+    "src/__tests__/**",
+    "**/*.test.ts"
   ]
 }

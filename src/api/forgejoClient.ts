@@ -1,5 +1,6 @@
 import { PullRequest, PullRequestListItem, PullRequestFile, FileContentsResponse } from '../models/pullRequest';
 import { Issue, IssueListItem } from '../models/issue';
+import { logDebug, logInfo, logError } from '../utils/logger';
 
 export class ForgejoClient {
   private instanceUrl: string;
@@ -25,21 +26,63 @@ export class ForgejoClient {
       headers['Authorization'] = `token ${this.token}`;
     }
 
+    logDebug('Making API request:', {
+      url,
+      endpoint,
+      hasToken: !!this.token,
+      tokenLength: this.token?.length || 0
+    });
+
     try {
+      logDebug('Calling fetch...');
       const response = await fetch(url, {
         method: 'GET',
         headers
       });
 
+      logDebug('Fetch completed:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+
       if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('API request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          url,
+          body: errorBody
+        });
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      return await response.json() as T;
+      const data = await response.json() as T;
+      logDebug('Response parsed successfully');
+      return data;
     } catch (error) {
-      if (error instanceof Error) {
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        logError('Network error - Failed to fetch:', {
+          url,
+          error: error.message,
+          possibleCauses: [
+            'Instance URL is incorrect',
+            'Instance is unreachable',
+            'Network connection issue',
+            'CORS or SSL certificate issue'
+          ]
+        });
+        throw new Error(`Network error: Cannot reach ${this.instanceUrl}. ${error.message}`);
+      } else if (error instanceof Error) {
+        logError('Request error:', {
+          message: error.message,
+          name: error.name,
+          url
+        });
         throw new Error(`Failed to fetch from Forgejo: ${error.message}`);
       }
+      logError('Unknown error:', error);
       throw error;
     }
   }
@@ -118,11 +161,58 @@ export class ForgejoClient {
    * Test connection to Forgejo instance
    */
   async testConnection(): Promise<boolean> {
+    logInfo('Testing connection to Forgejo instance:', this.instanceUrl);
+    logDebug('Connection test details:', {
+      instanceUrl: this.instanceUrl,
+      hasToken: !!this.token,
+      tokenPrefix: this.token ? this.token.substring(0, 8) + '...' : '(no token)',
+      endpoint: '/version'
+    });
+
     try {
       const endpoint = '/version';
-      await this.request<any>(endpoint);
+      logDebug('Calling /version endpoint...');
+      const version = await this.request<any>(endpoint);
+
+      logInfo('Connection test SUCCESS:', {
+        instanceUrl: this.instanceUrl,
+        version: version?.version || 'unknown'
+      });
+
       return true;
     } catch (error) {
+      logError('Connection test FAILED:', {
+        instanceUrl: this.instanceUrl,
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.name : typeof error
+      });
+
+      // Provide helpful diagnostic information
+      if (error instanceof Error) {
+        if (error.message.includes('Network error')) {
+          logError('Diagnosis: Cannot reach the server', {
+            suggestion: 'Check if the instance URL is correct and the server is running',
+            instanceUrl: this.instanceUrl
+          });
+        } else if (error.message.includes('401')) {
+          logError('Diagnosis: Authentication failed', {
+            suggestion: 'The token is invalid or has insufficient permissions'
+          });
+        } else if (error.message.includes('403')) {
+          logError('Diagnosis: Forbidden', {
+            suggestion: 'The token does not have permission to access this resource'
+          });
+        } else if (error.message.includes('404')) {
+          logError('Diagnosis: Not found', {
+            suggestion: 'The /api/v1/version endpoint does not exist. This may not be a Forgejo/Gitea instance'
+          });
+        } else if (error.message.includes('500') || error.message.includes('502') || error.message.includes('503')) {
+          logError('Diagnosis: Server error', {
+            suggestion: 'The Forgejo instance is experiencing issues'
+          });
+        }
+      }
+
       return false;
     }
   }
