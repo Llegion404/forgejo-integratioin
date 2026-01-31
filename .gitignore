@@ -6,4 +6,3 @@ node_modules
 *.log
 coverage
 .nyc_output
-src/__tests__/
