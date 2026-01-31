@@ -41,6 +41,34 @@ bd sync               # Sync with git
 Use 'bd' for task tracking
 
 
+## Building and Installing Extension
+
+**ALWAYS build the extension after making changes** to verify it compiles correctly.
+
+**Build command:**
+```bash
+npm run compile
+```
+
+**Package for distribution:**
+```bash
+vsce package --allow-missing-repository
+```
+
+**After building, ALWAYS ask the user:**
+> "Would you like me to install the extension in VS Code?"
+
+**Install command (run only if user says yes):**
+```bash
+code --install-extension forgejo-vscode-0.1.0.vsix --force
+```
+
+**Why?**
+- Building catches TypeScript errors before committing
+- Installing allows immediate testing of changes
+- The `--force` flag ensures the extension is updated even if same version
+
+
 ## Starting Work (Always Create Worktree)
 
 **Before writing any code**, ask the user:
