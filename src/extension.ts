@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import { PRTreeProvider } from './providers/prTreeProvider';
 import { IssueTreeProvider } from './providers/issueTreeProvider';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
-import { PRDetailsContentProvider, PR_DETAILS_SCHEME, createPRDetailsUri } from './providers/prDetailsContentProvider';
+import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
+import { PRDetailWebviewProvider } from './webview/prDetail/provider';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
 import { setInstanceUrl, setAuthToken } from './utils/config';
 import { migrateToMultiInstance } from './utils/migration';
@@ -290,9 +291,8 @@ export async function activate(context: vscode.ExtensionContext) {
       'forgejo.showPrDetails',
       async (pr: PullRequestListItem, owner: string, repo: string) => {
         try {
-          const uri = createPRDetailsUri(owner, repo, pr.number);
-          const doc = await vscode.workspace.openTextDocument(uri);
-          await vscode.window.showTextDocument(doc, { preview: true });
+          // Show the webview panel
+          await prDetailWebviewProvider.showPRDetails(owner, repo, pr.number);
         } catch (error) {
           console.error('[Forgejo] Error opening PR details:', error);
           vscode.window.showErrorMessage(
@@ -401,6 +401,12 @@ export async function activate(context: vscode.ExtensionContext) {
   // Add tree views to subscriptions
   context.subscriptions.push(prTreeView);
   context.subscriptions.push(issueTreeView);
+
+  // Register PR detail webview provider
+  const prDetailWebviewProvider = new PRDetailWebviewProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(PRDetailWebviewProvider.viewType, prDetailWebviewProvider)
+  );
 
   // Add logger to subscriptions for proper cleanup
   context.subscriptions.push(logger);

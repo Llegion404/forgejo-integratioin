@@ -37,6 +37,14 @@
         }
       ]
     },
+    "webviews": {
+      "viewContainers": [
+        {
+          "id": "forgejo.prDetail",
+          "name": "PR Details"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "forgejo.addInstance",
@@ -98,7 +106,7 @@
       },
       {
         "command": "forgejo.showPrDetails",
-        "title": "View Overview",
+        "title": "View PR Details",
         "icon": "$(info)"
       },
       {
