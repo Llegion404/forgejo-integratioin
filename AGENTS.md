@@ -39,3 +39,33 @@ bd sync               # Sync with git
 - If push fails, resolve and retry until it succeeds
 
 Use 'bd' for task tracking
+
+
+## Starting Work (Always Create Worktree)
+
+**Before writing any code**, ask the user:
+> "Would you like me to create a new worktree for this work? If yes, what branch name should I use?"
+
+**Worktree Location:** `.worktrees/<branch-name>/`
+
+**Command sequence:**
+```bash
+# Ask user for branch name based on feature
+# Example: user says "feature-auth-fix"
+mkdir -p .worktrees
+git worktree add .worktrees/feature-auth-fix -b feature-auth-fix
+cd .worktrees/feature-auth-fix
+```
+
+Why worktrees?
+
+Keep master/main clean and stable
+Parallel work on multiple features
+Easy context switching without stashing
+Isolated environments per feature
+After creating worktree:
+
+Switch to the worktree directory
+Check out/claim the issue with bd update <id> --status in_progress
+Begin coding in the worktree
+
