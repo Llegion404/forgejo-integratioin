@@ -212,7 +212,10 @@ export async function activate(context: vscode.ExtensionContext) {
             const beforeUri = createPRFileUri(owner, repo, baseRef, file.filename);
             const doc = await vscode.workspace.openTextDocument(beforeUri);
             await vscode.window.showTextDocument(doc, { preview: true });
-            vscode.window.showInformationMessage(`File ${file.filename} was deleted in PR #${pr.number}`);
+            const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
+            if (showNotifications) {
+              vscode.window.showInformationMessage(`File ${file.filename} was deleted in PR #${pr.number}`);
+            }
             return;
           }
 
@@ -221,7 +224,10 @@ export async function activate(context: vscode.ExtensionContext) {
             const afterUri = createPRFileUri(owner, repo, headRef, file.filename);
             const doc = await vscode.workspace.openTextDocument(afterUri);
             await vscode.window.showTextDocument(doc, { preview: true });
-            vscode.window.showInformationMessage(`File ${file.filename} was added in PR #${pr.number}`);
+            const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
+            if (showNotifications) {
+              vscode.window.showInformationMessage(`File ${file.filename} was added in PR #${pr.number}`);
+            }
             return;
           }
 

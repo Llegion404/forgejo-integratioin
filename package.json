@@ -215,6 +215,11 @@
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging in the Forgejo output channel"
+        },
+        "forgejo.showFileStatusNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications when opening files that were added or deleted in a pull request"
         }
       }
     }
