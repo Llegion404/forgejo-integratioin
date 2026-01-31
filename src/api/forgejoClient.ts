@@ -1,4 +1,4 @@
-import { PullRequest, PullRequestListItem } from '../models/pullRequest';
+import { PullRequest, PullRequestListItem, PullRequestFile, FileContentsResponse } from '../models/pullRequest';
 import { Issue, IssueListItem } from '../models/issue';
 
 export class ForgejoClient {
@@ -78,6 +78,40 @@ export class ForgejoClient {
   async getIssueDetails(owner: string, repo: string, number: number): Promise<Issue> {
     const endpoint = `/repos/${owner}/${repo}/issues/${number}`;
     return this.request<Issue>(endpoint);
+  }
+
+  /**
+   * Get list of files changed in a pull request
+   */
+  async getPullRequestFiles(owner: string, repo: string, number: number): Promise<PullRequestFile[]> {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${number}/files`;
+    return this.request<PullRequestFile[]>(endpoint);
+  }
+
+  /**
+   * Get file contents at a specific commit/ref
+   */
+  async getFileContents(owner: string, repo: string, filepath: string, ref: string): Promise<string> {
+    const endpoint = `/repos/${owner}/${repo}/contents/${encodeURIComponent(filepath)}?ref=${ref}`;
+    const response = await this.request<FileContentsResponse>(endpoint);
+
+    // Forgejo returns base64 encoded content
+    if (response.encoding === 'base64') {
+      return Buffer.from(response.content, 'base64').toString('utf-8');
+    }
+
+    return response.content;
+  }
+
+  /**
+   * Get pull request details including head and base refs
+   */
+  async getPullRequestRefs(owner: string, repo: string, number: number): Promise<{ base: string; head: string }> {
+    const pr = await this.getPullRequestDetails(owner, repo, number);
+    return {
+      base: pr.base.ref,
+      head: pr.head.ref
+    };
   }
 
   /**
