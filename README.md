@@ -23,9 +23,56 @@ Browse Forgejo Pull Requests and Issues directly within VS Code.
 
 ## Installation
 
-1. Clone this repository
-2. Run `npm install` to install dependencies
-3. Press F5 to launch the Extension Development Host
+### Option 1: Install from VS Code Marketplace (Coming Soon)
+
+Once published, you'll be able to install directly from the VS Code Marketplace:
+
+1. Open VS Code
+2. Go to the Extensions view (Ctrl+Shift+X / Cmd+Shift+X)
+3. Search for "Forgejo Integration"
+4. Click Install
+
+### Option 2: Install from VSIX File
+
+If you have a `.vsix` package file:
+
+1. Download the `.vsix` file
+2. Open VS Code
+3. Go to the Extensions view (Ctrl+Shift+X / Cmd+Shift+X)
+4. Click the `...` menu at the top of the Extensions view
+5. Select "Install from VSIX..."
+6. Choose the downloaded `.vsix` file
+
+### Option 3: Build and Install from Source
+
+For development or testing the latest version:
+
+```bash
+# Clone the repository
+git clone https://github.com/forgejo/forgejo-vscode.git
+cd forgejo-vscode
+
+# Install dependencies
+npm install
+
+# Build the extension
+npm run compile
+
+# Install vsce globally
+npm install -g @vscode/vsce
+
+# Package the extension
+vsce package
+
+# Install the extension in VS Code
+code --install-extension forgejo-vscode-0.1.0.vsix
+```
+
+Alternatively, to run the extension in development mode:
+
+```bash
+# Press F5 in VS Code to launch the Extension Development Host
+```
 
 ## Configuration
 
