@@ -1,13 +1,266 @@
+import * as vscode from 'vscode';
 import {
 	generateUUID,
 	normalizeUrl,
 	findBestInstanceMatch,
 	getDefaultInstanceName,
-	getConnectionStatus
+	getConnectionStatus,
+	getAllInstances,
+	addInstance,
+	updateInstance,
+	removeInstance,
+	setDefaultInstance,
+	isValidInstance
 } from '../../utils/instanceHelpers';
 import { ForgejoInstance } from '../../models/instance';
 
+// Mock logger
+jest.mock('../../utils/logger', () => ({
+	logInfo: jest.fn(),
+	logWarn: jest.fn(),
+	logError: jest.fn(),
+	logDebug: jest.fn()
+}));
+
+// Helper to mock configuration with state
+const mockConfig = (initialInstances: any[]) => {
+	let currentInstances = [...initialInstances];
+
+	const get = jest.fn().mockImplementation(() => currentInstances);
+	
+	const update = jest.fn().mockImplementation((key, value) => {
+		if (key === 'instances') {
+			currentInstances = value;
+		}
+		return Promise.resolve();
+	});
+
+	(vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+		get,
+		update,
+		inspect: jest.fn()
+	});
+
+	return { 
+		get, 
+		update,
+		getCurrentInstances: () => currentInstances
+	};
+};
+
 describe('instanceHelpers', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+	});
+
+	describe('isValidInstance', () => {
+		it('should return true for valid instance', () => {
+			const instance = {
+				id: '1',
+				name: 'Test',
+				instanceUrl: 'https://example.com',
+				token: 'token'
+			};
+			expect(isValidInstance(instance)).toBe(true);
+		});
+
+		it('should return false for missing id', () => {
+			const instance = {
+				name: 'Test',
+				instanceUrl: 'https://example.com',
+				token: 'token'
+			};
+			expect(isValidInstance(instance)).toBe(false);
+		});
+
+		it('should return false for empty name', () => {
+			const instance = {
+				id: '1',
+				name: '',
+				instanceUrl: 'https://example.com',
+				token: 'token'
+			};
+			expect(isValidInstance(instance)).toBe(false);
+		});
+	});
+
+	describe('getAllInstances', () => {
+		it('should return empty array when no instances configured', async () => {
+			mockConfig([]);
+			const instances = await getAllInstances();
+			expect(instances).toEqual([]);
+		});
+
+		it('should return configured instances', async () => {
+			const mockInstances = [{
+				id: '1',
+				name: 'Test',
+				instanceUrl: 'https://example.com',
+				token: 'token'
+			}];
+			mockConfig(mockInstances);
+			const instances = await getAllInstances();
+			expect(instances).toEqual(mockInstances);
+		});
+
+		it('should filter out invalid instances and update config', async () => {
+			const validInstance = {
+				id: '1',
+				name: 'Valid',
+				instanceUrl: 'https://valid.com',
+				token: 'token'
+			};
+			const invalidInstance = {
+				id: '2',
+				// Missing name
+				instanceUrl: 'https://invalid.com',
+				token: 'token'
+			};
+
+			const { update } = mockConfig([validInstance, invalidInstance]);
+			
+			const instances = await getAllInstances();
+			
+			expect(instances).toHaveLength(1);
+			expect(instances[0]).toEqual(validInstance);
+			expect(update).toHaveBeenCalledWith('instances', [validInstance], vscode.ConfigurationTarget.Global);
+		});
+	});
+
+	describe('addInstance', () => {
+		it('should add new instance and set as default if first one', async () => {
+			const { update } = mockConfig([]);
+			const newInstance: ForgejoInstance = {
+				id: '1',
+				name: 'New',
+				instanceUrl: 'https://new.com',
+				token: 'token'
+			};
+
+			await addInstance(newInstance);
+
+			expect(update).toHaveBeenCalledWith(
+				'instances', 
+				[expect.objectContaining({ ...newInstance, isDefault: true })], 
+				vscode.ConfigurationTarget.Global
+			);
+		});
+
+		it('should add to existing instances', async () => {
+			const existingInstance = {
+				id: '1',
+				name: 'Existing',
+				instanceUrl: 'https://existing.com',
+				token: 'token',
+				isDefault: true
+			};
+			const { update } = mockConfig([existingInstance]);
+			
+			const newInstance: ForgejoInstance = {
+				id: '2',
+				name: 'New',
+				instanceUrl: 'https://new.com',
+				token: 'token'
+			};
+
+			await addInstance(newInstance);
+
+			expect(update).toHaveBeenCalledWith(
+				'instances',
+				[existingInstance, newInstance],
+				vscode.ConfigurationTarget.Global
+			);
+		});
+	});
+
+	describe('updateInstance', () => {
+		it('should update existing instance', async () => {
+			const originalInstance = {
+				id: '1',
+				name: 'Original',
+				instanceUrl: 'https://original.com',
+				token: 'token'
+			};
+			const { update } = mockConfig([originalInstance]);
+
+			const updatedInstance = { ...originalInstance, name: 'Updated' };
+			await updateInstance(updatedInstance);
+
+			expect(update).toHaveBeenCalledWith(
+				'instances',
+				[updatedInstance],
+				vscode.ConfigurationTarget.Global
+			);
+		});
+
+		it('should throw error if instance not found', async () => {
+			mockConfig([]);
+			const instance = {
+				id: '1',
+				name: 'Test',
+				instanceUrl: 'https://test.com',
+				token: 'token'
+			};
+
+			await expect(updateInstance(instance)).rejects.toThrow('Instance 1 not found');
+		});
+	});
+
+	describe('removeInstance', () => {
+		it('should remove instance by id', async () => {
+			const instance1 = { id: '1', name: '1', instanceUrl: 'url', token: 'token' };
+			const instance2 = { id: '2', name: '2', instanceUrl: 'url', token: 'token' };
+			const { update } = mockConfig([instance1, instance2]);
+
+			await removeInstance('1');
+
+			expect(update).toHaveBeenCalledWith(
+				'instances',
+				[instance2],
+				vscode.ConfigurationTarget.Global
+			);
+		});
+
+		it('should set new default if default instance removed', async () => {
+			const instance1 = { id: '1', name: '1', instanceUrl: 'url', token: 'token', isDefault: true };
+			const instance2 = { id: '2', name: '2', instanceUrl: 'url', token: 'token' };
+			const { update } = mockConfig([instance1, instance2]);
+
+			await removeInstance('1');
+
+			// Check that instances were updated with the new default
+			// The update function is called multiple times (removing instance, setting new default, syncing legacy settings)
+			// We want to find the call that sets the instances with the new default
+			const instancesUpdateCalls = update.mock.calls.filter(call => call[0] === 'instances');
+			const lastInstancesUpdate = instancesUpdateCalls[instancesUpdateCalls.length - 1];
+
+			expect(lastInstancesUpdate).toEqual([
+				'instances',
+				[expect.objectContaining({ ...instance2, isDefault: true })],
+				vscode.ConfigurationTarget.Global
+			]);
+		});
+	});
+
+	describe('setDefaultInstance', () => {
+		it('should set specified instance as default and unset others', async () => {
+			const instance1 = { id: '1', name: '1', instanceUrl: 'url', token: 'token', isDefault: true };
+			const instance2 = { id: '2', name: '2', instanceUrl: 'url', token: 'token', isDefault: false };
+			const { update } = mockConfig([instance1, instance2]);
+
+			await setDefaultInstance('2');
+
+			expect(update).toHaveBeenCalledWith(
+				'instances',
+				[
+					expect.objectContaining({ id: '1', isDefault: false }),
+					expect.objectContaining({ id: '2', isDefault: true })
+				],
+				vscode.ConfigurationTarget.Global
+			);
+		});
+	});
+
 	describe('generateUUID', () => {
 		it('should generate a valid UUID v4', () => {
 			const uuid = generateUUID();

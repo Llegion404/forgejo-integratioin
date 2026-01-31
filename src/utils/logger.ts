@@ -12,10 +12,35 @@ class Logger {
 	 */
 	private getOutputChannel(): vscode.OutputChannel {
 		if (!this.outputChannel) {
-			this.outputChannel = vscode.window.createOutputChannel('Forgejo');
+			try {
+				this.outputChannel = vscode.window.createOutputChannel('Forgejo');
+			} catch (e) {
+				console.error('[Forgejo] Failed to create output channel:', e);
+			}
+
+			// Fallback if output channel creation failed (e.g. in tests)
+			if (!this.outputChannel) {
+				this.outputChannel = {
+					append: () => { },
+					appendLine: () => { },
+					replace: () => { },
+					clear: () => { },
+					show: () => { },
+					hide: () => { },
+					dispose: () => { },
+					name: 'Forgejo'
+				} as vscode.OutputChannel;
+			}
+
 			// Check if debug mode is enabled
-			const config = vscode.workspace.getConfiguration('forgejo');
-			this.isDebugEnabled = config.get<boolean>('debug', false);
+			try {
+				const config = vscode.workspace.getConfiguration('forgejo');
+				if (config) {
+					this.isDebugEnabled = config.get<boolean>('debug', false);
+				}
+			} catch (e) {
+				console.error('[Forgejo] Failed to get configuration:', e);
+			}
 		}
 		return this.outputChannel;
 	}

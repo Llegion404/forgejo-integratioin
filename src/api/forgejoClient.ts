@@ -44,11 +44,17 @@ export class ForgejoClient {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries())
+        headers: response.headers && typeof response.headers.entries === 'function' 
+          ? Object.fromEntries(response.headers.entries()) 
+          : 'not available'
       });
 
       if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        let errorBody = 'Unable to read response body';
+        if (typeof response.text === 'function') {
+           errorBody = await response.text().catch(() => 'Unable to read response body');
+        }
+        
         logError('API request failed:', {
           status: response.status,
           statusText: response.statusText,

@@ -125,14 +125,23 @@ const window = {
   showInformationMessage: jest.fn(),
   showErrorMessage: jest.fn(),
   showInputBox: jest.fn(),
-  createTreeView: jest.fn()
+  createTreeView: jest.fn(),
+  createOutputChannel: jest.fn().mockImplementation(() => ({
+    append: jest.fn(),
+    appendLine: jest.fn(),
+    clear: jest.fn(),
+    show: jest.fn(),
+    dispose: jest.fn()
+  })),
+  withProgress: jest.fn()
 };
 
 const workspace = {
-  getConfiguration: jest.fn(() => ({
+  getConfiguration: jest.fn().mockImplementation(() => ({
     get: jest.fn(),
     update: jest.fn(),
-    has: jest.fn()
+    has: jest.fn(),
+    inspect: jest.fn()
   })),
   workspaceFolders: undefined
 };

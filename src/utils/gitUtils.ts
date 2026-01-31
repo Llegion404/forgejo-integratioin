@@ -51,7 +51,7 @@ export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
   let match;
 
   // HTTPS format: https://codeberg.org/owner/repo.git
-  match = remoteUrl.match(/https?:\/\/([^\/]+)\/([^\/]+)\/([^\/\.]+)(\.git)?/);
+  match = remoteUrl.match(/https?:\/\/([^/]+)\/([^/]+)\/([^/.]+)(\.git)?/);
   if (match) {
     const [, host, owner, repo] = match;
     return {
@@ -62,7 +62,7 @@ export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
   }
 
   // SSH protocol format: ssh://git@host/owner/repo.git
-  match = remoteUrl.match(/ssh:\/\/(?:git@)?([^\/]+)\/([^\/]+)\/([^\/\.]+)(\.git)?/);
+  match = remoteUrl.match(/ssh:\/\/(?:git@)?([^/]+)\/([^/]+)\/([^/.]+)(\.git)?/);
   if (match) {
     const [, host, owner, repo] = match;
     return {
@@ -73,7 +73,7 @@ export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
   }
 
   // SSH scp-style format: git@codeberg.org:owner/repo.git
-  match = remoteUrl.match(/git@([^:]+):([^\/]+)\/([^\/\.]+)(\.git)?/);
+  match = remoteUrl.match(/git@([^:]+):([^/]+)\/([^/.]+)(\.git)?/);
   if (match) {
     const [, host, owner, repo] = match;
     return {
