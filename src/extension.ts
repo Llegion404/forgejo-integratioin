@@ -62,7 +62,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // Create virtual document provider for PR diffs
   const prDiffProvider = new PRDiffContentProvider();
   context.subscriptions.push(
-    vscode.workspace.registerTextDocumentContentProvider(PR_DIFF_SCHEME, prDiffProvider)
+    vscode.workspace.registerTextDocumentContentProvider(PR_DIFF_SCHEME, prDiffProvider),
+    prDiffProvider
   );
 
   // Register instance management commands

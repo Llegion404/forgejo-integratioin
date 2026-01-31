@@ -55,14 +55,22 @@ export async function getAllInstances(): Promise<ForgejoInstance[]> {
 	const config = vscode.workspace.getConfiguration('forgejo');
 	const instances = config.get<any[]>('instances', []);
 
-	// Filter and validate instances
-	const validInstances = instances.filter(instance => {
-		const valid = isValidInstance(instance);
-		if (!valid) {
-			logWarn('Found and skipped invalid instance:', instance);
+	// Filter and validate instances (synchronous validation)
+	const validInstances: ForgejoInstance[] = [];
+	const invalidInstances: any[] = [];
+
+	for (const instance of instances) {
+		if (isValidInstance(instance)) {
+			validInstances.push(instance);
+		} else {
+			invalidInstances.push(instance);
 		}
-		return valid;
-	});
+	}
+
+	// Log invalid instances
+	for (const instance of invalidInstances) {
+		logWarn('Found and skipped invalid instance:', instance);
+	}
 
 	// If we filtered out any invalid instances, save the cleaned list
 	if (validInstances.length !== instances.length && instances.length > 0) {

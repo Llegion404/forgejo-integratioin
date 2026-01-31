@@ -15,6 +15,17 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
   private cache: Map<string, string> = new Map();
   private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
   readonly onDidChange = this._onDidChange.event;
+  private disposables: vscode.Disposable[] = [];
+
+  constructor() {
+    this.disposables.push(this._onDidChange);
+  }
+
+  dispose(): void {
+    this.disposables.forEach(d => d.dispose());
+    this.disposables = [];
+    this.cache.clear();
+  }
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     console.log('[Forgejo] Providing content for:', uri.toString());

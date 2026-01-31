@@ -176,7 +176,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
         return groups;
       } catch (error) {
         this.error = error instanceof Error ? error.message : 'Unknown error';
-        return [];
+        return [new PRMessageItem(this.error, true)];
       }
     } else if (element instanceof PRGroupItem) {
       // Show PRs in this group
@@ -243,9 +243,8 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
       // Sort files: added, modified, renamed, removed
       const statusOrder: Record<string, number> = { added: 0, modified: 1, renamed: 2, removed: 3 };
-      const sortedFiles = files.sort((a, b) => {
-        return (statusOrder[a.status] || 99) - (statusOrder[b.status] || 99);
-      });
+      const getStatusPriority = (status: string): number => statusOrder[status] ?? 99;
+      const sortedFiles = files.sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status));
 
       return sortedFiles.map(file =>
         new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head)

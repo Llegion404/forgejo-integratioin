@@ -104,7 +104,7 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
         return groups;
       } catch (error) {
         this.error = error instanceof Error ? error.message : 'Unknown error';
-        return [];
+        return [new IssueMessageItem(this.error, true)];
       }
     } else if (element instanceof IssueGroupItem) {
       // Show issues in this group

@@ -36,11 +36,3 @@ jobs:
       run: |
         npm run compile
         xvfb-run -a npm run test:integration
-
-    - name: Upload coverage
-      uses: codecov/codecov-action@v4
-      if: matrix.node-version == '20'
-      with:
-        files: ./coverage/lcov.info
-        flags: unittests
-      continue-on-error: true
