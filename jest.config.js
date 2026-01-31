@@ -21,6 +21,7 @@ module.exports = {
     '!src/__tests__/**',      // Exclude test infrastructure
     '!src/models/**',         // Exclude interfaces (no logic)
     '!src/extension.ts',      // Tested by integration tests
+    '!src/webview/**',        // Webview providers require VS Code APIs, tested via integration
     // Note: providers now included with unit test coverage
   ],
   coverageThreshold: {
