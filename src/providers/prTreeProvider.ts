@@ -116,7 +116,27 @@ class PRLoadingItem extends vscode.TreeItem {
   }
 }
 
-type PRTreeElement = PRTreeItem | PRGroupItem | PRMessageItem | PRFileItem | PRLoadingItem;
+/**
+ * Overview item for PR details
+ */
+class PROverviewItem extends vscode.TreeItem {
+  constructor(
+    public readonly pr: PullRequestListItem,
+    public readonly owner: string,
+    public readonly repo: string
+  ) {
+    super('Overview', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('info');
+    this.contextValue = 'prOverview';
+    this.command = {
+      command: 'forgejo.showPrDetails',
+      title: 'Show PR Details',
+      arguments: [pr, owner, repo]
+    };
+  }
+}
+
+type PRTreeElement = PRTreeItem | PRGroupItem | PRMessageItem | PRFileItem | PRLoadingItem | PROverviewItem;
 
 export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<PRTreeElement | undefined | null | void> = new vscode.EventEmitter<PRTreeElement | undefined | null | void>();
@@ -200,25 +220,29 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
    * Fetch files for a PR (lazy loading with caching)
    */
   private async getPRFiles(prItem: PRTreeItem): Promise<PRTreeElement[]> {
+    // Create overview item (always shown first)
+    const overviewItem = new PROverviewItem(prItem.pr, prItem.owner, prItem.repo);
+
     // Return cached files if available
     if (prItem.files && prItem.baseRef && prItem.headRef) {
       const baseRef = prItem.baseRef;
       const headRef = prItem.headRef;
-      return prItem.files.map(file =>
+      const fileItems = prItem.files.map(file =>
         new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef)
       );
+      return [overviewItem, ...fileItems];
     }
 
     // Return error if previous fetch failed
     if (prItem.filesError) {
-      return [new PRMessageItem(prItem.filesError, true)];
+      return [overviewItem, new PRMessageItem(prItem.filesError, true)];
     }
 
     // Fetch files from API
     try {
       const config = await getForgejoConfig();
       if (!config) {
-        return [new PRMessageItem('Configuration not available', true)];
+        return [overviewItem, new PRMessageItem('Configuration not available', true)];
       }
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
@@ -238,7 +262,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       console.log(`[Forgejo] Fetched ${files.length} files for PR #${prItem.pr.number}`);
 
       if (files.length === 0) {
-        return [new PRMessageItem('No files changed', false)];
+        return [overviewItem, new PRMessageItem('No files changed', false)];
       }
 
       // Sort files: added, modified, renamed, removed
@@ -246,14 +270,15 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const getStatusPriority = (status: string): number => statusOrder[status] ?? 99;
       const sortedFiles = files.sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status));
 
-      return sortedFiles.map(file =>
+      const fileItems = sortedFiles.map(file =>
         new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head)
       );
+      return [overviewItem, ...fileItems];
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to fetch files';
       prItem.filesError = errorMsg;
       console.error(`[Forgejo] Error fetching files for PR #${prItem.pr.number}:`, error);
-      return [new PRMessageItem(errorMsg, true)];
+      return [overviewItem, new PRMessageItem(errorMsg, true)];
     }
   }
 

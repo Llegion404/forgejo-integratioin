@@ -30,7 +30,8 @@ describe('PRTreeProvider', () => {
     html_url: 'https://git.example.com/owner/repo/pulls/42',
     created_at: '2026-01-01T00:00:00Z',
     merged: false,
-    draft: false
+    draft: false,
+    comments: 5
   };
 
   beforeEach(() => {
