@@ -54,6 +54,7 @@ export const mockPRWithRefs = {
   id: 1,
   number: 42,
   title: 'Add new feature',
+  body: 'This PR adds a new feature with comprehensive tests.\n\n## Changes:\n- Added feature X\n- Updated documentation',
   state: 'open' as const,
   user: {
     login: 'testuser',
@@ -64,6 +65,7 @@ export const mockPRWithRefs = {
   html_url: 'https://git.example.com/owner/repo/pulls/42',
   head: {
     ref: mockStandardRefs.head,
+    sha: 'abc123def456',
     repo: {
       full_name: 'owner/repo'
     }
@@ -73,8 +75,13 @@ export const mockPRWithRefs = {
   },
   mergeable: true,
   merged: false,
+  merge_commit_sha: null,
   draft: false,
-  labels: []
+  comments: 5,
+  labels: [
+    { name: 'enhancement', color: 'a2eeef' },
+    { name: 'tests-passed', color: '0e8a16' }
+  ]
 };
 
 /**
@@ -102,6 +109,7 @@ export const mockPRWithMissingRefs = {
   id: 2,
   number: 44,
   title: 'PR with missing refs',
+  body: '',
   state: 'open' as const,
   user: {
     login: 'testuser',
@@ -112,6 +120,7 @@ export const mockPRWithMissingRefs = {
   html_url: 'https://git.example.com/owner/repo/pulls/44',
   head: {
     ref: '',
+    sha: '',
     repo: {
       full_name: 'owner/repo'
     }
@@ -121,7 +130,9 @@ export const mockPRWithMissingRefs = {
   },
   mergeable: true,
   merged: false,
+  merge_commit_sha: null,
   draft: false,
+  comments: 0,
   labels: []
 };
 

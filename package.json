@@ -95,6 +95,21 @@
       {
         "command": "forgejo.openPrFileInBrowser",
         "title": "Open File in Browser"
+      },
+      {
+        "command": "forgejo.showPrDetails",
+        "title": "View Overview",
+        "icon": "$(info)"
+      },
+      {
+        "command": "forgejo.mergePr",
+        "title": "Merge PR...",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "forgejo.closePr",
+        "title": "Close PR",
+        "icon": "$(circle-slash)"
       }
     ],
     "menus": {
@@ -122,9 +137,24 @@
       ],
       "view/item/context": [
         {
+          "command": "forgejo.showPrDetails",
+          "when": "viewItem == prOverview",
+          "group": "navigation@1"
+        },
+        {
           "command": "forgejo.openPrInBrowserFromContext",
           "when": "viewItem == pullRequest",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.mergePr",
+          "when": "viewItem == pullRequest",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.closePr",
+          "when": "viewItem == pullRequest",
+          "group": "navigation@3"
         },
         {
           "command": "forgejo.openPrFileInBrowser",

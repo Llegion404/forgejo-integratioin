@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { PRTreeProvider } from './providers/prTreeProvider';
 import { IssueTreeProvider } from './providers/issueTreeProvider';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
+import { PRDetailsContentProvider, PR_DETAILS_SCHEME, createPRDetailsUri } from './providers/prDetailsContentProvider';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
 import { setInstanceUrl, setAuthToken } from './utils/config';
 import { migrateToMultiInstance } from './utils/migration';
@@ -10,6 +11,8 @@ import { startOnboarding } from './commands/onboarding';
 import { manageInstances } from './commands/instanceManager';
 import { showDiagnostics } from './commands/diagnostics';
 import { logger, logInfo } from './utils/logger';
+import { ForgejoClient } from './api/forgejoClient';
+import { getForgejoConfig } from './utils/config';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -64,6 +67,13 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(PR_DIFF_SCHEME, prDiffProvider),
     prDiffProvider
+  );
+
+  // Create virtual document provider for PR details
+  const prDetailsProvider = new PRDetailsContentProvider();
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(PR_DETAILS_SCHEME, prDetailsProvider),
+    prDetailsProvider
   );
 
   // Register instance management commands
@@ -263,6 +273,120 @@ export async function activate(context: vscode.ExtensionContext) {
       (fileItem: unknown) => {
         if (fileItem && typeof fileItem === 'object' && 'file' in fileItem && fileItem.file && typeof fileItem.file === 'object' && 'blob_url' in fileItem.file && typeof fileItem.file.blob_url === 'string') {
           vscode.env.openExternal(vscode.Uri.parse(fileItem.file.blob_url));
+        }
+      }
+    )
+  );
+
+  // Register PR details viewer command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.showPrDetails',
+      async (pr: PullRequestListItem, owner: string, repo: string) => {
+        try {
+          const uri = createPRDetailsUri(owner, repo, pr.number);
+          const doc = await vscode.workspace.openTextDocument(uri);
+          await vscode.window.showTextDocument(doc, { preview: true });
+        } catch (error) {
+          console.error('[Forgejo] Error opening PR details:', error);
+          vscode.window.showErrorMessage(
+            `Failed to open PR details: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    )
+  );
+
+  // Register merge PR command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.mergePr',
+      async (pr: PullRequestListItem, owner: string, repo: string) => {
+        try {
+          // Show merge method picker
+          const mergeOptions = [
+            { label: 'Create merge commit', value: 'merge' },
+            { label: 'Squash and merge', value: 'squash' },
+            { label: 'Rebase and merge', value: 'rebase' },
+            { label: 'Rebase then merge', value: 'rebase-merge' },
+            { label: 'Fast-forward only', value: 'fast-forward-only' }
+          ];
+
+          const selected = await vscode.window.showQuickPick(mergeOptions, {
+            placeHolder: 'Select merge method'
+          });
+
+          if (!selected) {
+            return; // User cancelled
+          }
+
+          // Confirm merge
+          const confirm = await vscode.window.showWarningMessage(
+            `Are you sure you want to merge PR #${pr.number}: "${pr.title}"?`,
+            { modal: true },
+            'Merge'
+          );
+
+          if (confirm !== 'Merge') {
+            return;
+          }
+
+          // Execute merge
+          const config = await getForgejoConfig();
+          if (!config) {
+            vscode.window.showErrorMessage('Forgejo configuration not found');
+            return;
+          }
+
+          const client = new ForgejoClient(config.instanceUrl, config.token);
+          await client.mergePullRequest(owner, repo, pr.number, selected.value as any);
+
+          vscode.window.showInformationMessage(`PR #${pr.number} merged successfully!`);
+          prTreeProvider.refresh();
+        } catch (error) {
+          console.error('[Forgejo] Error merging PR:', error);
+          vscode.window.showErrorMessage(
+            `Failed to merge PR: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    )
+  );
+
+  // Register close PR command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.closePr',
+      async (pr: PullRequestListItem, owner: string, repo: string) => {
+        try {
+          // Confirm close
+          const confirm = await vscode.window.showWarningMessage(
+            `Are you sure you want to close PR #${pr.number}: "${pr.title}"?`,
+            { modal: true },
+            'Close PR'
+          );
+
+          if (confirm !== 'Close PR') {
+            return;
+          }
+
+          // Execute close
+          const config = await getForgejoConfig();
+          if (!config) {
+            vscode.window.showErrorMessage('Forgejo configuration not found');
+            return;
+          }
+
+          const client = new ForgejoClient(config.instanceUrl, config.token);
+          await client.closePullRequest(owner, repo, pr.number);
+
+          vscode.window.showInformationMessage(`PR #${pr.number} closed successfully!`);
+          prTreeProvider.refresh();
+        } catch (error) {
+          console.error('[Forgejo] Error closing PR:', error);
+          vscode.window.showErrorMessage(
+            `Failed to close PR: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
         }
       }
     )

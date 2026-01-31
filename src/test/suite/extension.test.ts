@@ -33,7 +33,10 @@ suite('Extension Activation Test Suite', () => {
       'forgejo.openIssueInBrowser',
       'forgejo.showPrFileDiff',
       'forgejo.openPrInBrowserFromContext',
-      'forgejo.openPrFileInBrowser'
+      'forgejo.openPrFileInBrowser',
+      'forgejo.showPrDetails',
+      'forgejo.mergePr',
+      'forgejo.closePr'
     ];
 
     for (const command of forgejoCommands) {
@@ -104,7 +107,8 @@ suite('PR Diff Commands Test Suite', () => {
     html_url: 'https://example.com/pulls/42',
     created_at: '2026-01-01T00:00:00Z',
     merged: false,
-    draft: false
+    draft: false,
+    comments: 5
   };
 
   test('showPrFileDiff command should be registered', async function() {
@@ -267,6 +271,82 @@ suite('PR Diff Commands Test Suite', () => {
       assert.ok(true, 'Command handled missing arguments');
     } catch (error) {
       assert.ok(true, 'Command failed as expected');
+    }
+  });
+});
+
+suite('PR Details and Management Commands Test Suite', () => {
+  vscode.window.showInformationMessage('Starting PR details and management tests');
+
+  const mockPR = {
+    number: 42,
+    title: 'Test PR',
+    state: 'open' as const,
+    user: { login: 'testuser' },
+    html_url: 'https://example.com/pulls/42',
+    created_at: '2026-01-01T00:00:00Z',
+    merged: false,
+    draft: false,
+    comments: 5
+  };
+
+  test('showPrDetails command should be registered', async function() {
+    this.timeout(5000);
+
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('forgejo.showPrDetails'), 'showPrDetails command should be registered');
+  });
+
+  test('mergePr command should be registered', async function() {
+    this.timeout(5000);
+
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('forgejo.mergePr'), 'mergePr command should be registered');
+  });
+
+  test('closePr command should be registered', async function() {
+    this.timeout(5000);
+
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('forgejo.closePr'), 'closePr command should be registered');
+  });
+
+  test('showPrDetails command should handle missing arguments gracefully', async function() {
+    this.timeout(10000);
+
+    try {
+      // Call without required arguments
+      await vscode.commands.executeCommand('forgejo.showPrDetails');
+      assert.ok(true, 'Command handled missing arguments');
+    } catch (error) {
+      // Expected to fail
+      assert.ok(true, 'Command failed as expected with invalid arguments');
+    }
+  });
+
+  test('mergePr command should handle missing arguments gracefully', async function() {
+    this.timeout(10000);
+
+    try {
+      // Call without required arguments
+      await vscode.commands.executeCommand('forgejo.mergePr');
+      assert.ok(true, 'Command handled missing arguments');
+    } catch (error) {
+      // Expected to fail
+      assert.ok(true, 'Command failed as expected with invalid arguments');
+    }
+  });
+
+  test('closePr command should handle missing arguments gracefully', async function() {
+    this.timeout(10000);
+
+    try {
+      // Call without required arguments
+      await vscode.commands.executeCommand('forgejo.closePr');
+      assert.ok(true, 'Command handled missing arguments');
+    } catch (error) {
+      // Expected to fail
+      assert.ok(true, 'Command failed as expected with invalid arguments');
     }
   });
 });

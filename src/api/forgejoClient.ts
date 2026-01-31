@@ -1,4 +1,4 @@
-import { PullRequest, PullRequestListItem, PullRequestFile, FileContentsResponse } from '../models/pullRequest';
+import { PullRequest, PullRequestListItem, PullRequestFile, FileContentsResponse, CommitStatus } from '../models/pullRequest';
 import { Issue, IssueListItem } from '../models/issue';
 import { logDebug, logInfo, logError } from '../utils/logger';
 
@@ -220,6 +220,127 @@ export class ForgejoClient {
       }
 
       return false;
+    }
+  }
+
+  /**
+   * Get commit statuses for a specific SHA
+   */
+  async getCommitStatuses(owner: string, repo: string, sha: string): Promise<CommitStatus[]> {
+    const endpoint = `/repos/${owner}/${repo}/statuses/${sha}`;
+    return this.request<CommitStatus[]>(endpoint);
+  }
+
+  /**
+   * Merge a pull request
+   */
+  async mergePullRequest(
+    owner: string,
+    repo: string,
+    number: number,
+    method: 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only' = 'merge',
+    deleteBranchAfterMerge: boolean = false
+  ): Promise<{ merged: boolean; message?: string }> {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${number}/merge`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    const body = JSON.stringify({
+      Do: method,
+      delete_branch_after_merge: deleteBranchAfterMerge
+    });
+
+    logDebug('Merging pull request:', { owner, repo, number, method });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Merge failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+
+        if (response.status === 405) {
+          throw new Error('Merge not allowed - PR may not be mergeable');
+        } else if (response.status === 409) {
+          throw new Error('Merge conflict - PR has conflicts that must be resolved');
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      }
+
+      logInfo('Pull request merged successfully:', { owner, repo, number, method });
+      return { merged: true };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to merge pull request: ${String(error)}`);
+    }
+  }
+
+  /**
+   * Close a pull request
+   */
+  async closePullRequest(owner: string, repo: string, number: number): Promise<PullRequest> {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${number}`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    const body = JSON.stringify({
+      state: 'closed'
+    });
+
+    logDebug('Closing pull request:', { owner, repo, number });
+
+    try {
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers,
+        body
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Close PR failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const pr = await response.json() as PullRequest;
+      logInfo('Pull request closed successfully:', { owner, repo, number });
+      return pr;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to close pull request: ${String(error)}`);
     }
   }
 }

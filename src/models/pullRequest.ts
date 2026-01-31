@@ -2,6 +2,7 @@ export interface PullRequest {
   id: number;
   number: number;
   title: string;
+  body: string;
   state: 'open' | 'closed';
   user: {
     login: string;
@@ -12,6 +13,7 @@ export interface PullRequest {
   html_url: string;
   head: {
     ref: string;
+    sha: string;
     repo: {
       full_name: string;
     };
@@ -21,7 +23,9 @@ export interface PullRequest {
   };
   mergeable: boolean;
   merged: boolean;
+  merge_commit_sha: string | null;
   draft: boolean;
+  comments: number;
   labels: Array<{
     name: string;
     color: string;
@@ -39,6 +43,7 @@ export interface PullRequestListItem {
   created_at: string;
   merged: boolean;
   draft: boolean;
+  comments: number;
 }
 
 /**
@@ -68,4 +73,17 @@ export interface FileContentsResponse {
   path: string;
   sha: string;
   size: number;
+}
+
+/**
+ * Commit status check from CI/CD
+ */
+export interface CommitStatus {
+  id: number;
+  status: 'pending' | 'success' | 'error' | 'failure' | 'warning';
+  context: string;
+  description: string;
+  target_url: string;
+  created_at: string;
+  updated_at: string;
 }
