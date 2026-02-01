@@ -343,4 +343,141 @@ export class ForgejoClient {
       throw new Error(`Failed to close pull request: ${String(error)}`);
     }
   }
+
+  /**
+   * Get issue comments
+   */
+  async getIssueComments(owner: string, repo: string, number: number): Promise<any[]> {
+    const endpoint = `/repos/${owner}/${repo}/issues/${number}/comments`;
+    return this.request<any[]>(endpoint);
+  }
+
+  /**
+   * Get pull request reviews
+   */
+  async getPullRequestReviews(owner: string, repo: string, number: number): Promise<any[]> {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${number}/reviews`;
+    return this.request<any[]>(endpoint);
+  }
+
+  /**
+   * Get pull request commits
+   */
+  async getPullRequestCommits(owner: string, repo: string, number: number): Promise<any[]> {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${number}/commits`;
+    return this.request<any[]>(endpoint);
+  }
+
+  /**
+   * Get issue timeline events
+   */
+  async getIssueTimeline(owner: string, repo: string, number: number): Promise<any[]> {
+    const endpoint = `/repos/${owner}/${repo}/issues/${number}/timeline`;
+    return this.request<any[]>(endpoint);
+  }
+
+  /**
+   * Create a comment on an issue or pull request
+   */
+  async createComment(owner: string, repo: string, number: number, body: string): Promise<any> {
+    const endpoint = `/repos/${owner}/${repo}/issues/${number}/comments`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    const bodyStr = JSON.stringify({ body });
+
+    logDebug('Creating comment:', { owner, repo, number });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: bodyStr
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Create comment failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const comment = await response.json();
+      logInfo('Comment created successfully:', { owner, repo, number });
+      return comment;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to create comment: ${String(error)}`);
+    }
+  }
+
+  /**
+   * Create a review on a pull request
+   */
+  async createReview(
+    owner: string,
+    repo: string,
+    number: number,
+    state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
+    body: string
+  ): Promise<any> {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${number}/reviews`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    const bodyStr = JSON.stringify({
+      event: state,
+      body
+    });
+
+    logDebug('Creating review:', { owner, repo, number, state });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: bodyStr
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Create review failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const review = await response.json();
+      logInfo('Review created successfully:', { owner, repo, number, state });
+      return review;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to create review: ${String(error)}`);
+    }
+  }
 }

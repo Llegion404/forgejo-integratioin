@@ -37,6 +37,14 @@
         }
       ]
     },
+    "webviews": {
+      "viewContainers": [
+        {
+          "id": "forgejo.prDetail",
+          "name": "PR Details"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "forgejo.addInstance",
@@ -98,7 +106,7 @@
       },
       {
         "command": "forgejo.showPrDetails",
-        "title": "View Overview",
+        "title": "View PR Details",
         "icon": "$(info)"
       },
       {
@@ -215,13 +223,18 @@
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging in the Forgejo output channel"
+        },
+        "forgejo.showFileStatusNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications when opening files that were added or deleted in a pull request"
         }
       }
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test:unit": "jest",
