@@ -4,7 +4,9 @@ import { IssueTreeProvider } from './providers/issueTreeProvider';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
+import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
+import { IssueListItem } from './models/issue';
 import { setInstanceUrl, setAuthToken } from './utils/config';
 import { migrateToMultiInstance } from './utils/migration';
 import { getAllInstances } from './utils/instanceHelpers';
@@ -404,6 +406,39 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create PR detail webview provider (not registered as WebviewViewProvider since we use WebviewPanel)
   const prDetailWebviewProvider = new PRDetailWebviewProvider(context.extensionUri);
+
+  // Create Issue detail webview provider
+  const issueDetailWebviewProvider = new IssueDetailWebviewProvider(context.extensionUri);
+
+  // Register Issue details viewer command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.showIssueDetails',
+      async (issue: IssueListItem, owner: string, repo: string) => {
+        try {
+          // Show the webview panel
+          await issueDetailWebviewProvider.showIssueDetails(owner, repo, issue.number);
+        } catch (error) {
+          console.error('[Forgejo] Error opening Issue details:', error);
+          vscode.window.showErrorMessage(
+            `Failed to open Issue details: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    )
+  );
+
+  // Register open issue in browser from context menu command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.openIssueInBrowserFromContext',
+      (issueItem: unknown) => {
+        if (issueItem && typeof issueItem === 'object' && 'htmlUrl' in issueItem && typeof issueItem.htmlUrl === 'string') {
+          vscode.env.openExternal(vscode.Uri.parse(issueItem.htmlUrl));
+        }
+      }
+    )
+  );
 
   // Add logger to subscriptions for proper cleanup
   context.subscriptions.push(logger);

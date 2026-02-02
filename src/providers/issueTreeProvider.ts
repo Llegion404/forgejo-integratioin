@@ -6,11 +6,13 @@ import { getForgejoConfig } from '../utils/config';
 export class IssueTreeItem extends vscode.TreeItem {
   constructor(
     public readonly issue: IssueListItem,
-    public readonly htmlUrl: string
+    public readonly htmlUrl: string,
+    public readonly owner: string,
+    public readonly repo: string
   ) {
     super(`#${issue.number}: ${issue.title}`, vscode.TreeItemCollapsibleState.None);
 
-    this.tooltip = `${issue.title}\nby ${issue.user.login}\nState: ${issue.state}\nComments: ${issue.comments}`;
+    this.tooltip = `${issue.title}\nby ${issue.user.login}\nState: ${issue.state}\nComments: ${issue.comments}\n\nClick to view details`;
     this.description = `by ${issue.user.login}`;
     this.contextValue = 'issue';
 
@@ -21,11 +23,11 @@ export class IssueTreeItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon('issues', new vscode.ThemeColor('gitDecoration.addedResourceForeground'));
     }
 
-    // Make clickable - opens in browser
+    // Make clickable - opens issue detail view
     this.command = {
-      command: 'forgejo.openIssueInBrowser',
-      title: 'Open Issue in Browser',
-      arguments: [htmlUrl]
+      command: 'forgejo.showIssueDetails',
+      title: 'Show Issue Details',
+      arguments: [issue, owner, repo]
     };
   }
 }
@@ -60,6 +62,8 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
 
   private issues: IssueListItem[] = [];
   private error: string | null = null;
+  private owner: string = '';
+  private repo: string = '';
 
   constructor() {
     this.refresh();
@@ -108,7 +112,7 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
       }
     } else if (element instanceof IssueGroupItem) {
       // Show issues in this group
-      return element.issues.map(issue => new IssueTreeItem(issue, issue.html_url));
+      return element.issues.map(issue => new IssueTreeItem(issue, issue.html_url, this.owner, this.repo));
     } else if (element instanceof IssueMessageItem) {
       // Message items have no children
       return [];
@@ -138,6 +142,8 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       this.issues = await client.getIssues(config.owner, config.repo, 'all');
+      this.owner = config.owner;
+      this.repo = config.repo;
       this.error = null;
       console.log(`[Forgejo] Fetched ${this.issues.length} issues`);
     } catch (error) {

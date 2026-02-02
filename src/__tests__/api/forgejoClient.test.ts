@@ -7,6 +7,8 @@ import {
 } from '../fixtures/fileContents';
 import { mockAllFileTypes } from '../fixtures/prFiles';
 import { mockPRWithRefs, mockPRWithBugfixRefs, mockPRWithMissingRefs } from '../fixtures/prRefs';
+import { mockAllStatuses, mockEmptyStatuses } from '../fixtures/commitStatuses';
+import { mockComments, mockReviews, mockCommits, mockTimeline } from '../fixtures/prActivities';
 
 describe('ForgejoClient', () => {
   let client: ForgejoClient;
@@ -324,6 +326,496 @@ describe('ForgejoClient', () => {
         'https://git.example.com/api/v1/repos/test-owner/test-repo/pulls/456',
         expect.any(Object)
       );
+    });
+  });
+
+  describe('getCommitStatuses', () => {
+    test('should fetch commit statuses successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockAllStatuses
+      } as unknown as Response);
+
+      const statuses = await client.getCommitStatuses('owner', 'repo', 'abc123');
+
+      expect(statuses).toEqual(mockAllStatuses);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/statuses/abc123',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            'Authorization': 'token test-token'
+          })
+        })
+      );
+    });
+
+    test('should handle empty statuses array', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockEmptyStatuses
+      } as unknown as Response);
+
+      const statuses = await client.getCommitStatuses('owner', 'repo', 'abc123');
+
+      expect(statuses).toEqual([]);
+    });
+
+    test('should throw error for 404 response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found'
+      } as unknown as Response);
+
+      await expect(client.getCommitStatuses('owner', 'repo', 'unknown-sha'))
+        .rejects
+        .toThrow('HTTP 404: Not Found');
+    });
+  });
+
+  describe('getIssueComments', () => {
+    test('should fetch comments successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockComments
+      } as unknown as Response);
+
+      const comments = await client.getIssueComments('owner', 'repo', 42);
+
+      expect(comments).toEqual(mockComments);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/issues/42/comments',
+        expect.any(Object)
+      );
+    });
+
+    test('should handle empty comments array', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => []
+      } as unknown as Response);
+
+      const comments = await client.getIssueComments('owner', 'repo', 42);
+
+      expect(comments).toEqual([]);
+    });
+
+    test('should throw error for 404 response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found'
+      } as unknown as Response);
+
+      await expect(client.getIssueComments('owner', 'repo', 99999))
+        .rejects
+        .toThrow('HTTP 404: Not Found');
+    });
+  });
+
+  describe('getPullRequestReviews', () => {
+    test('should fetch reviews successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockReviews
+      } as unknown as Response);
+
+      const reviews = await client.getPullRequestReviews('owner', 'repo', 42);
+
+      expect(reviews).toEqual(mockReviews);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/pulls/42/reviews',
+        expect.any(Object)
+      );
+    });
+
+    test('should handle empty reviews array', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => []
+      } as unknown as Response);
+
+      const reviews = await client.getPullRequestReviews('owner', 'repo', 42);
+
+      expect(reviews).toEqual([]);
+    });
+  });
+
+  describe('getPullRequestCommits', () => {
+    test('should fetch commits successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockCommits
+      } as unknown as Response);
+
+      const commits = await client.getPullRequestCommits('owner', 'repo', 42);
+
+      expect(commits).toEqual(mockCommits);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/pulls/42/commits',
+        expect.any(Object)
+      );
+    });
+
+    test('should handle empty commits array', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => []
+      } as unknown as Response);
+
+      const commits = await client.getPullRequestCommits('owner', 'repo', 42);
+
+      expect(commits).toEqual([]);
+    });
+  });
+
+  describe('getIssueTimeline', () => {
+    test('should fetch timeline events successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockTimeline
+      } as unknown as Response);
+
+      const timeline = await client.getIssueTimeline('owner', 'repo', 42);
+
+      expect(timeline).toEqual(mockTimeline);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/issues/42/timeline',
+        expect.any(Object)
+      );
+    });
+
+    test('should handle empty timeline array', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => []
+      } as unknown as Response);
+
+      const timeline = await client.getIssueTimeline('owner', 'repo', 42);
+
+      expect(timeline).toEqual([]);
+    });
+  });
+
+  describe('mergePullRequest', () => {
+    test('should merge PR with merge strategy', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({})
+      } as unknown as Response);
+
+      const result = await client.mergePullRequest('owner', 'repo', 42, 'merge');
+
+      expect(result).toEqual({ merged: true });
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/pulls/42/merge',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ Do: 'merge', delete_branch_after_merge: false })
+        })
+      );
+    });
+
+    test('should merge PR with squash strategy', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({})
+      } as unknown as Response);
+
+      const result = await client.mergePullRequest('owner', 'repo', 42, 'squash');
+
+      expect(result).toEqual({ merged: true });
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ Do: 'squash', delete_branch_after_merge: false })
+        })
+      );
+    });
+
+    test('should merge PR with rebase strategy', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({})
+      } as unknown as Response);
+
+      const result = await client.mergePullRequest('owner', 'repo', 42, 'rebase');
+
+      expect(result).toEqual({ merged: true });
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ Do: 'rebase', delete_branch_after_merge: false })
+        })
+      );
+    });
+
+    test('should handle delete branch after merge option', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({})
+      } as unknown as Response);
+
+      await client.mergePullRequest('owner', 'repo', 42, 'merge', true);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ Do: 'merge', delete_branch_after_merge: true })
+        })
+      );
+    });
+
+    test('should handle 405 merge not allowed', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 405,
+        statusText: 'Method Not Allowed',
+        text: async () => 'Not mergeable'
+      } as unknown as Response);
+
+      await expect(client.mergePullRequest('owner', 'repo', 42, 'merge'))
+        .rejects
+        .toThrow('Merge not allowed - PR may not be mergeable');
+    });
+
+    test('should handle 409 merge conflict', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        statusText: 'Conflict',
+        text: async () => 'Merge conflict'
+      } as unknown as Response);
+
+      await expect(client.mergePullRequest('owner', 'repo', 42, 'merge'))
+        .rejects
+        .toThrow('Merge conflict - PR has conflicts that must be resolved');
+    });
+  });
+
+  describe('closePullRequest', () => {
+    test('should close PR successfully', async () => {
+      const closedPR = { ...mockPRWithRefs, state: 'closed' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => closedPR
+      } as unknown as Response);
+
+      const result = await client.closePullRequest('owner', 'repo', 42);
+
+      expect(result.state).toBe('closed');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/pulls/42',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ state: 'closed' })
+        })
+      );
+    });
+
+    test('should handle errors', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: async () => 'Permission denied'
+      } as unknown as Response);
+
+      await expect(client.closePullRequest('owner', 'repo', 42))
+        .rejects
+        .toThrow('HTTP 403: Forbidden');
+    });
+  });
+
+  describe('createComment', () => {
+    test('should create comment successfully', async () => {
+      const newComment = { id: 100, body: 'Test comment' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => newComment
+      } as unknown as Response);
+
+      const result = await client.createComment('owner', 'repo', 42, 'Test comment');
+
+      expect(result).toEqual(newComment);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/issues/42/comments',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ body: 'Test comment' })
+        })
+      );
+    });
+
+    test('should handle authentication errors', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: async () => 'Invalid token'
+      } as unknown as Response);
+
+      await expect(client.createComment('owner', 'repo', 42, 'Test'))
+        .rejects
+        .toThrow('HTTP 401: Unauthorized');
+    });
+
+    test('should handle validation errors', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        statusText: 'Unprocessable Entity',
+        text: async () => 'Body cannot be empty'
+      } as unknown as Response);
+
+      await expect(client.createComment('owner', 'repo', 42, ''))
+        .rejects
+        .toThrow('HTTP 422: Unprocessable Entity');
+    });
+  });
+
+  describe('createReview', () => {
+    test('should create APPROVE review', async () => {
+      const newReview = { id: 200, state: 'APPROVED', body: 'LGTM!' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => newReview
+      } as unknown as Response);
+
+      const result = await client.createReview('owner', 'repo', 42, 'APPROVE', 'LGTM!');
+
+      expect(result).toEqual(newReview);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/pulls/42/reviews',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ event: 'APPROVE', body: 'LGTM!' })
+        })
+      );
+    });
+
+    test('should create REQUEST_CHANGES review', async () => {
+      const newReview = { id: 201, state: 'CHANGES_REQUESTED', body: 'Please fix' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => newReview
+      } as unknown as Response);
+
+      const result = await client.createReview('owner', 'repo', 42, 'REQUEST_CHANGES', 'Please fix');
+
+      expect(result).toEqual(newReview);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ event: 'REQUEST_CHANGES', body: 'Please fix' })
+        })
+      );
+    });
+
+    test('should create COMMENT review', async () => {
+      const newReview = { id: 202, state: 'COMMENTED', body: 'Observation' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => newReview
+      } as unknown as Response);
+
+      const result = await client.createReview('owner', 'repo', 42, 'COMMENT', 'Observation');
+
+      expect(result).toEqual(newReview);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ event: 'COMMENT', body: 'Observation' })
+        })
+      );
+    });
+
+    test('should handle authentication errors', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: async () => 'Invalid token'
+      } as unknown as Response);
+
+      await expect(client.createReview('owner', 'repo', 42, 'APPROVE', 'LGTM'))
+        .rejects
+        .toThrow('HTTP 401: Unauthorized');
+    });
+  });
+
+  describe('updateIssueState', () => {
+    test('should close issue successfully', async () => {
+      const closedIssue = { id: 1, number: 42, state: 'closed', title: 'Test Issue' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => closedIssue
+      } as unknown as Response);
+
+      const result = await client.updateIssueState('owner', 'repo', 42, 'closed');
+
+      expect(result.state).toBe('closed');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/issues/42',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ state: 'closed' })
+        })
+      );
+    });
+
+    test('should reopen issue successfully', async () => {
+      const openIssue = { id: 1, number: 42, state: 'open', title: 'Test Issue' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => openIssue
+      } as unknown as Response);
+
+      const result = await client.updateIssueState('owner', 'repo', 42, 'open');
+
+      expect(result.state).toBe('open');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/issues/42',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ state: 'open' })
+        })
+      );
+    });
+
+    test('should handle errors', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: async () => 'Permission denied'
+      } as unknown as Response);
+
+      await expect(client.updateIssueState('owner', 'repo', 42, 'closed'))
+        .rejects
+        .toThrow('HTTP 403: Forbidden');
     });
   });
 });

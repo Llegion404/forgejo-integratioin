@@ -480,4 +480,52 @@ export class ForgejoClient {
       throw new Error(`Failed to create review: ${String(error)}`);
     }
   }
+
+  /**
+   * Update issue state (open/close)
+   */
+  async updateIssueState(owner: string, repo: string, number: number, state: 'open' | 'closed'): Promise<Issue> {
+    const endpoint = `/repos/${owner}/${repo}/issues/${number}`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    const body = JSON.stringify({ state });
+
+    logDebug('Updating issue state:', { owner, repo, number, state });
+
+    try {
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers,
+        body
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Update issue state failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const issue = await response.json() as Issue;
+      logInfo('Issue state updated successfully:', { owner, repo, number, state });
+      return issue;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to update issue state: ${String(error)}`);
+    }
+  }
 }
