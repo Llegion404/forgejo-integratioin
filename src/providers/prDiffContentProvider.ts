@@ -38,14 +38,15 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
     }
 
     // Parse URI: forgejo-pr://owner/repo/ref/filepath
+    // Note: ref is URL-encoded to handle branch names with slashes (e.g., feature/branch -> feature%2Fbranch)
     const parts = uri.path.split('/').filter(p => p);
-    if (parts.length < 3) {
+    if (parts.length < 4) {
       throw new Error('Invalid PR diff URI format');
     }
 
     const owner = parts[0];
     const repo = parts[1];
-    const ref = parts[2];
+    const ref = decodeURIComponent(parts[2]);
     const filepath = parts.slice(3).join('/');
 
     console.log('[Forgejo] Fetching file:', { owner, repo, ref, filepath });
@@ -95,7 +96,9 @@ export function createPRFileUri(
   ref: string,
   filepath: string
 ): vscode.Uri {
+  // Encode the ref to handle branch names with slashes (e.g., feature/branch -> feature%2Fbranch)
+  const encodedRef = encodeURIComponent(ref);
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  const path = `/${owner}/${repo}/${ref}/${encodedPath}`;
+  const path = `/${owner}/${repo}/${encodedRef}/${encodedPath}`;
   return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
 }
