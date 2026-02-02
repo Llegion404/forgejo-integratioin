@@ -305,8 +305,58 @@ describe('PRDiffContentProvider', () => {
     test('should handle nested paths correctly', () => {
       const uri = createPRFileUri('owner', 'repo', 'feature/branch', 'src/deep/nested/path/file.ts');
 
-      expect(uri.path).toBe('/owner/repo/feature/branch/src/deep/nested/path/file.ts');
-      expect(uri.toString()).toBe('forgejo-pr:/owner/repo/feature/branch/src/deep/nested/path/file.ts');
+      // Branch names with slashes are URL-encoded (feature/branch -> feature%2Fbranch)
+      expect(uri.path).toBe('/owner/repo/feature%2Fbranch/src/deep/nested/path/file.ts');
+      expect(uri.toString()).toBe('forgejo-pr:/owner/repo/feature%2Fbranch/src/deep/nested/path/file.ts');
+    });
+  });
+
+  describe('Branch names with slashes (Issue #17)', () => {
+    test('should correctly parse URI when branch name contains slashes', async () => {
+      // This reproduces the bug from https://git.araj.me/maxking/forgejo-vscode/issues/17
+      // Branch: feature/issue-detail-view
+      // File: src/__tests__/fixtures/commitStatuses.ts
+      const uri = createPRFileUri('maxking', 'forgejo-vscode', 'feature/issue-detail-view', 'src/__tests__/fixtures/commitStatuses.ts');
+      mockGetForgejoConfig.mockResolvedValue({
+        instanceUrl: 'https://git.example.com',
+        owner: 'maxking',
+        repo: 'forgejo-vscode',
+        token: 'test-token'
+      });
+      mockClient.getFileContents.mockResolvedValue(mockPlainTextContent);
+
+      await provider.provideTextDocumentContent(uri);
+
+      // The bug causes ref='feature' and filepath='issue-detail-view/src/__tests__/fixtures/commitStatuses.ts'
+      // Correct behavior should be ref='feature/issue-detail-view' and filepath='src/__tests__/fixtures/commitStatuses.ts'
+      expect(mockClient.getFileContents).toHaveBeenCalledWith(
+        'maxking',
+        'forgejo-vscode',
+        'src/__tests__/fixtures/commitStatuses.ts',
+        'feature/issue-detail-view'
+      );
+    });
+
+    test('should correctly parse URI with deeply nested branch name', async () => {
+      // Branch: feature/2024/january/new-feature
+      // File: src/utils/config.ts
+      const uri = createPRFileUri('owner', 'repo', 'feature/2024/january/new-feature', 'src/utils/config.ts');
+      mockGetForgejoConfig.mockResolvedValue({
+        instanceUrl: 'https://git.example.com',
+        owner: 'owner',
+        repo: 'repo',
+        token: 'test-token'
+      });
+      mockClient.getFileContents.mockResolvedValue(mockPlainTextContent);
+
+      await provider.provideTextDocumentContent(uri);
+
+      expect(mockClient.getFileContents).toHaveBeenCalledWith(
+        'owner',
+        'repo',
+        'src/utils/config.ts',
+        'feature/2024/january/new-feature'
+      );
     });
   });
 });
