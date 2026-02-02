@@ -7,3 +7,6 @@ node_modules
 coverage
 .nyc_output
 .worktrees/
+.worktrees
+.claude/settings.local.json
+research/vscode-extension-debugging.md

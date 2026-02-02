@@ -1,296 +1,210 @@
 # Forgejo VS Code Extension
 
-Browse Forgejo Pull Requests and Issues directly within VS Code.
+> Browse Forgejo Pull Requests and Issues directly within VS Code.
+
+<!-- TODO: Add screenshot here -->
+<!-- ![Screenshot](docs/images/screenshot.png) -->
+
+## Quick Start
+
+1. **Install** the extension from the [VS Code Marketplace](#installation)
+2. **Open** a folder containing a Forgejo/Codeberg git repository
+3. **Click** the Forgejo icon in the Activity Bar (sidebar)
+4. **Done!** Your PRs and Issues appear automatically
+
+For private repositories, [add a Personal Access Token](#setting-up-authentication).
 
 ## Features
 
-- View pull requests from your Forgejo repository
-- View issues from your Forgejo repository
-- Auto-detect Forgejo instance from git remote
-- Support for multiple Forgejo instances (Codeberg, self-hosted, etc.)
-- Group PRs by state (Open, Draft, Merged, Closed)
-- Group Issues by state (Open, Closed)
-- Click to open PRs/Issues in browser
-- Refresh data with a single click
+- **Pull Requests**: View, browse files, see diffs, merge, and close PRs
+- **Issues**: View issues with full details and comments
+- **Multi-Instance Support**: Connect to multiple Forgejo servers simultaneously
+- **Auto-Detection**: Automatically detects Forgejo instance from your git remote
+- **PR File Diffs**: View file changes directly in VS Code's diff editor
+- **Grouping**: PRs grouped by state (Open, Draft, Merged, Closed)
+- **Browser Integration**: Click to open PRs/Issues in your browser
 
-## Requirements
+### Supported Platforms
 
-- VS Code 1.85.0 or higher
-- A Forgejo repository (local or remote)
-- Forgejo personal access token (optional, for private repositories)
-
-
-
-## Installation
-
-### Option 1: Install from VS Code Marketplace (Coming Soon)
-
-Once published, you'll be able to install directly from the VS Code Marketplace:
-
-1. Open VS Code
-2. Go to the Extensions view (Ctrl+Shift+X / Cmd+Shift+X)
-3. Search for "Forgejo Integration"
-4. Click Install
-
-### Option 2: Install from VSIX File
-
-If you have a `.vsix` package file:
-
-1. Download the `.vsix` file
-2. Open VS Code
-3. Go to the Extensions view (Ctrl+Shift+X / Cmd+Shift+X)
-4. Click the `...` menu at the top of the Extensions view
-5. Select "Install from VSIX..."
-6. Choose the downloaded `.vsix` file
-
-### Option 3: Build and Install from Source
-
-For development or testing the latest version:
-
-```bash
-# Clone the repository
-git clone https://github.com/forgejo/forgejo-vscode.git
-cd forgejo-vscode
-
-# Install dependencies
-npm install
-
-# Build the extension
-npm run compile
-
-# Install vsce globally
-npm install -g @vscode/vsce
-
-# Package the extension
-vsce package
-
-# Install the extension in VS Code
-code --install-extension forgejo-vscode-0.1.0.vsix
-```
-
-Alternatively, to run the extension in development mode:
-
-```bash
-# Press F5 in VS Code to launch the Extension Development Host
-```
-
-## Configuration
-
-### Auto-detect from Git Remote (Recommended)
-
-If you have a git repository with a Forgejo remote, the extension will automatically detect:
-- The Forgejo instance URL
-- The repository owner
-- The repository name
-
-### Manual Configuration
-
-Open VS Code Settings and configure:
-
-- `forgejo.instanceUrl`: Your Forgejo instance URL (e.g., `https://codeberg.org`)
-- `forgejo.token`: Your personal access token for authentication
-- `forgejo.autoDetectFromRemote`: Enable/disable auto-detection from git remote (default: `true`)
-
-### Getting a Personal Access Token
-
-1. Go to your Forgejo instance
-2. Navigate to Settings → Applications
-3. Create a new access token with `repo` scope
-4. Copy the token and set it in VS Code settings
-
-## Usage
-
-### View Pull Requests and Issues
-
-1. Open a workspace with a Forgejo git repository
-2. Click the Forgejo icon in the Activity Bar
-3. View Pull Requests and Issues in the sidebar
-
-### Refresh Data
-
-Click the refresh icon in the view title bar or use:
-- `Forgejo: Refresh Pull Requests`
-- `Forgejo: Refresh Issues`
-
-### Configure Settings
-
-Use the Command Palette (Ctrl+Shift+P / Cmd+Shift+P):
-- `Forgejo: Configure Instance URL`
-- `Forgejo: Set Authentication Token`
-
-### Open in Browser
-
-Click on any PR or Issue to open it in your default browser.
-
-## Supported Forgejo Instances
-
-- Codeberg.org
+- [Codeberg](https://codeberg.org)
 - Self-hosted Forgejo instances
 - Gitea instances (compatible API)
 
-## Remote URL Formats
+## Installation
 
-The extension supports both HTTPS and SSH remote formats:
+### From VS Code Marketplace
 
-- HTTPS: `https://codeberg.org/owner/repo.git`
-- SSH: `git@codeberg.org:owner/repo.git`
+1. Open VS Code
+2. Press `Ctrl+Shift+X` (Windows/Linux) or `Cmd+Shift+X` (Mac)
+3. Search for "Forgejo Integration"
+4. Click **Install**
+
+### From Open VSX (for VSCodium)
+
+1. Open VSCodium
+2. Go to Extensions
+3. Search for "Forgejo Integration"
+4. Click **Install**
+
+### From VSIX File
+
+Download the `.vsix` file from the [Releases](https://github.com/maxking/forgejo-vscode/releases) page, then:
+
+```bash
+code --install-extension forgejo-vscode-*.vsix
+```
+
+Or in VS Code: Extensions view → `...` menu → "Install from VSIX..."
+
+## Setting Up Authentication
+
+Authentication is **optional for public repositories** but required for private repos.
+
+### Step 1: Create a Personal Access Token (PAT)
+
+#### On Codeberg
+
+1. Go to [codeberg.org/user/settings/applications](https://codeberg.org/user/settings/applications)
+2. Under "Manage Access Tokens", click **Generate New Token**
+3. Enter a name (e.g., "VS Code Extension")
+4. Select permissions:
+   - `read:repository` - View PRs and Issues (minimum required)
+   - `write:repository` - Merge PRs, close Issues (optional)
+5. Click **Generate Token**
+6. **Copy the token immediately** - you won't see it again!
+
+#### On Self-Hosted Forgejo
+
+1. Go to `https://your-forgejo-instance.com/user/settings/applications`
+2. Follow the same steps as Codeberg above
+
+### Step 2: Add the Token to VS Code
+
+**Option A: Using Command Palette (Recommended)**
+
+1. Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
+2. Type **"Forgejo: Add Instance"**
+3. Enter your instance URL (e.g., `https://codeberg.org`)
+4. Enter a friendly name (e.g., "Codeberg")
+5. Paste your token when prompted
+6. Click **Test Connection** to verify
+
+**Option B: Using Settings UI**
+
+1. Open Settings: `Ctrl+,` (Windows/Linux) or `Cmd+,` (Mac)
+2. Search for "forgejo"
+3. Click **Edit in settings.json** under "Forgejo: Instances"
+4. Add your instance configuration
+
+### Multiple Instances
+
+You can connect to multiple Forgejo servers:
+
+1. Run **"Forgejo: Manage Instances"** from Command Palette
+2. Add additional instances with their own tokens
+3. The extension will match repositories to the correct instance automatically
+
+## Usage
+
+### Viewing Pull Requests
+
+1. Click the **Forgejo icon** in the Activity Bar
+2. Expand the **Pull Requests** section
+3. Click a PR to see its files
+4. Click a file to view the diff
+
+### PR Actions
+
+Right-click on a PR for options:
+- **View PR Details** - See full description and comments
+- **Open PR in Browser** - Open on Forgejo website
+- **Merge PR** - Merge with options (merge commit, squash, rebase)
+- **Close PR** - Close without merging
+
+### Viewing Issues
+
+1. Expand the **Issues** section in the Forgejo view
+2. Click an issue to see details and comments
+3. Right-click to open in browser
+
+### Commands
+
+Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
+
+| Command | Description |
+|---------|-------------|
+| Forgejo: Add Instance | Add a new Forgejo server |
+| Forgejo: Manage Instances | View and edit configured servers |
+| Forgejo: Refresh Pull Requests | Reload PR list |
+| Forgejo: Refresh Issues | Reload Issue list |
+| Forgejo: Show Diagnostics | Debug connection issues |
+| Forgejo: Show Output Channel | View extension logs |
+
+## Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `forgejo.autoDetectFromRemote` | `true` | Auto-detect instance from git remote |
+| `forgejo.debug` | `false` | Enable debug logging |
+| `forgejo.showFileStatusNotifications` | `true` | Show notifications for added/deleted files |
 
 ## Troubleshooting
 
-### No PRs or Issues showing up
+### "No Forgejo configuration found"
 
-1. Make sure you have a git repository with a Forgejo remote
-2. Check that `forgejo.instanceUrl` is configured correctly
-3. For private repositories, ensure you have set a valid access token
-4. Try refreshing the view manually
+- Make sure you're in a workspace with a git repository
+- Check that you have a git remote configured (`git remote -v`)
+- Try running **"Forgejo: Add Instance"** to manually configure
+
+### PRs or Issues not loading
+
+1. Run **"Forgejo: Show Diagnostics"** to check connection status
+2. Verify your token is valid and has correct permissions
+3. Check the Output channel: **"Forgejo: Show Output Channel"**
 
 ### Authentication errors
 
-1. Verify your access token is valid
-2. Check that the token has the correct permissions (repo scope)
-3. Try regenerating the token
+1. Regenerate your token on the Forgejo website
+2. Run **"Forgejo: Manage Instances"** to update the token
+3. Make sure the token has `read:repository` scope
 
 ### Git remote not detected
 
-1. Ensure you have a remote named `origin` configured
-2. Check the remote URL format is supported
-3. Manually configure `forgejo.instanceUrl` if needed
+The extension looks for the `origin` remote. Supported URL formats:
+- HTTPS: `https://codeberg.org/owner/repo.git`
+- SSH: `git@codeberg.org:owner/repo.git`
+- SSH protocol: `ssh://git@codeberg.org/owner/repo.git`
 
-## Development
+## Known Limitations
 
-### Project Structure
-
-```
-forgejo-vscode/
-├── src/
-│   ├── extension.ts              # Main entry point
-│   ├── api/
-│   │   └── forgejoClient.ts      # Forgejo API client
-│   ├── providers/
-│   │   ├── prTreeProvider.ts     # Pull Requests tree view
-│   │   └── issueTreeProvider.ts  # Issues tree view
-│   ├── models/
-│   │   ├── pullRequest.ts        # PR data model
-│   │   └── issue.ts              # Issue data model
-│   └── utils/
-│       ├── gitUtils.ts           # Git repository detection
-│       └── config.ts             # Configuration management
-└── package.json                  # Extension manifest
-```
-
-### Building
-
-```bash
-npm install
-npm run compile
-```
-
-### Packaging & Installing
-
-To build a `.vsix` file for installation in VS Code:
-
-```bash
-# Install the packaging tool (globally)
-npm install -g @vscode/vsce
-
-# Build the .vsix file
-vsce package
-
-# This creates forgejo-vscode-0.1.0.vsix (version from package.json)
-```
-
-To install the `.vsix` file in VS Code:
-
-**Option 1: Command Line**
-```bash
-code --install-extension forgejo-vscode-0.1.0.vsix
-```
-
-**Option 2: VS Code UI**
-1. Open VS Code
-2. Go to Extensions view (Ctrl+Shift+X / Cmd+Shift+X)
-3. Click the "..." menu at the top of the Extensions view
-4. Select "Install from VSIX..."
-5. Choose the `forgejo-vscode-0.1.0.vsix` file
-
-**Option 3: Command Palette**
-1. Open Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
-2. Type "Extensions: Install from VSIX..."
-3. Select the `.vsix` file
-
-After installation, reload VS Code to activate the extension.
-
-### Running for Development
-
-Press F5 in VS Code to launch the Extension Development Host.
-
-### Testing
-
-The project uses a dual-track testing strategy:
-- **Jest** for fast unit tests of pure logic (git parsing, API filtering, configuration)
-- **Mocha + @vscode/test-cli** for integration tests requiring VSCode API
-
-#### Running Tests
-
-```bash
-# Run all tests
-npm test
-
-# Run unit tests only (fast)
-npm run test:unit
-
-# Run unit tests in watch mode
-npm run test:unit:watch
-
-# Run integration tests
-npm run test:integration
-
-# Check coverage
-npm run test:unit:coverage
-```
-
-#### Test Structure
-
-- **Unit tests** (`src/__tests__/`): Test pure logic without VSCode instance (Jest)
-- **Integration tests** (`src/test/`): Test VSCode API integration (Mocha + @vscode/test-cli)
-
-#### Coverage
-
-The project maintains the following coverage targets:
-- Git utilities: 95%+
-- API client: 85%+
-- Configuration: 80%+
-- Overall: 70%+
-
-View the coverage report by running `npm run test:unit:coverage` and opening `coverage/lcov-report/index.html`.
-
-## License
-
-MIT
+- **50 item limit**: Fetches max 50 PRs/Issues (no pagination yet)
+- **Single remote**: Only detects the `origin` remote
+- **Read-mostly**: Can view, merge, and close PRs but cannot create or comment
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-### Before Submitting a PR
-
-All pull requests must:
-- Pass linting: `npm run lint`
-- Pass all tests: `npm test`
-- Maintain or improve code coverage (70%+ overall)
-- Include tests for new features or bug fixes
-
-### Development Workflow
+### Quick Development Setup
 
 ```bash
-# During development (TDD workflow)
-npm run test:unit:watch      # Watch mode, instant feedback
-
-# Before committing
-npm run lint                 # Check code style
-npm run test:unit            # Run unit tests
-npm run compile              # Ensure TypeScript compiles
-
-# Before pushing
-npm test                     # Run full test suite
+git clone https://github.com/maxking/forgejo-vscode.git
+cd forgejo-vscode
+npm install
+npm run compile
+# Press F5 in VS Code to launch Extension Development Host
 ```
+
+### Running Tests
+
+```bash
+npm test              # Run all tests
+npm run test:unit     # Unit tests only (fast)
+npm run lint          # Check code style
+```
+
+## Acknowledgments
+
+- [Forgejo](https://forgejo.org) - The self-hosted Git service this extension supports
+- [Codeberg](https://codeberg.org) - For hosting Forgejo and being a great community
+- [VS Code Extension API](https://code.visualstudio.com/api) - For making this possible
