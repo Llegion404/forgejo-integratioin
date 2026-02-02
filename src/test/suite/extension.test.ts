@@ -297,13 +297,6 @@ suite('PR Details and Management Commands Test Suite', () => {
     assert.ok(commands.includes('forgejo.showPrDetails'), 'showPrDetails command should be registered');
   });
 
-  test('mergePr command should be registered', async function() {
-    this.timeout(5000);
-
-    const commands = await vscode.commands.getCommands(true);
-    assert.ok(commands.includes('forgejo.mergePr'), 'mergePr command should be registered');
-  });
-
   test('closePr command should be registered', async function() {
     this.timeout(5000);
 
@@ -324,17 +317,14 @@ suite('PR Details and Management Commands Test Suite', () => {
     }
   });
 
-  test('mergePr command should handle missing arguments gracefully', async function() {
-    this.timeout(10000);
+  test('mergePr command should be registered', async function() {
+    this.timeout(5000);
 
-    try {
-      // Call without required arguments
-      await vscode.commands.executeCommand('forgejo.mergePr');
-      assert.ok(true, 'Command handled missing arguments');
-    } catch (error) {
-      // Expected to fail
-      assert.ok(true, 'Command failed as expected with invalid arguments');
-    }
+    // Note: We can't test command execution with missing args because
+    // it shows a QuickPick that waits for user input.
+    // Instead we just verify the command is registered.
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(commands.includes('forgejo.mergePr'), 'mergePr command should be registered');
   });
 
   test('closePr command should handle missing arguments gracefully', async function() {

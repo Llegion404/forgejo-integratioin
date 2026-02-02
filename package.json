@@ -257,7 +257,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/",
+    "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test:unit": "jest",
