@@ -31,6 +31,7 @@ interface PanelState {
   runId: number;
   isReady: boolean;
   pendingData?: ActionDetailViewData | null;
+  pendingError?: string | null;
 }
 
 export class ActionDetailWebviewProvider {
@@ -68,7 +69,8 @@ export class ActionDetailWebviewProvider {
       repo,
       runId,
       isReady: false,
-      pendingData: null
+      pendingData: null,
+      pendingError: null
     };
     this._panels.set(panelKey, state);
 
@@ -112,6 +114,7 @@ export class ActionDetailWebviewProvider {
       logInfo('Action details fetched:', { name: run.name, jobCount: jobsResponse.jobs.length });
 
       state.pendingData = { run, jobs: jobsResponse.jobs, owner, repo };
+      state.pendingError = null; // Clear any previous error
       logInfo('pendingData set, isReady:', state.isReady);
 
       if (state.isReady) {
@@ -122,11 +125,15 @@ export class ActionDetailWebviewProvider {
       }
     } catch (error) {
       logError('Failed to fetch action data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load action details';
       if (state.isReady) {
         panel.webview.postMessage({
           type: 'error',
-          message: error instanceof Error ? error.message : 'Failed to load action details'
+          message: errorMessage
         });
+      } else {
+        // Store error to show when webview becomes ready
+        state.pendingError = errorMessage;
       }
     }
   }
@@ -160,9 +167,13 @@ export class ActionDetailWebviewProvider {
 
     switch (message.type) {
       case 'ready':
-        logInfo('Webview ready message received, pendingData exists:', !!state.pendingData);
+        logInfo('Webview ready message received, pendingData exists:', !!state.pendingData, 'pendingError:', !!state.pendingError);
         state.isReady = true;
-        if (state.pendingData) {
+        if (state.pendingError) {
+          logInfo('Showing pending error to webview...');
+          panel.webview.postMessage({ type: 'error', message: state.pendingError });
+          state.pendingError = null;
+        } else if (state.pendingData) {
           logInfo('Sending pending data to webview...');
           await this._sendDataToPanel(panelKey);
         } else {
