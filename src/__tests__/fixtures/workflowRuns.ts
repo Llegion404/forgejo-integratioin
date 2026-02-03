@@ -12,7 +12,7 @@ export const mockWorkflowRunSuccess: WorkflowRunListItem = {
   event: 'push',
   created_at: '2024-01-15T10:00:00Z',
   updated_at: '2024-01-15T10:05:00Z',
-  html_url: 'https://git.example.com/owner/repo/actions/runs/42',
+  url: 'https://git.example.com/owner/repo/actions/runs/42',
   display_title: 'Add new feature'
 };
 
@@ -28,7 +28,7 @@ export const mockWorkflowRunFailed: WorkflowRunListItem = {
   event: 'pull_request',
   created_at: '2024-01-15T11:00:00Z',
   updated_at: '2024-01-15T11:03:00Z',
-  html_url: 'https://git.example.com/owner/repo/actions/runs/43',
+  url: 'https://git.example.com/owner/repo/actions/runs/43',
   display_title: 'Fix bug'
 };
 
@@ -44,7 +44,7 @@ export const mockWorkflowRunInProgress: WorkflowRunListItem = {
   event: 'push',
   created_at: '2024-01-15T12:00:00Z',
   updated_at: '2024-01-15T12:00:30Z',
-  html_url: 'https://git.example.com/owner/repo/actions/runs/44',
+  url: 'https://git.example.com/owner/repo/actions/runs/44',
   display_title: 'Work in progress'
 };
 
@@ -60,7 +60,7 @@ export const mockWorkflowRunCancelled: WorkflowRunListItem = {
   event: 'workflow_dispatch',
   created_at: '2024-01-15T13:00:00Z',
   updated_at: '2024-01-15T13:01:00Z',
-  html_url: 'https://git.example.com/owner/repo/actions/runs/45',
+  url: 'https://git.example.com/owner/repo/actions/runs/45',
   display_title: 'Manual run'
 };
 

@@ -425,8 +425,19 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'forgejo.openActionInBrowser',
       (actionItem: ActionTreeItem) => {
-        if (actionItem && actionItem.run && actionItem.run.html_url) {
-          vscode.env.openExternal(vscode.Uri.parse(actionItem.run.html_url));
+        if (actionItem && actionItem.run && actionItem.run.url) {
+          vscode.env.openExternal(vscode.Uri.parse(actionItem.run.url));
+        }
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.openActionInBrowserDirect',
+      (url: string) => {
+        if (url) {
+          vscode.env.openExternal(vscode.Uri.parse(url));
         }
       }
     )
