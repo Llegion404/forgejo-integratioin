@@ -38,3 +38,16 @@ node_modules/**
 *.log
 *.vsix
 .DS_Store
+
+# AI/Agent files
+.beads/**
+.claude/**
+.worktrees/**
+research/**
+__mocks__/**
+AGENTS.md
+BUGS.md
+
+# Config files
+.vscode-test.mjs
+tsconfig.test.json
