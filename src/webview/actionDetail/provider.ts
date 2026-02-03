@@ -229,7 +229,13 @@ export class ActionDetailWebviewProvider {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
-      const url = `${config.instanceUrl}/${owner}/${repo}/actions/runs/${runId}`;
+
+      // Get run_number from stored run data (web UI uses run_number, not internal id)
+      const panelKey = `${owner}/${repo}/${runId}`;
+      const state = this._panels.get(panelKey);
+      const runNumber = state?.run?.run_number ?? runId;
+
+      const url = `${config.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}`;
       vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to open: ${error instanceof Error ? error.message : 'Unknown error'}`);
