@@ -10,3 +10,4 @@ coverage
 .worktrees
 .claude/settings.local.json
 research/vscode-extension-debugging.md
+.claude/settings.local.json
