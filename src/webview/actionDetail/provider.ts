@@ -209,13 +209,36 @@ export class ActionDetailWebviewProvider {
     }
   }
 
-  private async _viewLogs(owner: string, repo: string, runNumber: number, jobIndex: number): Promise<void> {
+  private async _viewLogs(owner: string, repo: string, runId: number, jobIndex: number): Promise<void> {
+    // Get the run data to access run_number (sequential index, not internal id)
+    const panelKey = `${owner}/${repo}/${runId}`;
+    const state = this._panels.get(panelKey);
+    const run = state?.pendingData?.run;
+
+    if (!run) {
+      vscode.window.showErrorMessage('Run data not available');
+      return;
+    }
+
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
-      // Open logs in browser - Forgejo's log viewing is complex and best done in browser
-      const url = `${config.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}/jobs/${jobIndex}/logs`;
-      vscode.env.openExternal(vscode.Uri.parse(url));
+
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Fetching logs for ${run.name}...`,
+        cancellable: false
+      }, async () => {
+        const client = new ForgejoClient(config.instanceUrl, config.token);
+        const logs = await client.getWorkflowLogs(owner, repo, run.run_number, jobIndex);
+
+        // Create untitled document with logs
+        const doc = await vscode.workspace.openTextDocument({
+          content: logs,
+          language: 'log'
+        });
+        await vscode.window.showTextDocument(doc, { preview: true });
+      });
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to view logs: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
