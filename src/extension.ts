@@ -7,6 +7,7 @@ import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './provid
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
 import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
+import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
 import { IssueListItem } from './models/issue';
 import { setInstanceUrl, setAuthToken } from './utils/config';
@@ -483,6 +484,24 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Register Action details viewer command
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.showActionDetails',
+      async (run: WorkflowRunListItem, owner: string, repo: string) => {
+        try {
+          // Show the webview panel
+          await actionDetailWebviewProvider.showActionDetails(owner, repo, run.id);
+        } catch (error) {
+          console.error('[Forgejo] Error opening Action details:', error);
+          vscode.window.showErrorMessage(
+            `Failed to open Action details: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    )
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'forgejo.viewActionLogs',
@@ -536,6 +555,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create Issue detail webview provider
   const issueDetailWebviewProvider = new IssueDetailWebviewProvider(context.extensionUri);
+
+  // Create Action detail webview provider
+  const actionDetailWebviewProvider = new ActionDetailWebviewProvider(context.extensionUri);
 
   // Register Issue details viewer command
   context.subscriptions.push(

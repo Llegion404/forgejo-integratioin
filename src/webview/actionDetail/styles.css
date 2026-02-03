@@ -1,0 +1,515 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background-color: var(--vscode-editor-background);
+  line-height: 1.6;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Loading State */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: 16px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--vscode-editor-background);
+  border-top-color: var(--vscode-button-background);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Error State */
+.error {
+  padding: 32px;
+  text-align: center;
+  background-color: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  border-radius: 4px;
+  margin: 16px;
+}
+
+.error h3 {
+  color: var(--vscode-errorForeground);
+  margin-bottom: 8px;
+}
+
+#error-message {
+  color: var(--vscode-errorForeground);
+  margin-bottom: 16px;
+}
+
+#retry-btn {
+  margin-top: 8px;
+}
+
+/* Content Container */
+#content {
+  padding: 16px;
+  max-width: 100%;
+  overflow-y: auto;
+}
+
+/* Health Summary */
+.health-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background-color: var(--vscode-editor-inactiveSelectionBackground);
+}
+
+.health-badge {
+  padding: 8px 20px;
+  border-radius: 16px;
+  font-size: 1.1em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.health-badge.success {
+  background-color: #2da042;
+  color: #ffffff;
+}
+
+.health-badge.failure {
+  background-color: #f14c4c;
+  color: #ffffff;
+}
+
+.health-badge.running {
+  background-color: #ccac00;
+  color: #000000;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.health-badge.cancelled {
+  background-color: #616161;
+  color: #ffffff;
+}
+
+.health-badge.queued,
+.health-badge.waiting {
+  background-color: #3794ff;
+  color: #ffffff;
+}
+
+.health-badge.skipped {
+  background-color: #616161;
+  color: #ffffff;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.health-stats {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.95em;
+}
+
+/* Action Header */
+.action-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  margin-bottom: 16px;
+}
+
+.action-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+#action-name {
+  font-size: 1.5em;
+  font-weight: 600;
+  flex: 1;
+  margin: 0;
+}
+
+#run-number {
+  color: var(--vscode-descriptionForeground);
+  font-weight: normal;
+  font-size: 1.1em;
+}
+
+/* Run Meta */
+.run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.run-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.run-meta-item .label {
+  color: var(--vscode-descriptionForeground);
+  font-weight: 500;
+}
+
+#commit-info {
+  font-family: var(--vscode-editor-font-family);
+  color: var(--vscode-textLink-foreground);
+}
+
+#branch-name {
+  color: var(--vscode-textLink-foreground);
+}
+
+#event-type {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 0.9em;
+}
+
+/* Action Bar */
+.action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  margin-bottom: 16px;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: 1px solid var(--vscode-button-secondaryForeground);
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: var(--vscode-font-size);
+  font-family: var(--vscode-font-family);
+  transition: background-color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+.btn-primary {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+}
+
+.btn-primary:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.btn-secondary {
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Jobs Section */
+.jobs-section {
+  margin-bottom: 24px;
+}
+
+.jobs-section h2 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--vscode-foreground);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+#jobs-count {
+  font-weight: normal;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+#jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Job Item */
+.job-item {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.job-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  background-color: var(--vscode-editor-background);
+  transition: background-color 0.2s;
+}
+
+.job-header:hover {
+  background-color: var(--vscode-editor-inactiveSelectionBackground);
+}
+
+.job-header.success {
+  border-left: 4px solid #2da042;
+}
+
+.job-header.failure {
+  border-left: 4px solid #f14c4c;
+}
+
+.job-header.running {
+  border-left: 4px solid #ccac00;
+}
+
+.job-header.cancelled,
+.job-header.skipped {
+  border-left: 4px solid #616161;
+}
+
+.job-header.queued,
+.job-header.waiting {
+  border-left: 4px solid #3794ff;
+}
+
+.job-status-icon {
+  font-size: 1.2em;
+  flex-shrink: 0;
+}
+
+.job-name {
+  flex: 1;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.job-duration {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+.job-expand-icon {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.8em;
+  transition: transform 0.2s;
+}
+
+.job-item.expanded .job-expand-icon {
+  transform: rotate(180deg);
+}
+
+/* Steps List */
+.steps-list {
+  display: none;
+  background-color: var(--vscode-editor-inactiveSelectionBackground);
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.job-item.expanded .steps-list {
+  display: block;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 10px 32px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.step-item:last-child {
+  border-bottom: none;
+}
+
+.step-item.failing {
+  background-color: rgba(241, 76, 76, 0.15);
+  border-left: 3px solid #f14c4c;
+}
+
+.step-number {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  min-width: 24px;
+}
+
+.step-status-icon {
+  font-size: 1em;
+  flex-shrink: 0;
+}
+
+.step-name {
+  flex: 1;
+  color: var(--vscode-foreground);
+}
+
+.step-duration {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+}
+
+/* Failures Section */
+.failures-section {
+  margin-bottom: 24px;
+  padding: 16px;
+  border-radius: 6px;
+  background-color: rgba(241, 76, 76, 0.1);
+  border: 1px solid rgba(241, 76, 76, 0.3);
+}
+
+.failures-section h2 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #f14c4c;
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+#failures-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.failure-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: var(--vscode-editor-background);
+  border-radius: 4px;
+  border-left: 3px solid #f14c4c;
+}
+
+.failure-job-name {
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.failure-step-name {
+  color: #f14c4c;
+}
+
+.failure-separator {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* View Logs Button */
+.view-logs-btn {
+  padding: 4px 8px;
+  font-size: 0.85em;
+  background-color: transparent;
+  border: 1px solid var(--vscode-button-secondaryForeground);
+  color: var(--vscode-button-secondaryForeground);
+  border-radius: 3px;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.view-logs-btn:hover {
+  background-color: var(--vscode-button-secondaryHoverBackground);
+}
+
+/* High Contrast Theme Adjustments */
+body.vscode-high-contrast {
+  --vscode-editor-background: #000000;
+  --vscode-foreground: #ffffff;
+  --vscode-button-background: #ffffff;
+  --vscode-button-foreground: #000000;
+  --vscode-button-hoverBackground: #f0f0f0;
+}
+
+body.vscode-high-contrast .health-badge {
+  border: 2px solid currentColor;
+}
+
+body.vscode-high-contrast .job-item {
+  border: 2px solid var(--vscode-foreground);
+}
+
+body.vscode-high-contrast .step-item.failing {
+  border: 2px solid #f14c4c;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .action-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .run-meta {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .action-bar {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  .health-summary {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vscode-scrollbarSlider-background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-activeBackground);
+}

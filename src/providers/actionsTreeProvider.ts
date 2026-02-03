@@ -24,11 +24,11 @@ export class ActionTreeItem extends vscode.TreeItem {
     // Set icon based on status
     this.iconPath = this.getStatusIcon(run.status);
 
-    // Click to open in browser (logs fetching is complex for matrix jobs)
+    // Click to open action details panel
     this.command = {
-      command: 'forgejo.openActionInBrowserDirect',
-      title: 'Open in Browser',
-      arguments: [run.url || run.html_url]
+      command: 'forgejo.showActionDetails',
+      title: 'View Action Details',
+      arguments: [run, owner, repo]
     };
   }
 
