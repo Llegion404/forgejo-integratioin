@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { PRTreeProvider } from './providers/prTreeProvider';
 import { IssueTreeProvider } from './providers/issueTreeProvider';
+import { ActionsTreeProvider, ActionTreeItem } from './providers/actionsTreeProvider';
+import { WorkflowRunListItem, WorkflowJob } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
@@ -28,6 +30,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // Create tree data providers
   const prTreeProvider = new PRTreeProvider();
   const issueTreeProvider = new IssueTreeProvider();
+  const actionsTreeProvider = new ActionsTreeProvider();
 
   // Check for first-time setup asynchronously (after tree providers are created)
   // This way the dialog doesn't block extension activation
@@ -49,6 +52,7 @@ export async function activate(context: vscode.ExtensionContext) {
         if (success) {
           prTreeProvider.refresh();
           issueTreeProvider.refresh();
+          actionsTreeProvider.refresh();
         }
       }
     }
@@ -62,6 +66,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
   const issueTreeView = vscode.window.createTreeView('forgejoIssues', {
     treeDataProvider: issueTreeProvider,
+    showCollapseAll: true
+  });
+
+  const actionsTreeView = vscode.window.createTreeView('forgejoActions', {
+    treeDataProvider: actionsTreeProvider,
     showCollapseAll: true
   });
 
@@ -86,6 +95,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (success) {
         prTreeProvider.refresh();
         issueTreeProvider.refresh();
+        actionsTreeProvider.refresh();
       }
     })
   );
@@ -95,6 +105,7 @@ export async function activate(context: vscode.ExtensionContext) {
       await manageInstances();
       prTreeProvider.refresh();
       issueTreeProvider.refresh();
+      actionsTreeProvider.refresh();
     })
   );
 
@@ -125,6 +136,13 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.refreshActions', () => {
+      actionsTreeProvider.refresh();
+      vscode.window.showInformationMessage('Actions refreshed');
+    })
+  );
+
   // Register configuration commands
   context.subscriptions.push(
     vscode.commands.registerCommand('forgejo.configureInstanceUrl', async () => {
@@ -147,9 +165,10 @@ export async function activate(context: vscode.ExtensionContext) {
       if (url) {
         await setInstanceUrl(url);
         vscode.window.showInformationMessage(`Forgejo instance URL set to: ${url}`);
-        // Refresh both views
+        // Refresh all views
         prTreeProvider.refresh();
         issueTreeProvider.refresh();
+        actionsTreeProvider.refresh();
       }
     })
   );
@@ -171,9 +190,10 @@ export async function activate(context: vscode.ExtensionContext) {
       if (token) {
         await setAuthToken(token);
         vscode.window.showInformationMessage('Forgejo authentication token saved');
-        // Refresh both views
+        // Refresh all views
         prTreeProvider.refresh();
         issueTreeProvider.refresh();
+        actionsTreeProvider.refresh();
       }
     })
   );
@@ -400,9 +420,105 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Register Actions commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.openActionInBrowser',
+      (actionItem: ActionTreeItem) => {
+        if (actionItem && actionItem.run && actionItem.run.html_url) {
+          vscode.env.openExternal(vscode.Uri.parse(actionItem.run.html_url));
+        }
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.rerunAction',
+      async (actionItem: ActionTreeItem) => {
+        if (!actionItem || !actionItem.run) {
+          return;
+        }
+
+        try {
+          const confirm = await vscode.window.showWarningMessage(
+            `Re-run workflow "${actionItem.run.display_title || actionItem.run.name}"?`,
+            { modal: true },
+            'Re-run'
+          );
+
+          if (confirm !== 'Re-run') {
+            return;
+          }
+
+          const config = await getForgejoConfig();
+          if (!config) {
+            vscode.window.showErrorMessage('Forgejo configuration not found');
+            return;
+          }
+
+          const client = new ForgejoClient(config.instanceUrl, config.token);
+          await client.rerunWorkflow(actionItem.owner, actionItem.repo, actionItem.run.id);
+
+          vscode.window.showInformationMessage('Workflow re-run triggered!');
+          actionsTreeProvider.refresh();
+        } catch (error) {
+          console.error('[Forgejo] Error re-running workflow:', error);
+          vscode.window.showErrorMessage(
+            `Failed to re-run workflow: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.viewActionLogs',
+      async (run: WorkflowRunListItem, job: WorkflowJob, owner: string, repo: string) => {
+        try {
+          const config = await getForgejoConfig();
+          if (!config) {
+            vscode.window.showErrorMessage('Forgejo configuration not found');
+            return;
+          }
+
+          vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: `Fetching logs for ${job.name}...`,
+              cancellable: false
+            },
+            async () => {
+              const client = new ForgejoClient(config.instanceUrl, config.token);
+              // Find the job index (position in the jobs array)
+              const jobsResponse = await client.getWorkflowJobs(owner, repo, run.id);
+              const jobIndex = jobsResponse.jobs.findIndex(j => j.id === job.id);
+
+              const logs = await client.getWorkflowLogs(owner, repo, run.run_number, jobIndex >= 0 ? jobIndex : 0);
+
+              // Create a new untitled document with the logs
+              const doc = await vscode.workspace.openTextDocument({
+                content: logs,
+                language: 'log'
+              });
+              await vscode.window.showTextDocument(doc, { preview: true });
+            }
+          );
+        } catch (error) {
+          console.error('[Forgejo] Error fetching logs:', error);
+          vscode.window.showErrorMessage(
+            `Failed to fetch logs: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    )
+  );
+
   // Add tree views to subscriptions
   context.subscriptions.push(prTreeView);
   context.subscriptions.push(issueTreeView);
+  context.subscriptions.push(actionsTreeView);
 
   // Create PR detail webview provider (not registered as WebviewViewProvider since we use WebviewPanel)
   const prDetailWebviewProvider = new PRDetailWebviewProvider(context.extensionUri);

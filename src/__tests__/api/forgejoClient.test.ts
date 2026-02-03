@@ -9,6 +9,14 @@ import { mockAllFileTypes } from '../fixtures/prFiles';
 import { mockPRWithRefs, mockPRWithBugfixRefs, mockPRWithMissingRefs } from '../fixtures/prRefs';
 import { mockAllStatuses, mockEmptyStatuses } from '../fixtures/commitStatuses';
 import { mockComments, mockReviews, mockCommits, mockTimeline } from '../fixtures/prActivities';
+import {
+  mockActionTasksResponse,
+  mockEmptyActionTasksResponse,
+  mockWorkflowRunDetails,
+  mockWorkflowJobsResponse,
+  mockEmptyWorkflowJobsResponse,
+  mockWorkflowLogs
+} from '../fixtures/workflowRuns';
 
 describe('ForgejoClient', () => {
   let client: ForgejoClient;
@@ -814,6 +822,276 @@ describe('ForgejoClient', () => {
       } as unknown as Response);
 
       await expect(client.updateIssueState('owner', 'repo', 42, 'closed'))
+        .rejects
+        .toThrow('HTTP 403: Forbidden');
+    });
+  });
+
+  // ==================== Actions API Tests ====================
+
+  describe('getWorkflowRuns', () => {
+    test('should fetch workflow runs successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockActionTasksResponse
+      } as unknown as Response);
+
+      const result = await client.getWorkflowRuns('owner', 'repo');
+
+      expect(result).toEqual(mockActionTasksResponse);
+      expect(result.workflow_runs.length).toBe(4);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/actions/tasks?limit=50',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            'Authorization': 'token test-token'
+          })
+        })
+      );
+    });
+
+    test('should filter by status when provided', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockActionTasksResponse
+      } as unknown as Response);
+
+      await client.getWorkflowRuns('owner', 'repo', 'success');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/actions/tasks?limit=50&status=success',
+        expect.any(Object)
+      );
+    });
+
+    test('should handle empty workflow runs', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockEmptyActionTasksResponse
+      } as unknown as Response);
+
+      const result = await client.getWorkflowRuns('owner', 'repo');
+
+      expect(result.workflow_runs).toEqual([]);
+      expect(result.total_count).toBe(0);
+    });
+
+    test('should handle 404 response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found'
+      } as unknown as Response);
+
+      await expect(client.getWorkflowRuns('owner', 'repo'))
+        .rejects
+        .toThrow('HTTP 404: Not Found');
+    });
+  });
+
+  describe('getWorkflowRunDetails', () => {
+    test('should fetch workflow run details successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockWorkflowRunDetails
+      } as unknown as Response);
+
+      const result = await client.getWorkflowRunDetails('owner', 'repo', 123);
+
+      expect(result).toEqual(mockWorkflowRunDetails);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/actions/runs/123',
+        expect.any(Object)
+      );
+    });
+
+    test('should handle 404 for non-existent run', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found'
+      } as unknown as Response);
+
+      await expect(client.getWorkflowRunDetails('owner', 'repo', 99999))
+        .rejects
+        .toThrow('HTTP 404: Not Found');
+    });
+  });
+
+  describe('getWorkflowJobs', () => {
+    test('should fetch workflow jobs successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockWorkflowJobsResponse
+      } as unknown as Response);
+
+      const result = await client.getWorkflowJobs('owner', 'repo', 123);
+
+      expect(result).toEqual(mockWorkflowJobsResponse);
+      expect(result.jobs.length).toBe(1);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/actions/runs/123/jobs',
+        expect.any(Object)
+      );
+    });
+
+    test('should handle empty jobs', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockEmptyWorkflowJobsResponse
+      } as unknown as Response);
+
+      const result = await client.getWorkflowJobs('owner', 'repo', 123);
+
+      expect(result.jobs).toEqual([]);
+    });
+
+    test('should handle 404 response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found'
+      } as unknown as Response);
+
+      await expect(client.getWorkflowJobs('owner', 'repo', 99999))
+        .rejects
+        .toThrow('HTTP 404: Not Found');
+    });
+  });
+
+  describe('getWorkflowLogs', () => {
+    test('should fetch workflow logs successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => mockWorkflowLogs
+      } as unknown as Response);
+
+      const result = await client.getWorkflowLogs('owner', 'repo', 42, 0);
+
+      expect(result).toBe(mockWorkflowLogs);
+      // Logs use web endpoint, not API endpoint
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/owner/repo/actions/runs/42/jobs/0/logs',
+        expect.objectContaining({
+          method: 'GET'
+        })
+      );
+    });
+
+    test('should default to job index 0', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => mockWorkflowLogs
+      } as unknown as Response);
+
+      await client.getWorkflowLogs('owner', 'repo', 42);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/owner/repo/actions/runs/42/jobs/0/logs',
+        expect.any(Object)
+      );
+    });
+
+    test('should handle different job indices', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => mockWorkflowLogs
+      } as unknown as Response);
+
+      await client.getWorkflowLogs('owner', 'repo', 42, 2);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/owner/repo/actions/runs/42/jobs/2/logs',
+        expect.any(Object)
+      );
+    });
+
+    test('should handle 404 response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found'
+      } as unknown as Response);
+
+      await expect(client.getWorkflowLogs('owner', 'repo', 99999, 0))
+        .rejects
+        .toThrow('HTTP 404: Not Found');
+    });
+
+    test('should include auth token when available', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => mockWorkflowLogs
+      } as unknown as Response);
+
+      await client.getWorkflowLogs('owner', 'repo', 42, 0);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Authorization': 'token test-token'
+          })
+        })
+      );
+    });
+  });
+
+  describe('rerunWorkflow', () => {
+    test('should trigger workflow rerun successfully', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201
+      } as unknown as Response);
+
+      await expect(client.rerunWorkflow('owner', 'repo', 123))
+        .resolves
+        .toBeUndefined();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/actions/runs/123/rerun',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Authorization': 'token test-token'
+          })
+        })
+      );
+    });
+
+    test('should handle 404 for non-existent run', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        text: async () => 'Run not found'
+      } as unknown as Response);
+
+      await expect(client.rerunWorkflow('owner', 'repo', 99999))
+        .rejects
+        .toThrow('HTTP 404: Not Found');
+    });
+
+    test('should handle 403 forbidden', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        text: async () => 'Permission denied'
+      } as unknown as Response);
+
+      await expect(client.rerunWorkflow('owner', 'repo', 123))
         .rejects
         .toThrow('HTTP 403: Forbidden');
     });
