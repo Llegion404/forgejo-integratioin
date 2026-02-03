@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
-import { WorkflowRun, WorkflowJob } from '../../models/action';
+import { WorkflowRun, WorkflowRunListItem, WorkflowJob } from '../../models/action';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 
 export type WebviewMessage =
@@ -29,6 +29,7 @@ interface PanelState {
   owner: string;
   repo: string;
   runId: number;
+  run: WorkflowRunListItem;  // Store the run data to avoid 404 on /actions/runs/{id}
   isReady: boolean;
   pendingData?: ActionDetailViewData | null;
   pendingError?: string | null;
@@ -40,7 +41,8 @@ export class ActionDetailWebviewProvider {
 
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
-  public async showActionDetails(owner: string, repo: string, runId: number): Promise<void> {
+  public async showActionDetails(owner: string, repo: string, run: WorkflowRunListItem): Promise<void> {
+    const runId = run.id;
     logInfo('Showing action details in webview:', { owner, repo, runId });
 
     const panelKey = `${owner}/${repo}/${runId}`;
@@ -68,6 +70,7 @@ export class ActionDetailWebviewProvider {
       owner,
       repo,
       runId,
+      run,
       isReady: false,
       pendingData: null,
       pendingError: null
@@ -96,7 +99,7 @@ export class ActionDetailWebviewProvider {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
-    const { panel, owner, repo, runId } = state;
+    const { panel, owner, repo, run } = state;
     logInfo('_fetchActionData starting:', { panelKey, isReady: state.isReady });
 
     try {
@@ -104,16 +107,29 @@ export class ActionDetailWebviewProvider {
       if (!config) throw new Error('Forgejo configuration not found');
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      logInfo('Fetching action details from API...');
+      logInfo('Fetching jobs from API...');
 
-      const [run, jobsResponse] = await Promise.all([
-        client.getWorkflowRunDetails(owner, repo, runId),
-        client.getWorkflowJobs(owner, repo, runId)
-      ]);
+      // Use the run data we already have (passed from the tree view)
+      // Convert WorkflowRunListItem to WorkflowRun with default values for timing fields
+      const fullRun: WorkflowRun = {
+        ...run,
+        started_at: run.created_at,
+        stopped_at: null,
+        run_started_at: run.created_at
+      };
 
-      logInfo('Action details fetched:', { name: run.name, jobCount: jobsResponse.jobs.length });
+      // Only fetch jobs - the run details API uses incompatible IDs
+      let jobs: WorkflowJob[] = [];
+      try {
+        const jobsResponse = await client.getWorkflowJobs(owner, repo, run.id);
+        jobs = jobsResponse.jobs;
+        logInfo('Jobs fetched:', { jobCount: jobs.length });
+      } catch (jobError) {
+        logError('Failed to fetch jobs (will show run without jobs):', jobError);
+        // Continue with empty jobs - at least show the run info
+      }
 
-      state.pendingData = { run, jobs: jobsResponse.jobs, owner, repo };
+      state.pendingData = { run: fullRun, jobs, owner, repo };
       state.pendingError = null; // Clear any previous error
       logInfo('pendingData set, isReady:', state.isReady);
 

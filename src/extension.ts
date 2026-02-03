@@ -490,8 +490,8 @@ export async function activate(context: vscode.ExtensionContext) {
       'forgejo.showActionDetails',
       async (run: WorkflowRunListItem, owner: string, repo: string) => {
         try {
-          // Show the webview panel
-          await actionDetailWebviewProvider.showActionDetails(owner, repo, run.id);
+          // Show the webview panel with the run data we already have
+          await actionDetailWebviewProvider.showActionDetails(owner, repo, run);
         } catch (error) {
           console.error('[Forgejo] Error opening Action details:', error);
           vscode.window.showErrorMessage(
