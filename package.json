@@ -34,6 +34,10 @@
         {
           "id": "forgejoIssues",
           "name": "Issues"
+        },
+        {
+          "id": "forgejoActions",
+          "name": "Actions"
         }
       ]
     },
@@ -46,6 +50,10 @@
         {
           "id": "forgejo.issueDetail",
           "name": "Issue Details"
+        },
+        {
+          "id": "forgejo.actionDetail",
+          "name": "Action Details"
         }
       ]
     },
@@ -131,6 +139,31 @@
       {
         "command": "forgejo.openIssueInBrowserFromContext",
         "title": "Open Issue in Browser"
+      },
+      {
+        "command": "forgejo.refreshActions",
+        "title": "Forgejo: Refresh Actions",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.openActionInBrowser",
+        "title": "Open Action in Browser",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "forgejo.rerunAction",
+        "title": "Re-run Workflow",
+        "icon": "$(debug-rerun)"
+      },
+      {
+        "command": "forgejo.viewActionLogs",
+        "title": "View Logs",
+        "icon": "$(output)"
+      },
+      {
+        "command": "forgejo.showActionDetails",
+        "title": "View Action Details",
+        "icon": "$(info)"
       }
     ],
     "menus": {
@@ -153,6 +186,16 @@
         {
           "command": "forgejo.manageInstances",
           "when": "view == forgejoIssues",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.refreshActions",
+          "when": "view == forgejoActions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.manageInstances",
+          "when": "view == forgejoActions",
           "group": "navigation@2"
         }
       ],
@@ -191,6 +234,26 @@
           "command": "forgejo.openIssueInBrowserFromContext",
           "when": "viewItem == issue",
           "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.showActionDetails",
+          "when": "viewItem == workflowRun",
+          "group": "navigation@0"
+        },
+        {
+          "command": "forgejo.openActionInBrowser",
+          "when": "viewItem == workflowRun",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.rerunAction",
+          "when": "viewItem == workflowRun",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.viewActionLogs",
+          "when": "viewItem == workflowRun || viewItem == workflowJob",
+          "group": "navigation@3"
         }
       ]
     },
@@ -257,7 +320,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/",
+    "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "test:unit": "jest",

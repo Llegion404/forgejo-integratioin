@@ -1,5 +1,6 @@
 import { PullRequest, PullRequestListItem, PullRequestFile, FileContentsResponse, CommitStatus } from '../models/pullRequest';
 import { Issue, IssueListItem } from '../models/issue';
+import { ActionTasksResponse, WorkflowRun, WorkflowJobsResponse } from '../models/action';
 import { logDebug, logInfo, logError } from '../utils/logger';
 
 export class ForgejoClient {
@@ -526,6 +527,124 @@ export class ForgejoClient {
         throw error;
       }
       throw new Error(`Failed to update issue state: ${String(error)}`);
+    }
+  }
+
+  // ==================== Actions API Methods ====================
+
+  /**
+   * Get list of workflow runs for a repository
+   */
+  async getWorkflowRuns(owner: string, repo: string, status?: string): Promise<ActionTasksResponse> {
+    let endpoint = `/repos/${owner}/${repo}/actions/tasks?limit=50`;
+    if (status) {
+      endpoint += `&status=${status}`;
+    }
+    logDebug('Fetching workflow runs:', { owner, repo, status });
+    return this.request<ActionTasksResponse>(endpoint);
+  }
+
+  /**
+   * Get details of a specific workflow run
+   */
+  async getWorkflowRunDetails(owner: string, repo: string, runId: number): Promise<WorkflowRun> {
+    const endpoint = `/repos/${owner}/${repo}/actions/runs/${runId}`;
+    logDebug('Fetching workflow run details:', { owner, repo, runId });
+    return this.request<WorkflowRun>(endpoint);
+  }
+
+  /**
+   * Get jobs for a specific workflow run
+   */
+  async getWorkflowJobs(owner: string, repo: string, runId: number): Promise<WorkflowJobsResponse> {
+    const endpoint = `/repos/${owner}/${repo}/actions/runs/${runId}/jobs`;
+    logDebug('Fetching workflow jobs:', { owner, repo, runId });
+    return this.request<WorkflowJobsResponse>(endpoint);
+  }
+
+  /**
+   * Fetch workflow logs from web endpoint
+   * Note: Forgejo uses web endpoints for logs, not REST API
+   * @param runNumber - The run_number/index_in_repo, NOT the internal id
+   * @param jobIndex - Usually 0 for single-job workflows
+   */
+  async getWorkflowLogs(owner: string, repo: string, runNumber: number, jobIndex: number = 0): Promise<string> {
+    // Logs use web endpoint: /{owner}/{repo}/actions/runs/{run_number}/jobs/{job_index}/logs
+    const url = `${this.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}/jobs/${jobIndex}/logs`;
+
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    logDebug('Fetching workflow logs:', { owner, repo, runNumber, jobIndex, url });
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers
+      });
+
+      if (!response.ok) {
+        logError('Failed to fetch workflow logs:', {
+          status: response.status,
+          statusText: response.statusText,
+          url
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const logs = await response.text();
+      logDebug('Workflow logs fetched successfully:', { length: logs.length });
+      return logs;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to fetch workflow logs: ${String(error)}`);
+    }
+  }
+
+  /**
+   * Re-run a workflow
+   */
+  async rerunWorkflow(owner: string, repo: string, runId: number): Promise<void> {
+    const endpoint = `/repos/${owner}/${repo}/actions/runs/${runId}/rerun`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    logDebug('Re-running workflow:', { owner, repo, runId });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Re-run workflow failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      logInfo('Workflow re-run triggered successfully:', { owner, repo, runId });
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to re-run workflow: ${String(error)}`);
     }
   }
 }
