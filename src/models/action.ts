@@ -71,8 +71,10 @@ export interface WorkflowJobsResponse {
 
 /**
  * Workflow run status
+ * Note: Forgejo uses 'success', 'failure', 'cancelled' directly as status values,
+ * NOT 'completed' with a separate conclusion field like GitHub Actions.
  */
-export type WorkflowRunStatus = 'waiting' | 'queued' | 'in_progress' | 'completed';
+export type WorkflowRunStatus = 'waiting' | 'queued' | 'in_progress' | 'success' | 'failure' | 'cancelled' | 'skipped';
 
 /**
  * Workflow run conclusion (only set when status is 'completed')

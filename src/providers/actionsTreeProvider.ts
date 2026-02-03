@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { WorkflowRunListItem, WorkflowJob, WorkflowRunConclusion } from '../models/action';
+import { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import { getForgejoConfig } from '../utils/config';
 
 /**
@@ -22,16 +22,18 @@ export class ActionTreeItem extends vscode.TreeItem {
     this.description = `#${run.run_number} · ${run.head_branch}`;
     this.contextValue = 'workflowRun';
 
-    // Set icon based on status/conclusion
-    this.iconPath = this.getStatusIcon(run.status, run.conclusion);
+    // Set icon based on status
+    this.iconPath = this.getStatusIcon(run.status);
   }
 
-  private getStatusIcon(status: string, conclusion: WorkflowRunConclusion | null): vscode.ThemeIcon {
-    if (status === 'in_progress' || status === 'queued' || status === 'waiting') {
-      return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));
-    }
-
-    switch (conclusion) {
+  private getStatusIcon(status: string): vscode.ThemeIcon {
+    // Forgejo uses status directly (success, failure, cancelled)
+    // NOT status='completed' + conclusion like GitHub Actions
+    switch (status) {
+      case 'in_progress':
+      case 'queued':
+      case 'waiting':
+        return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));
       case 'success':
         return new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
       case 'failure':
@@ -40,8 +42,6 @@ export class ActionTreeItem extends vscode.TreeItem {
         return new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
       case 'skipped':
         return new vscode.ThemeIcon('debug-step-over', new vscode.ThemeColor('disabledForeground'));
-      case 'timed_out':
-        return new vscode.ThemeIcon('watch', new vscode.ThemeColor('testing.iconFailed'));
       default:
         return new vscode.ThemeIcon('circle-outline');
     }
@@ -96,7 +96,7 @@ class ActionJobItem extends vscode.TreeItem {
     this.contextValue = 'workflowJob';
 
     // Set icon based on job status
-    this.iconPath = this.getStatusIcon(job.status, job.conclusion);
+    this.iconPath = this.getStatusIcon(job.status);
 
     // Command to view logs
     this.command = {
@@ -106,12 +106,13 @@ class ActionJobItem extends vscode.TreeItem {
     };
   }
 
-  private getStatusIcon(status: string, conclusion: WorkflowRunConclusion | null): vscode.ThemeIcon {
-    if (status === 'in_progress' || status === 'queued' || status === 'waiting') {
-      return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));
-    }
-
-    switch (conclusion) {
+  private getStatusIcon(status: string): vscode.ThemeIcon {
+    // Forgejo uses status directly (success, failure, cancelled)
+    switch (status) {
+      case 'in_progress':
+      case 'queued':
+      case 'waiting':
+        return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));
       case 'success':
         return new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
       case 'failure':
@@ -175,18 +176,16 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
           return [new ActionMessageItem('No workflow runs found', false)];
         }
 
-        // Group by status/conclusion
+        // Group by status
+        // Note: Forgejo uses status directly (success, failure, cancelled)
+        // NOT status='completed' + conclusion like GitHub Actions
         const running = this.workflowRuns.filter(r =>
           r.status === 'in_progress' || r.status === 'queued' || r.status === 'waiting'
         );
-        const success = this.workflowRuns.filter(r =>
-          r.status === 'completed' && r.conclusion === 'success'
-        );
-        const failed = this.workflowRuns.filter(r =>
-          r.status === 'completed' && r.conclusion === 'failure'
-        );
+        const success = this.workflowRuns.filter(r => r.status === 'success');
+        const failed = this.workflowRuns.filter(r => r.status === 'failure');
         const cancelled = this.workflowRuns.filter(r =>
-          r.status === 'completed' && (r.conclusion === 'cancelled' || r.conclusion === 'skipped')
+          r.status === 'cancelled' || r.status === 'skipped'
         );
 
         const groups: ActionGroupItem[] = [];

@@ -4,8 +4,8 @@ export const mockWorkflowRunSuccess: WorkflowRunListItem = {
   id: 123,
   name: 'CI',
   run_number: 42,
-  status: 'completed',
-  conclusion: 'success',
+  status: 'success',  // Forgejo uses status directly, not 'completed' + conclusion
+  conclusion: null,
   workflow_id: 'ci.yml',
   head_branch: 'main',
   head_sha: 'abc123def456',
@@ -20,8 +20,8 @@ export const mockWorkflowRunFailed: WorkflowRunListItem = {
   id: 124,
   name: 'CI',
   run_number: 43,
-  status: 'completed',
-  conclusion: 'failure',
+  status: 'failure',  // Forgejo uses status directly
+  conclusion: null,
   workflow_id: 'ci.yml',
   head_branch: 'feature/broken',
   head_sha: 'def456abc123',
@@ -52,8 +52,8 @@ export const mockWorkflowRunCancelled: WorkflowRunListItem = {
   id: 126,
   name: 'CI',
   run_number: 45,
-  status: 'completed',
-  conclusion: 'cancelled',
+  status: 'cancelled',  // Forgejo uses status directly
+  conclusion: null,
   workflow_id: 'ci.yml',
   head_branch: 'feature/cancelled',
   head_sha: 'mno345pqr678',
@@ -90,31 +90,31 @@ export const mockWorkflowJobSuccess = {
   id: 201,
   run_id: 123,
   name: 'build',
-  status: 'completed' as const,
-  conclusion: 'success' as const,
+  status: 'success' as const,  // Forgejo uses status directly
+  conclusion: null,
   started_at: '2024-01-15T10:00:10Z',
   completed_at: '2024-01-15T10:04:00Z',
   steps: [
     {
       name: 'Checkout',
-      status: 'completed' as const,
-      conclusion: 'success' as const,
+      status: 'success' as const,
+      conclusion: null,
       number: 1,
       started_at: '2024-01-15T10:00:10Z',
       completed_at: '2024-01-15T10:00:15Z'
     },
     {
       name: 'Build',
-      status: 'completed' as const,
-      conclusion: 'success' as const,
+      status: 'success' as const,
+      conclusion: null,
       number: 2,
       started_at: '2024-01-15T10:00:15Z',
       completed_at: '2024-01-15T10:03:00Z'
     },
     {
       name: 'Test',
-      status: 'completed' as const,
-      conclusion: 'success' as const,
+      status: 'success' as const,
+      conclusion: null,
       number: 3,
       started_at: '2024-01-15T10:03:00Z',
       completed_at: '2024-01-15T10:04:00Z'
@@ -126,21 +126,21 @@ export const mockWorkflowJobFailed = {
   id: 202,
   run_id: 124,
   name: 'build',
-  status: 'completed' as const,
-  conclusion: 'failure' as const,
+  status: 'failure' as const,  // Forgejo uses status directly
+  conclusion: null,
   started_at: '2024-01-15T11:00:10Z',
   completed_at: '2024-01-15T11:03:00Z',
   steps: [
     {
       name: 'Checkout',
-      status: 'completed' as const,
-      conclusion: 'success' as const,
+      status: 'success' as const,
+      conclusion: null,
       number: 1
     },
     {
       name: 'Build',
-      status: 'completed' as const,
-      conclusion: 'failure' as const,
+      status: 'failure' as const,
+      conclusion: null,
       number: 2
     }
   ]
