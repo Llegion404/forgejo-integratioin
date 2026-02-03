@@ -4,37 +4,87 @@ import { WorkflowRunListItem } from '../models/action';
 import { getForgejoConfig } from '../utils/config';
 
 /**
- * Represents a workflow job/task in the tree
- * Note: Forgejo's /actions/tasks endpoint returns individual jobs, not workflow runs
+ * Represents a grouped workflow run (parent of jobs)
  */
-export class ActionTreeItem extends vscode.TreeItem {
+export class WorkflowRunTreeItem extends vscode.TreeItem {
   constructor(
-    public readonly run: WorkflowRunListItem,
+    public readonly runNumber: number,
+    public readonly jobs: WorkflowRunListItem[],
     public readonly owner: string,
     public readonly repo: string
   ) {
-    // Use job name (e.g., "test (20)") as label, not expandable since these ARE the jobs
-    super(run.name, vscode.TreeItemCollapsibleState.None);
+    // Use first job to get run metadata (all jobs in same run share these)
+    const firstJob = jobs[0];
+    const shortSha = firstJob.head_sha.substring(0, 7);
+    const label = `Run #${runNumber}`;
 
-    const statusText = run.status;
-    this.tooltip = `Job: ${run.name}\nCommit: ${run.display_title}\nWorkflow: ${run.workflow_id}\nBranch: ${run.head_branch}\nStatus: ${statusText}\nEvent: ${run.event}`;
-    this.description = `#${run.run_number} · ${run.head_branch}`;
+    super(label, vscode.TreeItemCollapsibleState.Expanded);
+
+    // Description shows commit info
+    this.description = `${shortSha} · ${firstJob.display_title}`;
+    this.tooltip = `Workflow: ${firstJob.workflow_id}\nBranch: ${firstJob.head_branch}\nCommit: ${firstJob.head_sha}\n${firstJob.display_title}\nJobs: ${jobs.length}`;
     this.contextValue = 'workflowRun';
 
+    // Icon based on aggregate status
+    this.iconPath = this.getAggregateStatusIcon(jobs);
+
+    // Click to open action details panel (use first job's data)
+    this.command = {
+      command: 'forgejo.showActionDetails',
+      title: 'View Action Details',
+      arguments: [firstJob, owner, repo]
+    };
+  }
+
+  private getAggregateStatusIcon(jobs: WorkflowRunListItem[]): vscode.ThemeIcon {
+    // If any job is running, show running icon
+    if (jobs.some(j => j.status === 'in_progress' || j.status === 'queued' || j.status === 'waiting')) {
+      return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));
+    }
+    // If any job failed, show failure
+    if (jobs.some(j => j.status === 'failure')) {
+      return new vscode.ThemeIcon('error', new vscode.ThemeColor('testing.iconFailed'));
+    }
+    // If all succeeded
+    if (jobs.every(j => j.status === 'success')) {
+      return new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
+    }
+    // If any cancelled
+    if (jobs.some(j => j.status === 'cancelled')) {
+      return new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
+    }
+    return new vscode.ThemeIcon('circle-outline');
+  }
+}
+
+/**
+ * Represents a single job within a workflow run
+ */
+export class JobTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly job: WorkflowRunListItem,
+    public readonly jobIndex: number,
+    public readonly owner: string,
+    public readonly repo: string
+  ) {
+    super(job.name, vscode.TreeItemCollapsibleState.None);
+
+    this.description = job.status;
+    this.tooltip = `Job: ${job.name}\nStatus: ${job.status}\nIndex: ${jobIndex}`;
+    this.contextValue = 'workflowJob';
+
     // Set icon based on status
-    this.iconPath = this.getStatusIcon(run.status);
+    this.iconPath = this.getStatusIcon(job.status);
 
     // Click to open action details panel
     this.command = {
       command: 'forgejo.showActionDetails',
       title: 'View Action Details',
-      arguments: [run, owner, repo]
+      arguments: [job, owner, repo]
     };
   }
 
   private getStatusIcon(status: string): vscode.ThemeIcon {
-    // Forgejo uses status directly (success, failure, cancelled)
-    // NOT status='completed' + conclusion like GitHub Actions
     switch (status) {
       case 'in_progress':
       case 'queued':
@@ -59,13 +109,13 @@ export class ActionTreeItem extends vscode.TreeItem {
  */
 class ActionGroupItem extends vscode.TreeItem {
   constructor(
-    public readonly label: string,
-    public readonly runs: WorkflowRunListItem[],
+    public readonly groupLabel: string,
+    public readonly runs: Map<number, WorkflowRunListItem[]>,  // run_number -> jobs
     public readonly owner: string,
     public readonly repo: string
   ) {
-    super(label, vscode.TreeItemCollapsibleState.Expanded);
-    this.description = `${runs.length}`;
+    super(groupLabel, vscode.TreeItemCollapsibleState.Expanded);
+    this.description = `${runs.size}`;
     this.contextValue = 'actionGroup';
   }
 }
@@ -84,7 +134,7 @@ class ActionMessageItem extends vscode.TreeItem {
   }
 }
 
-type ActionTreeElement = ActionTreeItem | ActionGroupItem | ActionMessageItem;
+type ActionTreeElement = WorkflowRunTreeItem | JobTreeItem | ActionGroupItem | ActionMessageItem;
 
 export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ActionTreeElement | undefined | null | void> = new vscode.EventEmitter<ActionTreeElement | undefined | null | void>();
@@ -122,30 +172,67 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
           return [new ActionMessageItem('No workflow runs found', false)];
         }
 
-        // Group by status
-        // Note: Forgejo uses status directly (success, failure, cancelled)
-        // NOT status='completed' + conclusion like GitHub Actions
-        const running = this.workflowRuns.filter(r =>
-          r.status === 'in_progress' || r.status === 'queued' || r.status === 'waiting'
-        );
-        const success = this.workflowRuns.filter(r => r.status === 'success');
-        const failed = this.workflowRuns.filter(r => r.status === 'failure');
-        const cancelled = this.workflowRuns.filter(r =>
-          r.status === 'cancelled' || r.status === 'skipped'
-        );
+        // Group jobs by run_number first
+        const runsByNumber = new Map<number, WorkflowRunListItem[]>();
+        for (const job of this.workflowRuns) {
+          const existing = runsByNumber.get(job.run_number) || [];
+          existing.push(job);
+          runsByNumber.set(job.run_number, existing);
+        }
+
+        // Determine aggregate status for each run
+        const getRunStatus = (jobs: WorkflowRunListItem[]): string => {
+          if (jobs.some(j => j.status === 'in_progress' || j.status === 'queued' || j.status === 'waiting')) {
+            return 'running';
+          }
+          if (jobs.some(j => j.status === 'failure')) {
+            return 'failed';
+          }
+          if (jobs.every(j => j.status === 'success')) {
+            return 'success';
+          }
+          if (jobs.some(j => j.status === 'cancelled' || j.status === 'skipped')) {
+            return 'cancelled';
+          }
+          return 'other';
+        };
+
+        // Group runs by aggregate status
+        const running = new Map<number, WorkflowRunListItem[]>();
+        const failed = new Map<number, WorkflowRunListItem[]>();
+        const success = new Map<number, WorkflowRunListItem[]>();
+        const cancelled = new Map<number, WorkflowRunListItem[]>();
+
+        for (const [runNumber, jobs] of runsByNumber) {
+          const status = getRunStatus(jobs);
+          switch (status) {
+            case 'running':
+              running.set(runNumber, jobs);
+              break;
+            case 'failed':
+              failed.set(runNumber, jobs);
+              break;
+            case 'success':
+              success.set(runNumber, jobs);
+              break;
+            case 'cancelled':
+              cancelled.set(runNumber, jobs);
+              break;
+          }
+        }
 
         const groups: ActionGroupItem[] = [];
 
-        if (running.length > 0) {
+        if (running.size > 0) {
           groups.push(new ActionGroupItem('Running', running, this.owner, this.repo));
         }
-        if (failed.length > 0) {
+        if (failed.size > 0) {
           groups.push(new ActionGroupItem('Failed', failed, this.owner, this.repo));
         }
-        if (success.length > 0) {
+        if (success.size > 0) {
           groups.push(new ActionGroupItem('Success', success, this.owner, this.repo));
         }
-        if (cancelled.length > 0) {
+        if (cancelled.size > 0) {
           groups.push(new ActionGroupItem('Cancelled', cancelled, this.owner, this.repo));
         }
 
@@ -155,8 +242,19 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
         return [new ActionMessageItem(this.error, true)];
       }
     } else if (element instanceof ActionGroupItem) {
-      // Show jobs in this group (Forgejo's /actions/tasks returns jobs, not runs)
-      return element.runs.map(run => new ActionTreeItem(run, element.owner, element.repo));
+      // Show runs in this status group
+      const runItems: WorkflowRunTreeItem[] = [];
+      // Sort by run_number descending (newest first)
+      const sortedRuns = Array.from(element.runs.entries()).sort((a, b) => b[0] - a[0]);
+      for (const [runNumber, jobs] of sortedRuns) {
+        runItems.push(new WorkflowRunTreeItem(runNumber, jobs, element.owner, element.repo));
+      }
+      return runItems;
+    } else if (element instanceof WorkflowRunTreeItem) {
+      // Show jobs within this run
+      return element.jobs.map((job, index) =>
+        new JobTreeItem(job, index, element.owner, element.repo)
+      );
     }
 
     return [];
