@@ -18,7 +18,8 @@ export type ExtensionMessage =
   | { type: 'loading'; show: boolean }
   | { type: 'error'; message: string }
   | { type: 'theme'; theme: 'light' | 'dark' | 'high-contrast' }
-  | { type: 'bodyUpdated'; body: string };
+  | { type: 'bodyUpdated'; body: string }
+  | { type: 'actionComplete'; action: string; success: boolean };
 
 export interface IssueActivity {
   type: 'comment' | 'timeline';
@@ -259,6 +260,7 @@ export class IssueDetailWebviewProvider {
       logInfo('Issue body updated:', { owner, repo, number });
       if (panelState) {
         panelState.panel.webview.postMessage({ type: 'bodyUpdated', body: updatedIssue.body || '' });
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: true });
       }
       if (panelState?.pendingData) {
         panelState.pendingData.issue.body = updatedIssue.body || '';
@@ -266,6 +268,9 @@ export class IssueDetailWebviewProvider {
     } catch (error) {
       logError('Failed to update issue body:', error);
       vscode.window.showErrorMessage(`Failed to update description: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: false });
+      }
     }
   }
 

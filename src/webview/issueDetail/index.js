@@ -191,8 +191,13 @@
           descriptionEditor.style.display = 'none';
           issueDescriptionEl.style.display = 'block';
           editDescriptionBtn.style.display = 'inline-flex';
-          saveDescriptionBtn.disabled = false;
-          saveDescriptionBtn.textContent = 'Save';
+          break;
+        case 'actionComplete':
+          console.log('[Forgejo Issue Webview] Action complete:', message.action, 'success:', message.success);
+          if (message.action === 'updateBody') {
+            saveDescriptionBtn.disabled = false;
+            saveDescriptionBtn.textContent = 'Save';
+          }
           break;
         default:
           console.log('[Forgejo Issue Webview] Unknown message type:', message.type);
