@@ -43,7 +43,10 @@ class PRGroupItem extends vscode.TreeItem {
     public readonly label: string,
     public readonly pullRequests: PullRequestListItem[]
   ) {
-    super(label, vscode.TreeItemCollapsibleState.Expanded);
+    const collapsibleState = label === 'Closed' || label === 'Merged'
+      ? vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.Expanded;
+    super(label, collapsibleState);
     this.description = `${pullRequests.length}`;
     this.contextValue = 'prGroup';
   }
