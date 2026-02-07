@@ -142,7 +142,9 @@ export class ForgejoClient {
    * Get file contents at a specific commit/ref
    */
   async getFileContents(owner: string, repo: string, filepath: string, ref: string): Promise<string> {
-    const endpoint = `/repos/${owner}/${repo}/contents/${encodeURIComponent(filepath)}?ref=${ref}`;
+    // Encode each path segment individually so slashes are preserved as path separators
+    const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
+    const endpoint = `/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`;
     const response = await this.request<FileContentsResponse>(endpoint);
 
     // Forgejo returns base64 encoded content

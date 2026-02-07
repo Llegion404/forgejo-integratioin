@@ -36,7 +36,8 @@ suite('PR Diff Content Provider Test Suite', () => {
       // Verify registration by checking if we can create URIs with the scheme
       const uri = createPRFileUri('owner', 'repo', 'main', 'test.ts');
       assert.strictEqual(uri.scheme, PR_DIFF_SCHEME, 'URI should have correct scheme');
-      assert.ok(uri.path.includes('owner/repo/main/test.ts'), 'URI should contain correct path');
+      assert.ok(uri.path.includes('owner/repo/test.ts'), 'URI should contain correct path');
+      assert.ok(uri.query.includes('ref=main'), 'URI should contain ref query parameter');
     } finally {
       disposable.dispose();
     }
@@ -60,7 +61,7 @@ suite('PR Diff Content Provider Test Suite', () => {
     assert.strictEqual(uri.scheme, PR_DIFF_SCHEME, 'URI should have correct scheme');
     assert.ok(uri.path.includes('owner'), 'Path should contain owner');
     assert.ok(uri.path.includes('repo'), 'Path should contain repo');
-    assert.ok(uri.path.includes('feature/branch'), 'Path should contain ref');
+    assert.ok(uri.query.includes('ref=feature'), 'Query should contain ref');
     assert.ok(uri.path.includes('src/deep/nested/path/file.ts'), 'Path should contain file path');
   });
 
