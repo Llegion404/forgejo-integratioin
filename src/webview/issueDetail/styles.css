@@ -281,9 +281,58 @@ section h2 {
   line-height: 1.8;
 }
 
+.description-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0;
+}
+
+.description-header h2 {
+  margin-bottom: 0;
+  padding-bottom: 8px;
+  border-bottom: none;
+}
+
+.btn-small {
+  padding: 4px 12px;
+  font-size: 0.85em;
+}
+
+.description-editor {
+  margin-top: 8px;
+}
+
+.description-textarea {
+  width: 100%;
+  min-height: 200px;
+  max-height: 500px;
+  padding: 12px;
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-font-size);
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.description-textarea:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.description-editor-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 #issue-description {
-  white-space: pre-wrap;
   word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 /* Activity Timeline */
@@ -482,6 +531,63 @@ section h2 {
   border: none;
   border-top: 1px solid var(--vscode-panel-border);
   margin: 24px 0;
+}
+
+/* Tables */
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 8px 12px;
+  border: 1px solid var(--vscode-panel-border);
+}
+
+.markdown-body th {
+  font-weight: 600;
+  background-color: var(--vscode-editor-inactiveSelectionBackground);
+}
+
+/* Strikethrough */
+.markdown-body del {
+  text-decoration: line-through;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* Task list items */
+.markdown-body .task-list-item {
+  list-style: none;
+  margin-left: -24px;
+  padding-left: 4px;
+}
+
+.markdown-body .task-list-item input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.markdown-body .task-list-item input[type="checkbox"]:hover {
+  transform: scale(1.1);
+}
+
+/* Images */
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+}
+
+.markdown-body em {
+  font-style: italic;
 }
 
 /* High Contrast Theme Adjustments */

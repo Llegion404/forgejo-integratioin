@@ -29,6 +29,11 @@
   const reopenIssueBtn = document.getElementById('reopen-issue-btn');
 
   const issueDescriptionEl = document.getElementById('issue-description');
+  const editDescriptionBtn = document.getElementById('edit-description-btn');
+  const descriptionEditor = document.getElementById('issue-description-editor');
+  const descriptionTextarea = document.getElementById('description-textarea');
+  const saveDescriptionBtn = document.getElementById('save-description-btn');
+  const cancelDescriptionBtn = document.getElementById('cancel-description-btn');
   const activityCountEl = document.getElementById('activity-count');
   const activityTimeline = document.getElementById('activity-timeline');
 
@@ -94,6 +99,42 @@
       vscode.postMessage({ type: 'reopenIssue' });
     });
 
+    editDescriptionBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Edit description clicked');
+      if (currentData && currentData.issue) {
+        descriptionTextarea.value = currentData.issue.body || '';
+        issueDescriptionEl.style.display = 'none';
+        descriptionEditor.style.display = 'block';
+        editDescriptionBtn.style.display = 'none';
+        descriptionTextarea.focus();
+      }
+    });
+
+    saveDescriptionBtn.addEventListener('click', () => {
+      var body = descriptionTextarea.value;
+      console.log('[Forgejo Issue Webview] Save description clicked');
+      saveDescriptionBtn.disabled = true;
+      saveDescriptionBtn.textContent = 'Saving...';
+      vscode.postMessage({ type: 'updateBody', body: body });
+    });
+
+    cancelDescriptionBtn.addEventListener('click', () => {
+      console.log('[Forgejo Issue Webview] Cancel description edit clicked');
+      descriptionEditor.style.display = 'none';
+      issueDescriptionEl.style.display = 'block';
+      editDescriptionBtn.style.display = 'inline-flex';
+    });
+
+    descriptionTextarea.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        saveDescriptionBtn.click();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelDescriptionBtn.click();
+      }
+    });
+
     submitCommentBtn.addEventListener('click', () => {
       const body = commentInput.value.trim();
       console.log('[Forgejo Issue Webview] Submit comment clicked, body length:', body.length);
@@ -135,6 +176,23 @@
         case 'theme':
           console.log('[Forgejo Issue Webview] Theme received:', message.theme);
           applyTheme(message.theme);
+          break;
+        case 'bodyUpdated':
+          console.log('[Forgejo Issue Webview] Body updated');
+          if (currentData && currentData.issue) {
+            currentData.issue.body = message.body;
+          }
+          if (message.body) {
+            issueDescriptionEl.innerHTML = renderMarkdown(message.body);
+            setupCheckboxListeners();
+          } else {
+            issueDescriptionEl.innerHTML = '<p style="color:var(--vscode-descriptionForeground)">No description provided.</p>';
+          }
+          descriptionEditor.style.display = 'none';
+          issueDescriptionEl.style.display = 'block';
+          editDescriptionBtn.style.display = 'inline-flex';
+          saveDescriptionBtn.disabled = false;
+          saveDescriptionBtn.textContent = 'Save';
           break;
         default:
           console.log('[Forgejo Issue Webview] Unknown message type:', message.type);
@@ -213,8 +271,17 @@
       assigneesContainer.style.display = 'none';
     }
 
-    // Update description
-    issueDescriptionEl.textContent = issue.body || 'No description provided.';
+    // Update description with Markdown rendering
+    if (issue.body) {
+      issueDescriptionEl.innerHTML = renderMarkdown(issue.body);
+      setupCheckboxListeners();
+    } else {
+      issueDescriptionEl.innerHTML = '<p style="color:var(--vscode-descriptionForeground)">No description provided.</p>';
+    }
+    // Reset edit state
+    descriptionEditor.style.display = 'none';
+    issueDescriptionEl.style.display = 'block';
+    editDescriptionBtn.style.display = 'inline-flex';
 
     // Update action buttons
     console.log('[Forgejo Issue Webview] Issue state:', issue.state);
@@ -242,6 +309,254 @@
     console.log('[Forgejo Issue Webview] Issue details updated successfully');
   }
 
+  /**
+   * Toggle a task list checkbox in the raw markdown body.
+   */
+  function toggleCheckboxInBody(body, checkboxIndex, checked) {
+    var taskPattern = /- \[[ xX]\]/g;
+    var count = 0;
+    return body.replace(taskPattern, function(match) {
+      if (count++ === checkboxIndex) {
+        return checked ? '- [x]' : '- [ ]';
+      }
+      return match;
+    });
+  }
+
+  /**
+   * Set up click handlers on task list checkboxes.
+   */
+  function setupCheckboxListeners() {
+    var checkboxes = issueDescriptionEl.querySelectorAll('.task-checkbox');
+    checkboxes.forEach(function(checkbox, index) {
+      checkbox.addEventListener('change', function(e) {
+        console.log('[Forgejo Issue Webview] Checkbox toggled:', index, 'checked:', e.target.checked);
+        if (currentData && currentData.issue && currentData.issue.body) {
+          var newBody = toggleCheckboxInBody(currentData.issue.body, index, e.target.checked);
+          currentData.issue.body = newBody;
+          vscode.postMessage({ type: 'updateBody', body: newBody });
+        }
+      });
+    });
+  }
+
+  /**
+   * Converts Markdown text to sanitized HTML.
+   */
+  function renderMarkdown(text) {
+    if (!text) return '';
+
+    var html = escapeHtml(text);
+
+    var codeBlocks = [];
+    html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(_match, lang, code) {
+      var langAttr = lang ? ' class="language-' + lang + '"' : '';
+      var idx = codeBlocks.length;
+      codeBlocks.push('<pre><code' + langAttr + '>' + code + '</code></pre>');
+      return '\n%%CODEBLOCK_' + idx + '%%\n';
+    });
+
+    var inlineCodes = [];
+    html = html.replace(/`([^`\n]+)`/g, function(_match, code) {
+      var idx = inlineCodes.length;
+      inlineCodes.push('<code>' + code + '</code>');
+      return '%%INLINECODE_' + idx + '%%';
+    });
+
+    var lines = html.split('\n');
+    var result = [];
+    var inList = false;
+    var listType = '';
+    var inBlockquote = false;
+    var blockquoteLines = [];
+    var inTable = false;
+    var tableLines = [];
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      if (line.trim().match(/^%%CODEBLOCK_\d+%%$/)) {
+        if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
+        if (inBlockquote) { result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>'); blockquoteLines = []; inBlockquote = false; }
+        if (inTable) { result.push(buildTable(tableLines)); tableLines = []; inTable = false; }
+        result.push(line.trim());
+        continue;
+      }
+
+      if (inBlockquote && !line.match(/^&gt;\s?/)) {
+        result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>');
+        blockquoteLines = [];
+        inBlockquote = false;
+      }
+
+      if (inTable && !line.match(/^\|/)) {
+        result.push(buildTable(tableLines));
+        tableLines = [];
+        inTable = false;
+      }
+
+      if (inList && line.trim() !== '' && !line.match(/^(\s*[-*+]\s|\s*\d+\.\s)/)) {
+        result.push('</' + listType + '>');
+        inList = false;
+        listType = '';
+      }
+
+      if (line.match(/^\s*([-*_]\s*){3,}$/)) {
+        if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
+        result.push('<hr>');
+        continue;
+      }
+
+      var headingMatch = line.match(/^(#{1,6})\s+(.*?)$/);
+      if (headingMatch) {
+        var level = headingMatch[1].length;
+        var headingText = processInline(headingMatch[2]);
+        result.push('<h' + level + '>' + headingText + '</h' + level + '>');
+        continue;
+      }
+
+      if (line.match(/^&gt;\s?/)) {
+        inBlockquote = true;
+        blockquoteLines.push(line.replace(/^&gt;\s?/, ''));
+        continue;
+      }
+
+      if (line.match(/^\|/)) {
+        if (!inTable) { inTable = true; tableLines = []; }
+        tableLines.push(line);
+        continue;
+      }
+
+      var ulMatch = line.match(/^(\s*)[-*+]\s+(.*)/);
+      if (ulMatch) {
+        if (!inList || listType !== 'ul') {
+          if (inList) { result.push('</' + listType + '>'); }
+          result.push('<ul>');
+          inList = true;
+          listType = 'ul';
+        }
+        var liContent = ulMatch[2];
+        var taskMatch = liContent.match(/^\[([ xX])\]\s+(.*)/);
+        if (taskMatch) {
+          var checked = taskMatch[1] !== ' ' ? ' checked' : '';
+          result.push('<li class="task-list-item"><input type="checkbox" class="task-checkbox" data-line="' + i + '"' + checked + '> ' + processInline(taskMatch[2]) + '</li>');
+        } else {
+          result.push('<li>' + processInline(liContent) + '</li>');
+        }
+        continue;
+      }
+
+      var olMatch = line.match(/^(\s*)\d+\.\s+(.*)/);
+      if (olMatch) {
+        if (!inList || listType !== 'ol') {
+          if (inList) { result.push('</' + listType + '>'); }
+          result.push('<ol>');
+          inList = true;
+          listType = 'ol';
+        }
+        result.push('<li>' + processInline(olMatch[2]) + '</li>');
+        continue;
+      }
+
+      if (line.trim() === '') { continue; }
+      result.push('<p>' + processInline(line) + '</p>');
+    }
+
+    if (inBlockquote) { result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>'); }
+    if (inTable) { result.push(buildTable(tableLines)); }
+    if (inList) { result.push('</' + listType + '>'); }
+
+    var output = result.join('\n');
+
+    for (var cb = 0; cb < codeBlocks.length; cb++) {
+      output = output.replace('%%CODEBLOCK_' + cb + '%%', codeBlocks[cb]);
+    }
+    for (var ic = 0; ic < inlineCodes.length; ic++) {
+      output = output.replace(new RegExp('%%INLINECODE_' + ic + '%%', 'g'), inlineCodes[ic]);
+    }
+
+    return output;
+  }
+
+  function processBlockquoteContent(lines) {
+    return lines.map(function(line) {
+      if (line.trim() === '') return '';
+      return '<p>' + processInline(line) + '</p>';
+    }).join('\n');
+  }
+
+  function sanitizeUrl(url) {
+    var trimmed = url.trim().toLowerCase();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('mailto:')) {
+      return url.trim();
+    }
+    return '';
+  }
+
+  function processInline(text) {
+    if (!text) return '';
+    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_match, alt, url) {
+      var safe = sanitizeUrl(url);
+      if (!safe) return alt;
+      return '<img src="' + safe + '" alt="' + alt + '" style="max-width:100%;">';
+    });
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_match, linkText, url) {
+      var safe = sanitizeUrl(url);
+      if (!safe) return linkText;
+      return '<a href="' + safe + '">' + linkText + '</a>';
+    });
+    text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+    text = text.replace(/___([^_]+)___/g, '<strong><em>$1</em></strong>');
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    text = text.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
+    text = text.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    return text;
+  }
+
+  function buildTable(lines) {
+    if (lines.length < 2) {
+      return lines.map(function(l) { return '<p>' + processInline(l) + '</p>'; }).join('\n');
+    }
+    var headerCells = parseTableRow(lines[0]);
+    var alignments = [];
+    var isSeparator = lines[1].replace(/\s/g, '').match(/^\|?(:?-+:?\|)*:?-+:?\|?$/);
+    var bodyStartIndex = 1;
+    if (isSeparator) {
+      bodyStartIndex = 2;
+      var sepCells = parseTableRow(lines[1]);
+      for (var a = 0; a < sepCells.length; a++) {
+        var cell = sepCells[a].trim();
+        if (cell.match(/^:-+:$/)) { alignments.push('center'); }
+        else if (cell.match(/^-+:$/)) { alignments.push('right'); }
+        else { alignments.push('left'); }
+      }
+    }
+    var tableHtml = '<table>\n<thead>\n<tr>';
+    for (var h = 0; h < headerCells.length; h++) {
+      var alignAttr = alignments[h] ? ' style="text-align:' + alignments[h] + '"' : '';
+      tableHtml += '<th' + alignAttr + '>' + processInline(headerCells[h].trim()) + '</th>';
+    }
+    tableHtml += '</tr>\n</thead>\n<tbody>';
+    for (var r = bodyStartIndex; r < lines.length; r++) {
+      var cells = parseTableRow(lines[r]);
+      tableHtml += '\n<tr>';
+      for (var c = 0; c < cells.length; c++) {
+        var cellAlignAttr = alignments[c] ? ' style="text-align:' + alignments[c] + '"' : '';
+        tableHtml += '<td' + cellAlignAttr + '>' + processInline(cells[c].trim()) + '</td>';
+      }
+      tableHtml += '</tr>';
+    }
+    tableHtml += '\n</tbody>\n</table>';
+    return tableHtml;
+  }
+
+  function parseTableRow(row) {
+    var trimmed = row.replace(/^\|/, '').replace(/\|$/, '');
+    return trimmed.split('|');
+  }
+
   function renderActivity(activity, owner, repo) {
     const timeAgo = formatTimeAgo(activity.created_at);
     const userAvatar = activity.user ? activity.user.avatar_url : '';
@@ -257,7 +572,7 @@
               <span class="activity-action">commented</span>
               <span class="activity-time">${timeAgo}</span>
             </div>
-            ${activity.body ? `<div class="activity-body">${escapeHtml(activity.body)}</div>` : ''}
+            ${activity.body ? `<div class="activity-body markdown-body">${renderMarkdown(activity.body)}</div>` : ''}
           </div>
         </div>
       `;
