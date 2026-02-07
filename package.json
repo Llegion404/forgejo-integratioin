@@ -3,7 +3,7 @@
   "displayName": "Forgejo Integration",
   "description": "Browse Forgejo Pull Requests and Issues directly in VS Code",
   "version": "0.1.0",
-  "publisher": "forgejo",
+  "publisher": "maxking",
   "engines": {
     "vscode": "^1.85.0"
   },
