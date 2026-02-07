@@ -125,9 +125,17 @@
       const body = commentInput.value.trim();
       console.log('[Forgejo Webview] Submit comment clicked, body length:', body.length);
       if (body) {
+        // Disable button and show loading state to prevent double-submit
+        submitCommentBtn.disabled = true;
+        submitCommentBtn.textContent = 'Submitting...';
         vscode.postMessage({ type: 'addComment', body });
         commentInput.value = '';
         commentInputContainer.style.display = 'none';
+        // Re-enable after a delay (data refresh will also reset the view)
+        setTimeout(() => {
+          submitCommentBtn.disabled = false;
+          submitCommentBtn.textContent = 'Submit';
+        }, 2000);
       }
     });
 
@@ -137,13 +145,30 @@
       commentInputContainer.style.display = 'none';
     });
 
+    // Keyboard shortcuts for comment input
+    commentInput.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === 'Enter') {
+        // Ctrl+Enter submits the comment
+        submitCommentBtn.click();
+      } else if (e.key === 'Escape') {
+        // Escape cancels the comment
+        cancelCommentBtn.click();
+      }
+    });
+
     submitReviewBtn.addEventListener('click', () => {
       const state = reviewState.value;
       const body = reviewBody.value.trim();
       console.log('[Forgejo Webview] Submit review clicked, state:', state);
+      submitReviewBtn.disabled = true;
+      submitReviewBtn.textContent = 'Submitting...';
       vscode.postMessage({ type: 'addReview', state, body });
       reviewBody.value = '';
       reviewDialog.style.display = 'none';
+      setTimeout(() => {
+        submitReviewBtn.disabled = false;
+        submitReviewBtn.textContent = 'Submit Review';
+      }, 2000);
     });
 
     cancelReviewBtn.addEventListener('click', () => {
@@ -156,9 +181,15 @@
       const strategy = mergeStrategy.value;
       const message = mergeMessage.value.trim() || undefined;
       console.log('[Forgejo Webview] Confirm merge clicked, strategy:', strategy);
+      confirmMergeBtn.disabled = true;
+      confirmMergeBtn.textContent = 'Merging...';
       vscode.postMessage({ type: 'merge', strategy, message });
       mergeMessage.value = '';
       mergeDialog.style.display = 'none';
+      setTimeout(() => {
+        confirmMergeBtn.disabled = false;
+        confirmMergeBtn.textContent = 'Merge';
+      }, 2000);
     });
 
     cancelMergeBtn.addEventListener('click', () => {
