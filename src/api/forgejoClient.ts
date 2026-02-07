@@ -583,6 +583,98 @@ export class ForgejoClient {
     }
   }
 
+  /**
+   * Update a pull request's body
+   */
+  async updatePullRequestBody(owner: string, repo: string, index: number, body: string): Promise<PullRequest> {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${index}`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    logDebug('Updating pull request body:', { owner, repo, index });
+
+    try {
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ body })
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Update PR body failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const pr = await response.json() as PullRequest;
+      logInfo('Pull request body updated successfully:', { owner, repo, index });
+      return pr;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to update pull request body: ${String(error)}`);
+    }
+  }
+
+  /**
+   * Update an issue's body
+   */
+  async updateIssueBody(owner: string, repo: string, index: number, body: string): Promise<Issue> {
+    const endpoint = `/repos/${owner}/${repo}/issues/${index}`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    logDebug('Updating issue body:', { owner, repo, index });
+
+    try {
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ body })
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Update issue body failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const issue = await response.json() as Issue;
+      logInfo('Issue body updated successfully:', { owner, repo, index });
+      return issue;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to update issue body: ${String(error)}`);
+    }
+  }
+
   // ==================== Actions API Methods ====================
 
   /**

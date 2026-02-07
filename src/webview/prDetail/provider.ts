@@ -14,14 +14,16 @@ export type WebviewMessage =
   | { type: 'addReview'; state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; body: string }
   | { type: 'openInBrowser' }
   | { type: 'viewCommit'; sha: string }
-  | { type: 'viewFile'; filename: string };
+  | { type: 'viewFile'; filename: string }
+  | { type: 'updateBody'; body: string };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
   | { type: 'loading'; show: boolean }
   | { type: 'error'; message: string }
   | { type: 'theme'; theme: 'light' | 'dark' | 'high-contrast' }
-  | { type: 'actionComplete'; action: string; success: boolean };
+  | { type: 'actionComplete'; action: string; success: boolean }
+  | { type: 'bodyUpdated'; body: string };
 
 export interface PRActivity {
   type: 'comment' | 'review' | 'commit' | 'timeline';
@@ -229,6 +231,7 @@ export class PRDetailWebviewProvider {
       case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey); break;
       case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey); break;
       case 'openInBrowser': await this._openInBrowser(owner, repo, number); break;
+      case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey); break;
     }
   }
 
@@ -310,6 +313,30 @@ export class PRDetailWebviewProvider {
       vscode.window.showErrorMessage(`Failed to add review: ${error instanceof Error ? error.message : 'Unknown error'}`);
       if (panelState) {
         panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addReview', success: false });
+      }
+    }
+  }
+
+  private async _updateBody(owner: string, repo: string, number: number, body: string, panelKey?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const updatedPR = await client.updatePullRequestBody(owner, repo, number, body);
+      logInfo('PR body updated:', { owner, repo, number });
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'bodyUpdated', body: updatedPR.body || '' });
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: true });
+      }
+      if (panelState?.pendingData) {
+        panelState.pendingData.pr.body = updatedPR.body || '';
+      }
+    } catch (error) {
+      logError('Failed to update PR body:', error);
+      vscode.window.showErrorMessage(`Failed to update description: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: false });
       }
     }
   }
@@ -397,8 +424,18 @@ export class PRDetailWebviewProvider {
     </nav>
 
     <section class="description-section">
-      <h2>Description</h2>
+      <div class="description-header">
+        <h2>Description</h2>
+        <button id="edit-description-btn" class="btn btn-secondary btn-small">Edit</button>
+      </div>
       <div id="pr-description" class="markdown-body"></div>
+      <div id="pr-description-editor" class="description-editor" style="display: none;">
+        <textarea id="description-textarea" class="description-textarea"></textarea>
+        <div class="description-editor-actions">
+          <button id="save-description-btn" class="btn btn-primary btn-small">Save</button>
+          <button id="cancel-description-btn" class="btn btn-secondary btn-small">Cancel</button>
+        </div>
+      </div>
     </section>
 
     <section id="ci-section" class="ci-section" style="display: none;">

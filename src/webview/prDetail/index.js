@@ -36,6 +36,12 @@
   const activityCountEl = document.getElementById('activity-count');
   const activityTimeline = document.getElementById('activity-timeline');
 
+  const editDescriptionBtn = document.getElementById('edit-description-btn');
+  const descriptionEditor = document.getElementById('pr-description-editor');
+  const descriptionTextarea = document.getElementById('description-textarea');
+  const saveDescriptionBtn = document.getElementById('save-description-btn');
+  const cancelDescriptionBtn = document.getElementById('cancel-description-btn');
+
   const commentInputContainer = document.getElementById('comment-input-container');
   const commentInput = document.getElementById('comment-input');
   const submitCommentBtn = document.getElementById('submit-comment-btn');
@@ -120,6 +126,42 @@
         }
       });
     }
+
+    editDescriptionBtn.addEventListener('click', () => {
+      console.log('[Forgejo Webview] Edit description clicked');
+      if (currentData && currentData.pr) {
+        descriptionTextarea.value = currentData.pr.body || '';
+        prDescriptionEl.style.display = 'none';
+        descriptionEditor.style.display = 'block';
+        editDescriptionBtn.style.display = 'none';
+        descriptionTextarea.focus();
+      }
+    });
+
+    saveDescriptionBtn.addEventListener('click', () => {
+      const body = descriptionTextarea.value;
+      console.log('[Forgejo Webview] Save description clicked');
+      saveDescriptionBtn.disabled = true;
+      saveDescriptionBtn.textContent = 'Saving...';
+      vscode.postMessage({ type: 'updateBody', body });
+    });
+
+    cancelDescriptionBtn.addEventListener('click', () => {
+      console.log('[Forgejo Webview] Cancel description edit clicked');
+      descriptionEditor.style.display = 'none';
+      prDescriptionEl.style.display = 'block';
+      editDescriptionBtn.style.display = 'inline-flex';
+    });
+
+    descriptionTextarea.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        saveDescriptionBtn.click();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelDescriptionBtn.click();
+      }
+    });
 
     submitCommentBtn.addEventListener('click', () => {
       const body = commentInput.value.trim();
@@ -229,6 +271,17 @@
           console.log('[Forgejo Webview] Action complete:', message.action, 'success:', message.success);
           handleActionComplete(message.action, message.success);
           break;
+        case 'bodyUpdated':
+          console.log('[Forgejo Webview] Body updated');
+          if (currentData && currentData.pr) {
+            currentData.pr.body = message.body;
+          }
+          prDescriptionEl.innerHTML = message.body ? renderMarkdown(message.body) : '<p style="color:var(--vscode-descriptionForeground)">No description provided.</p>';
+          setupCheckboxListeners();
+          descriptionEditor.style.display = 'none';
+          prDescriptionEl.style.display = 'block';
+          editDescriptionBtn.style.display = 'inline-flex';
+          break;
         default:
           console.log('[Forgejo Webview] Unknown message type:', message.type);
       }
@@ -259,6 +312,13 @@
         if (success) {
           mergeMessage.value = '';
           mergeDialog.style.display = 'none';
+        }
+        break;
+      case 'updateBody':
+        saveDescriptionBtn.disabled = false;
+        saveDescriptionBtn.textContent = 'Save';
+        if (!success) {
+          // Keep editor open on failure so user doesn't lose changes
         }
         break;
     }
@@ -328,9 +388,14 @@
     // Update description with Markdown rendering
     if (pr.body) {
       prDescriptionEl.innerHTML = renderMarkdown(pr.body);
+      setupCheckboxListeners();
     } else {
       prDescriptionEl.innerHTML = '<p style="color:var(--vscode-descriptionForeground)">No description provided.</p>';
     }
+    // Reset edit state
+    descriptionEditor.style.display = 'none';
+    prDescriptionEl.style.display = 'block';
+    editDescriptionBtn.style.display = 'inline-flex';
 
     // Update CI status
     if (statuses && statuses.length > 0) {
@@ -383,6 +448,38 @@
     // Show content
     setLoading(false);
     console.log('[Forgejo Webview] PR details updated successfully');
+  }
+
+  /**
+   * Toggle a task list checkbox in the raw markdown body.
+   * Finds the Nth task list item (- [ ] or - [x]) and toggles it.
+   */
+  function toggleCheckboxInBody(body, checkboxIndex, checked) {
+    var taskPattern = /- \[[ xX]\]/g;
+    var count = 0;
+    return body.replace(taskPattern, function(match) {
+      if (count++ === checkboxIndex) {
+        return checked ? '- [x]' : '- [ ]';
+      }
+      return match;
+    });
+  }
+
+  /**
+   * Set up click handlers on task list checkboxes to make them interactive.
+   */
+  function setupCheckboxListeners() {
+    var checkboxes = prDescriptionEl.querySelectorAll('.task-checkbox');
+    checkboxes.forEach(function(checkbox, index) {
+      checkbox.addEventListener('change', function(e) {
+        console.log('[Forgejo Webview] Checkbox toggled:', index, 'checked:', e.target.checked);
+        if (currentData && currentData.pr && currentData.pr.body) {
+          var newBody = toggleCheckboxInBody(currentData.pr.body, index, e.target.checked);
+          currentData.pr.body = newBody;
+          vscode.postMessage({ type: 'updateBody', body: newBody });
+        }
+      });
+    });
   }
 
   function renderActivity(activity, owner, repo) {
@@ -722,8 +819,8 @@
         // Task list item: - [x] or - [ ]
         var taskMatch = liContent.match(/^\[([ xX])\]\s+(.*)/);
         if (taskMatch) {
-          var checked = taskMatch[1] !== ' ' ? ' checked disabled' : ' disabled';
-          result.push('<li class="task-list-item"><input type="checkbox"' + checked + '> ' + processInline(taskMatch[2]) + '</li>');
+          var checked = taskMatch[1] !== ' ' ? ' checked' : '';
+          result.push('<li class="task-list-item"><input type="checkbox" class="task-checkbox" data-line="' + i + '"' + checked + '> ' + processInline(taskMatch[2]) + '</li>');
         } else {
           result.push('<li>' + processInline(liContent) + '</li>');
         }

@@ -10,13 +10,16 @@ export type WebviewMessage =
   | { type: 'addComment'; body: string }
   | { type: 'openInBrowser' }
   | { type: 'closeIssue' }
-  | { type: 'reopenIssue' };
+  | { type: 'reopenIssue' }
+  | { type: 'updateBody'; body: string };
 
 export type ExtensionMessage =
   | { type: 'update'; data: IssueDetailViewData }
   | { type: 'loading'; show: boolean }
   | { type: 'error'; message: string }
-  | { type: 'theme'; theme: 'light' | 'dark' | 'high-contrast' };
+  | { type: 'theme'; theme: 'light' | 'dark' | 'high-contrast' }
+  | { type: 'bodyUpdated'; body: string }
+  | { type: 'actionComplete'; action: string; success: boolean };
 
 export interface IssueActivity {
   type: 'comment' | 'timeline';
@@ -204,6 +207,7 @@ export class IssueDetailWebviewProvider {
       case 'openInBrowser': await this._openInBrowser(owner, repo, number); break;
       case 'closeIssue': await this._closeIssue(owner, repo, number, panelKey); break;
       case 'reopenIssue': await this._reopenIssue(owner, repo, number, panelKey); break;
+      case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey); break;
     }
   }
 
@@ -243,6 +247,30 @@ export class IssueDetailWebviewProvider {
       if (panelKey) await this._fetchIssueData(panelKey);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to reopen issue: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _updateBody(owner: string, repo: string, number: number, body: string, panelKey?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const updatedIssue = await client.updateIssueBody(owner, repo, number, body);
+      logInfo('Issue body updated:', { owner, repo, number });
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'bodyUpdated', body: updatedIssue.body || '' });
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: true });
+      }
+      if (panelState?.pendingData) {
+        panelState.pendingData.issue.body = updatedIssue.body || '';
+      }
+    } catch (error) {
+      logError('Failed to update issue body:', error);
+      vscode.window.showErrorMessage(`Failed to update description: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: false });
+      }
     }
   }
 
@@ -325,8 +353,18 @@ export class IssueDetailWebviewProvider {
     </nav>
 
     <section class="description-section">
-      <h2>Description</h2>
+      <div class="description-header">
+        <h2>Description</h2>
+        <button id="edit-description-btn" class="btn btn-secondary btn-small">Edit</button>
+      </div>
       <div id="issue-description" class="markdown-body"></div>
+      <div id="issue-description-editor" class="description-editor" style="display: none;">
+        <textarea id="description-textarea" class="description-textarea"></textarea>
+        <div class="description-editor-actions">
+          <button id="save-description-btn" class="btn btn-primary btn-small">Save</button>
+          <button id="cancel-description-btn" class="btn btn-secondary btn-small">Cancel</button>
+        </div>
+      </div>
     </section>
 
     <section class="activity-section">
