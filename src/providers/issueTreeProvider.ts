@@ -37,7 +37,10 @@ class IssueGroupItem extends vscode.TreeItem {
     public readonly label: string,
     public readonly issues: IssueListItem[]
   ) {
-    super(label, vscode.TreeItemCollapsibleState.Expanded);
+    const collapsibleState = label === 'Closed'
+      ? vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.Expanded;
+    super(label, collapsibleState);
     this.description = `${issues.length}`;
     this.contextValue = 'issueGroup';
   }
