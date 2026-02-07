@@ -680,26 +680,26 @@
   }
 
   /**
-   * Process inline Markdown elements: links, images, bold+italic, bold, italic,
+   * Process inline Markdown elements: images, links, bold+italic, bold, italic,
    * strikethrough. Assumes input is already HTML-escaped.
    *
-   * Processing order: links -> images -> code -> bold -> italic -> strikethrough
+   * Processing order: images -> links -> bold -> italic -> strikethrough
    */
   function processInline(text) {
     if (!text) return '';
 
-    // Links: [text](url) -- processed first to protect URLs from italic/bold mangling
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_match, linkText, url) {
-      var safe = sanitizeUrl(url);
-      if (!safe) return linkText;
-      return '<a href="' + safe + '">' + linkText + '</a>';
-    });
-
-    // Images: ![alt](url)
+    // Images: ![alt](url) -- processed before links so ![alt](url) is not consumed by link regex
     text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_match, alt, url) {
       var safe = sanitizeUrl(url);
       if (!safe) return alt;
       return '<img src="' + safe + '" alt="' + alt + '" style="max-width:100%;">';
+    });
+
+    // Links: [text](url) -- processed after images to avoid matching image syntax
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_match, linkText, url) {
+      var safe = sanitizeUrl(url);
+      if (!safe) return linkText;
+      return '<a href="' + safe + '">' + linkText + '</a>';
     });
 
     // Bold + italic: ***text*** or ___text___
