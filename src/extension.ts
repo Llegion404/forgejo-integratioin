@@ -16,7 +16,7 @@ import { getAllInstances } from './utils/instanceHelpers';
 import { startOnboarding } from './commands/onboarding';
 import { manageInstances } from './commands/instanceManager';
 import { showDiagnostics } from './commands/diagnostics';
-import { logger, logInfo } from './utils/logger';
+import { logger, logInfo, logError } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
 
@@ -147,6 +147,11 @@ export async function activate(context: vscode.ExtensionContext) {
           return;
         }
 
+        if (!config.token) {
+          vscode.window.showErrorMessage('A Forgejo token is required to create issues. Please configure your token first.');
+          return;
+        }
+
         // Prompt for issue title
         const title = await vscode.window.showInputBox({
           prompt: 'Enter issue title',
@@ -166,7 +171,7 @@ export async function activate(context: vscode.ExtensionContext) {
         // Prompt for issue body (optional)
         const body = await vscode.window.showInputBox({
           prompt: 'Enter issue description (optional)',
-          placeHolder: 'Describe the issue...'
+          placeHolder: 'Brief description (you can edit the full description in the browser after creation)'
         });
 
         if (body === undefined) {
@@ -177,7 +182,7 @@ export async function activate(context: vscode.ExtensionContext) {
         const client = new ForgejoClient(config.instanceUrl, config.token);
         const issue = await client.createIssue(config.owner, config.repo, title.trim(), body?.trim() || undefined);
 
-        console.log(`[Forgejo] Issue #${issue.number} created: ${issue.title}`);
+        logInfo(`Issue #${issue.number} created: ${issue.title}`);
         const action = await vscode.window.showInformationMessage(
           `Issue #${issue.number} created successfully!`,
           'Open in Browser'
@@ -190,7 +195,7 @@ export async function activate(context: vscode.ExtensionContext) {
         // Refresh the issues tree to show the new issue
         issueTreeProvider.refresh();
       } catch (error) {
-        console.error('[Forgejo] Error creating issue:', error);
+        logError('Error creating issue:', error);
         vscode.window.showErrorMessage(
           `Failed to create issue: ${error instanceof Error ? error.message : 'Unknown error'}`
         );

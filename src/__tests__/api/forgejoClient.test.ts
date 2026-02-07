@@ -1096,4 +1096,116 @@ describe('ForgejoClient', () => {
         .toThrow('HTTP 403: Forbidden');
     });
   });
+
+  describe('createIssue', () => {
+    const mockCreatedIssue = {
+      id: 42,
+      number: 42,
+      title: 'Test Issue',
+      body: 'Test body',
+      state: 'open',
+      user: { login: 'testuser', avatar_url: 'https://example.com/avatar.png' },
+      labels: [],
+      assignees: [],
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      closed_at: null,
+      html_url: 'https://git.example.com/owner/repo/issues/42',
+      comments: 0
+    };
+
+    test('should create issue with title and body', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => mockCreatedIssue
+      } as unknown as Response);
+
+      const result = await client.createIssue('owner', 'repo', 'Test Issue', 'Test body');
+
+      expect(result).toEqual(mockCreatedIssue);
+      expect(result.number).toBe(42);
+      expect(result.title).toBe('Test Issue');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/issues',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ title: 'Test Issue', body: 'Test body' })
+        })
+      );
+    });
+
+    test('should create issue with title only (no body)', async () => {
+      const issueWithoutBody = { ...mockCreatedIssue, body: '' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => issueWithoutBody
+      } as unknown as Response);
+
+      const result = await client.createIssue('owner', 'repo', 'Title Only Issue');
+
+      expect(result).toEqual(issueWithoutBody);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/issues',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ title: 'Title Only Issue' })
+        })
+      );
+    });
+
+    test('should include authentication header when token is set', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => mockCreatedIssue
+      } as unknown as Response);
+
+      await client.createIssue('owner', 'repo', 'Test Issue', 'Test body');
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Authorization': 'token test-token'
+          })
+        })
+      );
+    });
+
+    test('should handle 401 unauthorized error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: async () => 'Invalid token'
+      } as unknown as Response);
+
+      await expect(client.createIssue('owner', 'repo', 'Test Issue'))
+        .rejects
+        .toThrow('HTTP 401: Unauthorized');
+    });
+
+    test('should handle 500 server error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        text: async () => 'Server error'
+      } as unknown as Response);
+
+      await expect(client.createIssue('owner', 'repo', 'Test Issue'))
+        .rejects
+        .toThrow('HTTP 500: Internal Server Error');
+    });
+
+    test('should handle network error', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network timeout'));
+
+      await expect(client.createIssue('owner', 'repo', 'Test Issue'))
+        .rejects
+        .toThrow();
+    });
+  });
 });
