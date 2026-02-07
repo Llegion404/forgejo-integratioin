@@ -194,7 +194,7 @@ export class PRDetailWebviewProvider {
     } catch (e) { logDebug('Could not fetch commits:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);
-      activities.push(...timeline.map((t: any) => ({ ...t, type: 'timeline' as const })));
+      activities.push(...timeline.map((t: any) => ({ ...t, event: t.type, type: 'timeline' as const })));
     } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at || a.submitted_at || a.committed_at || 0);
