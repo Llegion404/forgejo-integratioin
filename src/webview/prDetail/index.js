@@ -468,6 +468,47 @@
     if (!activity.event) return 'performed an action';
 
     const events = {
+      // Forgejo API timeline type values (from API response)
+      'close': 'closed this pull request',
+      'reopen': 'reopened this pull request',
+      'comment': 'commented',
+      'label': 'added/removed a label',
+      'milestone': 'changed the milestone',
+      'assignees': 'changed assignees',
+      'change_title': 'changed the title',
+      'delete_branch': 'deleted the head branch',
+      'merge_pull': 'merged this pull request',
+      'review': 'submitted a review',
+      'review_request': 'requested a review',
+      'dismiss_review': 'dismissed a review',
+      'lock': 'locked this pull request',
+      'unlock': 'unlocked this pull request',
+      'pin': 'pinned this pull request',
+      'unpin': 'unpinned this pull request',
+      'change_target_branch': 'changed the target branch',
+      'pull_push': 'pushed commits',
+      'commit_ref': 'referenced this pull request',
+      'issue_ref': 'referenced this pull request',
+      'comment_ref': 'referenced this pull request',
+      'pull_ref': 'referenced this pull request',
+      'code': 'commented on code',
+      'project': 'changed the project',
+      'project_board': 'moved in project board',
+      'added_deadline': 'added a deadline',
+      'modified_deadline': 'modified the deadline',
+      'removed_deadline': 'removed the deadline',
+      'add_dependency': 'added a dependency',
+      'remove_dependency': 'removed a dependency',
+      'start_tracking': 'started time tracking',
+      'stop_tracking': 'stopped time tracking',
+      'add_time_manual': 'added tracked time',
+      'cancel_tracking': 'cancelled time tracking',
+      'delete_time_manual': 'removed tracked time',
+      'change_issue_ref': 'changed the issue reference',
+      'pull_scheduled_merge': 'scheduled auto-merge',
+      'pull_cancel_scheduled_merge': 'cancelled auto-merge',
+      'change_time_estimate': 'changed time estimate',
+      // GitHub-style event names (fallback compatibility)
       'closed': 'closed this pull request',
       'merged': 'merged this pull request',
       'reopened': 'reopened this pull request',
@@ -492,7 +533,23 @@
       'converted_to_draft': 'converted to draft'
     };
 
-    return events[activity.event] || activity.event;
+    var eventText = events[activity.event] || activity.event;
+
+    // Enhance with contextual details when available
+    if (activity.event === 'label' && activity.label) {
+      eventText = (activity.body === '' || !activity.body ? 'added' : 'removed') + ' label <strong>' + escapeHtml(activity.label.name || '') + '</strong>';
+    }
+    if (activity.event === 'change_title' && activity.old_title && activity.new_title) {
+      eventText = 'changed title from <del>' + escapeHtml(activity.old_title) + '</del> to <strong>' + escapeHtml(activity.new_title) + '</strong>';
+    }
+    if (activity.event === 'assignees' && activity.assignee) {
+      eventText = (activity.removed_assignee ? 'unassigned ' : 'assigned ') + '<strong>' + escapeHtml(activity.assignee.login || '') + '</strong>';
+    }
+    if (activity.event === 'milestone' && activity.milestone) {
+      eventText = 'set milestone to <strong>' + escapeHtml(activity.milestone.title || '') + '</strong>';
+    }
+
+    return eventText;
   }
 
   function statusIconForStatus(status) {
