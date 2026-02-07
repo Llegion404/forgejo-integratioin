@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
-import { WorkflowRun, WorkflowJob } from '../../models/action';
+import { WorkflowRun, WorkflowRunListItem, WorkflowJob } from '../../models/action';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 
 export type WebviewMessage =
@@ -29,8 +29,10 @@ interface PanelState {
   owner: string;
   repo: string;
   runId: number;
+  run: WorkflowRunListItem;  // Store the run data to avoid 404 on /actions/runs/{id}
   isReady: boolean;
   pendingData?: ActionDetailViewData | null;
+  pendingError?: string | null;
 }
 
 export class ActionDetailWebviewProvider {
@@ -39,7 +41,8 @@ export class ActionDetailWebviewProvider {
 
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
-  public async showActionDetails(owner: string, repo: string, runId: number): Promise<void> {
+  public async showActionDetails(owner: string, repo: string, run: WorkflowRunListItem): Promise<void> {
+    const runId = run.id;
     logInfo('Showing action details in webview:', { owner, repo, runId });
 
     const panelKey = `${owner}/${repo}/${runId}`;
@@ -67,8 +70,10 @@ export class ActionDetailWebviewProvider {
       owner,
       repo,
       runId,
+      run,
       isReady: false,
-      pendingData: null
+      pendingData: null,
+      pendingError: null
     };
     this._panels.set(panelKey, state);
 
@@ -94,7 +99,7 @@ export class ActionDetailWebviewProvider {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
-    const { panel, owner, repo, runId } = state;
+    const { panel, owner, repo, run } = state;
     logInfo('_fetchActionData starting:', { panelKey, isReady: state.isReady });
 
     try {
@@ -102,16 +107,30 @@ export class ActionDetailWebviewProvider {
       if (!config) throw new Error('Forgejo configuration not found');
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      logInfo('Fetching action details from API...');
+      logInfo('Fetching jobs from API...');
 
-      const [run, jobsResponse] = await Promise.all([
-        client.getWorkflowRunDetails(owner, repo, runId),
-        client.getWorkflowJobs(owner, repo, runId)
-      ]);
+      // Use the run data we already have (passed from the tree view)
+      // Convert WorkflowRunListItem to WorkflowRun with default values for timing fields
+      const fullRun: WorkflowRun = {
+        ...run,
+        started_at: run.created_at,
+        stopped_at: null,
+        run_started_at: run.created_at
+      };
 
-      logInfo('Action details fetched:', { name: run.name, jobCount: jobsResponse.jobs.length });
+      // Only fetch jobs - the run details API uses incompatible IDs
+      let jobs: WorkflowJob[] = [];
+      try {
+        const jobsResponse = await client.getWorkflowJobs(owner, repo, run.id);
+        jobs = jobsResponse.jobs;
+        logInfo('Jobs fetched:', { jobCount: jobs.length });
+      } catch (jobError) {
+        logError('Failed to fetch jobs (will show run without jobs):', jobError);
+        // Continue with empty jobs - at least show the run info
+      }
 
-      state.pendingData = { run, jobs: jobsResponse.jobs, owner, repo };
+      state.pendingData = { run: fullRun, jobs, owner, repo };
+      state.pendingError = null; // Clear any previous error
       logInfo('pendingData set, isReady:', state.isReady);
 
       if (state.isReady) {
@@ -122,11 +141,15 @@ export class ActionDetailWebviewProvider {
       }
     } catch (error) {
       logError('Failed to fetch action data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load action details';
       if (state.isReady) {
         panel.webview.postMessage({
           type: 'error',
-          message: error instanceof Error ? error.message : 'Failed to load action details'
+          message: errorMessage
         });
+      } else {
+        // Store error to show when webview becomes ready
+        state.pendingError = errorMessage;
       }
     }
   }
@@ -160,9 +183,13 @@ export class ActionDetailWebviewProvider {
 
     switch (message.type) {
       case 'ready':
-        logInfo('Webview ready message received, pendingData exists:', !!state.pendingData);
+        logInfo('Webview ready message received, pendingData exists:', !!state.pendingData, 'pendingError:', !!state.pendingError);
         state.isReady = true;
-        if (state.pendingData) {
+        if (state.pendingError) {
+          logInfo('Showing pending error to webview...');
+          panel.webview.postMessage({ type: 'error', message: state.pendingError });
+          state.pendingError = null;
+        } else if (state.pendingData) {
           logInfo('Sending pending data to webview...');
           await this._sendDataToPanel(panelKey);
         } else {
@@ -202,20 +229,49 @@ export class ActionDetailWebviewProvider {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
-      const url = `${config.instanceUrl}/${owner}/${repo}/actions/runs/${runId}`;
+
+      // Get run_number from stored run data (web UI uses run_number, not internal id)
+      const panelKey = `${owner}/${repo}/${runId}`;
+      const state = this._panels.get(panelKey);
+      const runNumber = state?.run?.run_number ?? runId;
+
+      const url = `${config.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}`;
       vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to open: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async _viewLogs(owner: string, repo: string, runNumber: number, jobIndex: number): Promise<void> {
+  private async _viewLogs(owner: string, repo: string, runId: number, jobIndex: number): Promise<void> {
+    // Get the run data to access run_number (sequential index, not internal id)
+    const panelKey = `${owner}/${repo}/${runId}`;
+    const state = this._panels.get(panelKey);
+    const run = state?.pendingData?.run;
+
+    if (!run) {
+      vscode.window.showErrorMessage('Run data not available');
+      return;
+    }
+
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
-      // Open logs in browser - Forgejo's log viewing is complex and best done in browser
-      const url = `${config.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}/jobs/${jobIndex}/logs`;
-      vscode.env.openExternal(vscode.Uri.parse(url));
+
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Fetching logs for ${run.name}...`,
+        cancellable: false
+      }, async () => {
+        const client = new ForgejoClient(config.instanceUrl, config.token);
+        const logs = await client.getWorkflowLogs(owner, repo, run.run_number, jobIndex);
+
+        // Create untitled document with logs
+        const doc = await vscode.workspace.openTextDocument({
+          content: logs,
+          language: 'log'
+        });
+        await vscode.window.showTextDocument(doc, { preview: true });
+      });
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to view logs: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }

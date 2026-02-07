@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { PRTreeProvider } from './providers/prTreeProvider';
 import { IssueTreeProvider } from './providers/issueTreeProvider';
-import { ActionsTreeProvider, ActionTreeItem } from './providers/actionsTreeProvider';
+import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem } from './providers/actionsTreeProvider';
 import { WorkflowRunListItem, WorkflowJob } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
@@ -425,9 +425,11 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'forgejo.openActionInBrowser',
-      (actionItem: ActionTreeItem) => {
-        if (actionItem && actionItem.run && actionItem.run.url) {
-          vscode.env.openExternal(vscode.Uri.parse(actionItem.run.url));
+      (item: WorkflowRunTreeItem | JobTreeItem) => {
+        // Get the run data from either a run item or a job item
+        const run = item instanceof WorkflowRunTreeItem ? item.jobs[0] : item.job;
+        if (run && run.url) {
+          vscode.env.openExternal(vscode.Uri.parse(run.url));
         }
       }
     )
@@ -447,14 +449,16 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'forgejo.rerunAction',
-      async (actionItem: ActionTreeItem) => {
-        if (!actionItem || !actionItem.run) {
+      async (item: WorkflowRunTreeItem | JobTreeItem) => {
+        // Get the run data from either a run item or a job item
+        const run = item instanceof WorkflowRunTreeItem ? item.jobs[0] : item.job;
+        if (!run) {
           return;
         }
 
         try {
           const confirm = await vscode.window.showWarningMessage(
-            `Re-run workflow "${actionItem.run.display_title || actionItem.run.name}"?`,
+            `Re-run workflow "${run.display_title || run.name}"?`,
             { modal: true },
             'Re-run'
           );
@@ -470,7 +474,7 @@ export async function activate(context: vscode.ExtensionContext) {
           }
 
           const client = new ForgejoClient(config.instanceUrl, config.token);
-          await client.rerunWorkflow(actionItem.owner, actionItem.repo, actionItem.run.id);
+          await client.rerunWorkflow(item.owner, item.repo, run.id);
 
           vscode.window.showInformationMessage('Workflow re-run triggered!');
           actionsTreeProvider.refresh();
@@ -490,8 +494,8 @@ export async function activate(context: vscode.ExtensionContext) {
       'forgejo.showActionDetails',
       async (run: WorkflowRunListItem, owner: string, repo: string) => {
         try {
-          // Show the webview panel
-          await actionDetailWebviewProvider.showActionDetails(owner, repo, run.id);
+          // Show the webview panel with the run data we already have
+          await actionDetailWebviewProvider.showActionDetails(owner, repo, run);
         } catch (error) {
           console.error('[Forgejo] Error opening Action details:', error);
           vscode.window.showErrorMessage(
