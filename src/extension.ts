@@ -137,6 +137,67 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Register create issue command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.createIssue', async () => {
+      try {
+        const config = await getForgejoConfig();
+        if (!config) {
+          vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
+          return;
+        }
+
+        // Prompt for issue title
+        const title = await vscode.window.showInputBox({
+          prompt: 'Enter issue title',
+          placeHolder: 'Issue title',
+          validateInput: (value) => {
+            if (!value || !value.trim()) {
+              return 'Title is required';
+            }
+            return null;
+          }
+        });
+
+        if (!title) {
+          return; // User cancelled
+        }
+
+        // Prompt for issue body (optional)
+        const body = await vscode.window.showInputBox({
+          prompt: 'Enter issue description (optional)',
+          placeHolder: 'Describe the issue...'
+        });
+
+        if (body === undefined) {
+          return; // User cancelled (pressing Escape)
+        }
+
+        // Create the issue
+        const client = new ForgejoClient(config.instanceUrl, config.token);
+        const issue = await client.createIssue(config.owner, config.repo, title.trim(), body?.trim() || undefined);
+
+        console.log(`[Forgejo] Issue #${issue.number} created: ${issue.title}`);
+        const action = await vscode.window.showInformationMessage(
+          `Issue #${issue.number} created successfully!`,
+          'Open in Browser'
+        );
+
+        if (action === 'Open in Browser') {
+          vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
+        }
+
+        // Refresh the issues tree to show the new issue
+        issueTreeProvider.refresh();
+      } catch (error) {
+        console.error('[Forgejo] Error creating issue:', error);
+        vscode.window.showErrorMessage(
+          `Failed to create issue: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+    })
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand('forgejo.refreshActions', () => {
       actionsTreeProvider.refresh();

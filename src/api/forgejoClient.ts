@@ -530,6 +530,57 @@ export class ForgejoClient {
     }
   }
 
+  /**
+   * Create a new issue in a repository
+   */
+  async createIssue(owner: string, repo: string, title: string, body?: string): Promise<Issue> {
+    const endpoint = `/repos/${owner}/${repo}/issues`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    const payload: Record<string, string> = { title };
+    if (body) {
+      payload.body = body;
+    }
+
+    logDebug('Creating issue:', { owner, repo, title });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Create issue failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const issue = await response.json() as Issue;
+      logInfo('Issue created successfully:', { owner, repo, number: issue.number, title: issue.title });
+      return issue;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to create issue: ${String(error)}`);
+    }
+  }
+
   // ==================== Actions API Methods ====================
 
   /**
