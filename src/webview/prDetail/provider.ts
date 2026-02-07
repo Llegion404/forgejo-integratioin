@@ -20,7 +20,8 @@ export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
   | { type: 'loading'; show: boolean }
   | { type: 'error'; message: string }
-  | { type: 'theme'; theme: 'light' | 'dark' | 'high-contrast' };
+  | { type: 'theme'; theme: 'light' | 'dark' | 'high-contrast' }
+  | { type: 'actionComplete'; action: string; success: boolean };
 
 export interface PRActivity {
   type: 'comment' | 'review' | 'commit' | 'timeline';
@@ -248,15 +249,22 @@ export class PRDetailWebviewProvider {
   }
 
   private async _mergePR(owner: string, repo: string, number: number, strategy: string, message?: string, panelKey?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.mergePullRequest(owner, repo, number, strategy as any, false);
       vscode.window.showInformationMessage('Pull request merged successfully');
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'merge', success: true });
+      }
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to merge: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'merge', success: false });
+      }
     }
   }
 
@@ -267,28 +275,42 @@ export class PRDetailWebviewProvider {
   }
 
   private async _addComment(owner: string, repo: string, number: number, body: string, panelKey?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.createComment(owner, repo, number, body);
       vscode.window.showInformationMessage('Comment added');
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addComment', success: true });
+      }
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to add comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addComment', success: false });
+      }
     }
   }
 
-  private async _addReview(owner: string, repo: string, number: number, state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, panelKey?: string): Promise<void> {
+  private async _addReview(owner: string, repo: string, number: number, reviewState: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT', body: string, panelKey?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.createReview(owner, repo, number, state, body);
-      vscode.window.showInformationMessage(`Review ${state.toLowerCase().replace(/_/g, ' ')}`);
+      await client.createReview(owner, repo, number, reviewState, body);
+      vscode.window.showInformationMessage(`Review ${reviewState.toLowerCase().replace(/_/g, ' ')}`);
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addReview', success: true });
+      }
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to add review: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) {
+        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addReview', success: false });
+      }
     }
   }
 
