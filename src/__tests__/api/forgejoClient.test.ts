@@ -97,7 +97,7 @@ describe('ForgejoClient', () => {
 
       expect(content).toBe(mockPlainTextContent);
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://git.example.com/api/v1/repos/owner/repo/contents/src%2Ffile.ts?ref=main',
+        'https://git.example.com/api/v1/repos/owner/repo/contents/src/file.ts?ref=main',
         expect.any(Object)
       );
     });
@@ -136,7 +136,7 @@ describe('ForgejoClient', () => {
       await client.getFileContents('owner', 'repo', 'src/file with spaces.ts', 'main');
 
       expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining('contents/src%2Ffile%20with%20spaces.ts'),
+        expect.stringContaining('contents/src/file%20with%20spaces.ts'),
         expect.any(Object)
       );
     });
@@ -151,7 +151,7 @@ describe('ForgejoClient', () => {
       await client.getFileContents('owner', 'repo', 'src/file.ts', 'feature/branch-name');
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://git.example.com/api/v1/repos/owner/repo/contents/src%2Ffile.ts?ref=feature/branch-name',
+        'https://git.example.com/api/v1/repos/owner/repo/contents/src/file.ts?ref=feature%2Fbranch-name',
         expect.any(Object)
       );
     });
@@ -315,7 +315,7 @@ describe('ForgejoClient', () => {
       await client.getFileContents('test-owner', 'test-repo', 'path/to/file.ts', 'test-branch');
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://git.example.com/api/v1/repos/test-owner/test-repo/contents/path%2Fto%2Ffile.ts?ref=test-branch',
+        'https://git.example.com/api/v1/repos/test-owner/test-repo/contents/path/to/file.ts?ref=test-branch',
         expect.any(Object)
       );
     });

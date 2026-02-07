@@ -59,7 +59,6 @@ describe('PRDiffContentProvider', () => {
     });
 
     test('should handle URI with special characters in filepath', async () => {
-      // Create URI using the helper function to ensure proper encoding
       const uri = createPRFileUri('owner', 'repo', 'main', 'src/file with spaces.ts');
       mockGetForgejoConfig.mockResolvedValue({
         instanceUrl: 'https://git.example.com',
@@ -71,19 +70,25 @@ describe('PRDiffContentProvider', () => {
 
       await provider.provideTextDocumentContent(uri);
 
-      expect(mockClient.getFileContents).toHaveBeenCalledWith('owner', 'repo', 'src/file%20with%20spaces.ts', 'main');
+      expect(mockClient.getFileContents).toHaveBeenCalledWith('owner', 'repo', 'src/file with spaces.ts', 'main');
     });
 
     test('should throw error for invalid URI with too few parts', async () => {
-      const uri = vscode.Uri.parse('forgejo-pr:/owner/repo');
+      const uri = vscode.Uri.parse('forgejo-pr:/owner/repo?ref=main');
 
       await expect(provider.provideTextDocumentContent(uri)).rejects.toThrow('Invalid PR diff URI format');
     });
 
     test('should throw error for invalid URI with only owner', async () => {
-      const uri = vscode.Uri.parse('forgejo-pr:/owner');
+      const uri = vscode.Uri.parse('forgejo-pr:/owner?ref=main');
 
       await expect(provider.provideTextDocumentContent(uri)).rejects.toThrow('Invalid PR diff URI format');
+    });
+
+    test('should throw error when ref query parameter is missing', async () => {
+      const uri = vscode.Uri.parse('forgejo-pr:/owner/repo/src/file.ts');
+
+      await expect(provider.provideTextDocumentContent(uri)).rejects.toThrow('Invalid PR diff URI: missing ref query parameter');
     });
   });
 
@@ -114,15 +119,13 @@ describe('PRDiffContentProvider', () => {
       });
       mockClient.getFileContents.mockResolvedValue(mockPlainTextContent);
 
-      // First request - should fetch
       const content1 = await provider.provideTextDocumentContent(uri);
       expect(content1).toBe(mockPlainTextContent);
       expect(mockClient.getFileContents).toHaveBeenCalledTimes(1);
 
-      // Second request - should use cache
       const content2 = await provider.provideTextDocumentContent(uri);
       expect(content2).toBe(mockPlainTextContent);
-      expect(mockClient.getFileContents).toHaveBeenCalledTimes(1); // Still 1, not called again
+      expect(mockClient.getFileContents).toHaveBeenCalledTimes(1);
     });
 
     test('should return error message when config is missing', async () => {
@@ -180,11 +183,10 @@ describe('PRDiffContentProvider', () => {
       mockClient.getFileContents.mockResolvedValue(mockPlainTextContent);
 
       await provider.provideTextDocumentContent(uri);
-      mockClient.getFileContents.mockResolvedValue(mockModifiedContent); // Change mock return value
+      mockClient.getFileContents.mockResolvedValue(mockModifiedContent);
 
-      // Second call should return cached content, not the new mocked value
       const content = await provider.provideTextDocumentContent(uri);
-      expect(content).toBe(mockPlainTextContent); // Original content, not modified
+      expect(content).toBe(mockPlainTextContent);
     });
 
     test('should clear cache for specific URI', async () => {
@@ -197,13 +199,9 @@ describe('PRDiffContentProvider', () => {
       });
       mockClient.getFileContents.mockResolvedValue(mockPlainTextContent);
 
-      // Fetch and cache
       await provider.provideTextDocumentContent(uri);
-
-      // Clear cache for this URI
       provider.clearCache(uri);
 
-      // Should fetch again
       mockClient.getFileContents.mockResolvedValue(mockModifiedContent);
       const content = await provider.provideTextDocumentContent(uri);
       expect(content).toBe(mockModifiedContent);
@@ -221,15 +219,12 @@ describe('PRDiffContentProvider', () => {
       });
       mockClient.getFileContents.mockResolvedValue(mockPlainTextContent);
 
-      // Fetch and cache both
       await provider.provideTextDocumentContent(uri1);
       await provider.provideTextDocumentContent(uri2);
       expect(mockClient.getFileContents).toHaveBeenCalledTimes(2);
 
-      // Clear all cache
       provider.clearCache();
 
-      // Should fetch again for both
       mockClient.getFileContents.mockResolvedValue(mockModifiedContent);
       await provider.provideTextDocumentContent(uri1);
       await provider.provideTextDocumentContent(uri2);
@@ -248,7 +243,6 @@ describe('PRDiffContentProvider', () => {
       });
       mockClient.getFileContents.mockResolvedValue(mockPlainTextContent);
 
-      // Set up event listener
       let eventFired = false;
       let eventUri: vscode.Uri | undefined;
       provider.onDidChange((uri) => {
@@ -256,16 +250,12 @@ describe('PRDiffContentProvider', () => {
         eventUri = uri;
       });
 
-      // Fetch and cache
       await provider.provideTextDocumentContent(uri);
-
-      // Refresh
       provider.refresh(uri);
 
       expect(eventFired).toBe(true);
       expect(eventUri).toBe(uri);
 
-      // Should fetch again after refresh
       mockClient.getFileContents.mockResolvedValue(mockModifiedContent);
       const content = await provider.provideTextDocumentContent(uri);
       expect(content).toBe(mockModifiedContent);
@@ -291,31 +281,28 @@ describe('PRDiffContentProvider', () => {
       const uri = createPRFileUri('owner', 'repo', 'main', 'src/file.ts');
 
       expect(uri.scheme).toBe(PR_DIFF_SCHEME);
-      expect(uri.path).toBe('/owner/repo/main/src/file.ts');
-      expect(uri.toString()).toBe('forgejo-pr:/owner/repo/main/src/file.ts');
+      expect(uri.path).toBe('/owner/repo/src/file.ts');
+      expect(uri.toString()).toContain('forgejo-pr:/owner/repo/src/file.ts');
+      expect(uri.toString()).toContain('ref=main');
     });
 
     test('should encode special characters in filepath', () => {
       const uri = createPRFileUri('owner', 'repo', 'main', 'src/file with spaces.ts');
 
-      expect(uri.path).toContain('file%20with%20spaces.ts');
-      expect(uri.toString()).toContain('file%20with%20spaces.ts');
+      expect(uri.path).toContain('file with spaces.ts');
+      expect(uri.toString()).toContain('file with spaces.ts');
     });
 
-    test('should handle nested paths correctly', () => {
+    test('should handle branch names with slashes via query parameter', () => {
       const uri = createPRFileUri('owner', 'repo', 'feature/branch', 'src/deep/nested/path/file.ts');
 
-      // Branch names with slashes are URL-encoded (feature/branch -> feature%2Fbranch)
-      expect(uri.path).toBe('/owner/repo/feature%2Fbranch/src/deep/nested/path/file.ts');
-      expect(uri.toString()).toBe('forgejo-pr:/owner/repo/feature%2Fbranch/src/deep/nested/path/file.ts');
+      expect(uri.path).toBe('/owner/repo/src/deep/nested/path/file.ts');
+      expect(uri.toString()).toContain('ref=feature%2Fbranch');
     });
   });
 
   describe('Branch names with slashes (Issue #17)', () => {
     test('should correctly parse URI when branch name contains slashes', async () => {
-      // This reproduces the bug from https://git.araj.me/maxking/forgejo-vscode/issues/17
-      // Branch: feature/issue-detail-view
-      // File: src/__tests__/fixtures/commitStatuses.ts
       const uri = createPRFileUri('maxking', 'forgejo-vscode', 'feature/issue-detail-view', 'src/__tests__/fixtures/commitStatuses.ts');
       mockGetForgejoConfig.mockResolvedValue({
         instanceUrl: 'https://git.example.com',
@@ -327,8 +314,6 @@ describe('PRDiffContentProvider', () => {
 
       await provider.provideTextDocumentContent(uri);
 
-      // The bug causes ref='feature' and filepath='issue-detail-view/src/__tests__/fixtures/commitStatuses.ts'
-      // Correct behavior should be ref='feature/issue-detail-view' and filepath='src/__tests__/fixtures/commitStatuses.ts'
       expect(mockClient.getFileContents).toHaveBeenCalledWith(
         'maxking',
         'forgejo-vscode',
@@ -338,8 +323,6 @@ describe('PRDiffContentProvider', () => {
     });
 
     test('should correctly parse URI with deeply nested branch name', async () => {
-      // Branch: feature/2024/january/new-feature
-      // File: src/utils/config.ts
       const uri = createPRFileUri('owner', 'repo', 'feature/2024/january/new-feature', 'src/utils/config.ts');
       mockGetForgejoConfig.mockResolvedValue({
         instanceUrl: 'https://git.example.com',

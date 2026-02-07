@@ -4,7 +4,10 @@ import { getForgejoConfig } from '../utils/config';
 
 /**
  * Custom URI scheme for PR diff virtual documents
- * Format: forgejo-pr://owner/repo/ref/filepath
+ * Format: forgejo-pr:/{owner}/{repo}/{filepath}?ref={ref}
+ *
+ * The ref (branch/tag/SHA) is passed as a query parameter to avoid
+ * ambiguity with branch names that contain slashes (e.g., feature/branch).
  */
 export const PR_DIFF_SCHEME = 'forgejo-pr';
 
@@ -37,17 +40,22 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
       return cached;
     }
 
-    // Parse URI: forgejo-pr://owner/repo/ref/filepath
-    // Note: ref is URL-encoded to handle branch names with slashes (e.g., feature/branch -> feature%2Fbranch)
+    // Parse URI: forgejo-pr:/{owner}/{repo}/{filepath}?ref={ref}
     const parts = uri.path.split('/').filter(p => p);
-    if (parts.length < 4) {
+    if (parts.length < 3) {
       throw new Error('Invalid PR diff URI format');
     }
 
     const owner = parts[0];
     const repo = parts[1];
-    const ref = decodeURIComponent(parts[2]);
-    const filepath = parts.slice(3).join('/');
+    const filepath = parts.slice(2).join('/');
+
+    // Extract ref from query parameter
+    const queryParams = new URLSearchParams(uri.query);
+    const ref = queryParams.get('ref');
+    if (!ref) {
+      throw new Error('Invalid PR diff URI: missing ref query parameter');
+    }
 
     console.log('[Forgejo] Fetching file:', { owner, repo, ref, filepath });
 
@@ -96,9 +104,8 @@ export function createPRFileUri(
   ref: string,
   filepath: string
 ): vscode.Uri {
-  // Encode the ref to handle branch names with slashes (e.g., feature/branch -> feature%2Fbranch)
-  const encodedRef = encodeURIComponent(ref);
-  const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  const path = `/${owner}/${repo}/${encodedRef}/${encodedPath}`;
-  return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
+  // The ref is passed as a query parameter to avoid ambiguity with
+  // branch names containing slashes (e.g., feature/branch)
+  const path = `/${owner}/${repo}/${filepath}`;
+  return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}?ref=${encodeURIComponent(ref)}`);
 }
