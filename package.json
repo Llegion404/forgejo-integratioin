@@ -187,10 +187,20 @@
       {
         "command": "forgejo.selectRemote",
         "title": "Forgejo: Select Git Remote"
+      },
+      {
+        "command": "forgejo.createPullRequest",
+        "title": "Forgejo: Create Pull Request",
+        "icon": "$(git-pull-request-create)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "forgejo.createPullRequest",
+          "when": "view == forgejoPullRequests",
+          "group": "navigation@0"
+        },
         {
           "command": "forgejo.refreshPullRequests",
           "when": "view == forgejoPullRequests",
