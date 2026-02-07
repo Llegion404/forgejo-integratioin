@@ -5,13 +5,13 @@ suite('Extension Activation Test Suite', () => {
   vscode.window.showInformationMessage('Starting extension activation tests');
 
   test('Extension should be present', () => {
-    const extension = vscode.extensions.getExtension('forgejo.forgejo-vscode');
+    const extension = vscode.extensions.getExtension('maxking.forgejo-vscode');
     assert.ok(extension, 'Extension should be installed');
   });
 
   test('Extension should activate', async function() {
     this.timeout(10000);
-    const extension = vscode.extensions.getExtension('forgejo.forgejo-vscode');
+    const extension = vscode.extensions.getExtension('maxking.forgejo-vscode');
     assert.ok(extension);
 
     await extension.activate();
@@ -73,7 +73,7 @@ suite('Extension Activation Test Suite', () => {
     this.timeout(5000);
 
     // The tree views are created when the extension activates
-    const extension = vscode.extensions.getExtension('forgejo.forgejo-vscode');
+    const extension = vscode.extensions.getExtension('maxking.forgejo-vscode');
     assert.ok(extension);
 
     if (!extension.isActive) {
