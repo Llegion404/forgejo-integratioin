@@ -842,7 +842,7 @@ describe('ForgejoClient', () => {
       expect(result).toEqual(mockActionTasksResponse);
       expect(result.workflow_runs.length).toBe(4);
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://git.example.com/api/v1/repos/owner/repo/actions/tasks?limit=50',
+        'https://git.example.com/api/v1/repos/owner/repo/actions/tasks?page=1&limit=50',
         expect.objectContaining({
           method: 'GET',
           headers: expect.objectContaining({
@@ -862,7 +862,7 @@ describe('ForgejoClient', () => {
       await client.getWorkflowRuns('owner', 'repo', 'success');
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://git.example.com/api/v1/repos/owner/repo/actions/tasks?limit=50&status=success',
+        'https://git.example.com/api/v1/repos/owner/repo/actions/tasks?status=success&page=1&limit=50',
         expect.any(Object)
       );
     });
@@ -1094,6 +1094,104 @@ describe('ForgejoClient', () => {
       await expect(client.rerunWorkflow('owner', 'repo', 123))
         .rejects
         .toThrow('HTTP 403: Forbidden');
+    });
+  });
+
+  // ==================== Pagination Tests ====================
+
+  describe('Pagination', () => {
+    function generateMockPRs(count: number, startId: number = 1): any[] {
+      return Array.from({ length: count }, (_, i) => ({
+        number: startId + i,
+        title: `PR #${startId + i}`,
+        state: 'open',
+        user: { login: 'testuser' },
+        html_url: `https://git.example.com/owner/repo/pulls/${startId + i}`,
+        created_at: '2024-01-01T00:00:00Z'
+      }));
+    }
+
+    function generateMockIssueItems(count: number, prCount: number, startId: number = 1): any[] {
+      return Array.from({ length: count }, (_, i) => ({
+        number: startId + i,
+        title: `Item #${startId + i}`,
+        state: 'open',
+        user: { login: 'testuser' },
+        html_url: `https://git.example.com/owner/repo/issues/${startId + i}`,
+        created_at: '2024-01-01T00:00:00Z',
+        comments: 0,
+        ...(i < prCount ? { pull_request: { url: `https://git.example.com/api/v1/repos/owner/repo/pulls/${startId + i}` } } : {})
+      }));
+    }
+
+    test('getPullRequests should fetch multiple pages when first page is full', async () => {
+      const page1 = generateMockPRs(50, 1);
+      const page2 = generateMockPRs(25, 51);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page1 } as unknown as Response);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page2 } as unknown as Response);
+      const result = await client.getPullRequests('owner', 'repo', 'all');
+      expect(result.length).toBe(75);
+      expect(result[0].number).toBe(1);
+      expect(result[74].number).toBe(75);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('page=1&limit=50'), expect.any(Object));
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('page=2&limit=50'), expect.any(Object));
+    });
+
+    test('getPullRequests should stop after single page when fewer than limit items', async () => {
+      const page1 = generateMockPRs(10, 1);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page1 } as unknown as Response);
+      const result = await client.getPullRequests('owner', 'repo', 'open');
+      expect(result.length).toBe(10);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('getPullRequests should handle empty first page', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => [] } as unknown as Response);
+      const result = await client.getPullRequests('owner', 'repo', 'all');
+      expect(result.length).toBe(0);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('getIssues should fetch all pages and still filter out PRs', async () => {
+      const page1 = generateMockIssueItems(50, 10, 1);
+      const page2 = generateMockIssueItems(20, 5, 51);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page1 } as unknown as Response);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => page2 } as unknown as Response);
+      const result = await client.getIssues('owner', 'repo', 'all');
+      expect(result.length).toBe(55);
+      expect(result.every(item => !item.pull_request)).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    test('getWorkflowRuns should fetch multiple pages', async () => {
+      const page1Runs = Array.from({ length: 50 }, (_, i) => ({ ...mockActionTasksResponse.workflow_runs[0], id: i + 1, run_number: i + 1 }));
+      const page2Runs = Array.from({ length: 10 }, (_, i) => ({ ...mockActionTasksResponse.workflow_runs[0], id: i + 51, run_number: i + 51 }));
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ total_count: 60, workflow_runs: page1Runs }) } as unknown as Response);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ total_count: 60, workflow_runs: page2Runs }) } as unknown as Response);
+      const result = await client.getWorkflowRuns('owner', 'repo');
+      expect(result.workflow_runs.length).toBe(60);
+      expect(result.total_count).toBe(60);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    test('getWorkflowRuns should handle empty first page', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ total_count: 0, workflow_runs: [] }) } as unknown as Response);
+      const result = await client.getWorkflowRuns('owner', 'repo');
+      expect(result.workflow_runs.length).toBe(0);
+      expect(result.total_count).toBe(0);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('getWorkflowRuns with status filter should paginate correctly', async () => {
+      const page1Runs = Array.from({ length: 50 }, (_, i) => ({ ...mockActionTasksResponse.workflow_runs[0], id: i + 1, run_number: i + 1 }));
+      const page2Runs = Array.from({ length: 5 }, (_, i) => ({ ...mockActionTasksResponse.workflow_runs[0], id: i + 51, run_number: i + 51 }));
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ total_count: 55, workflow_runs: page1Runs }) } as unknown as Response);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ total_count: 55, workflow_runs: page2Runs }) } as unknown as Response);
+      const result = await client.getWorkflowRuns('owner', 'repo', 'success');
+      expect(result.workflow_runs.length).toBe(55);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('status=success'), expect.any(Object));
     });
   });
 

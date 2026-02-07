@@ -45,8 +45,8 @@ export class ForgejoClient {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
-        headers: response.headers && typeof response.headers.entries === 'function' 
-          ? Object.fromEntries(response.headers.entries()) 
+        headers: response.headers && typeof response.headers.entries === 'function'
+          ? Object.fromEntries(response.headers.entries())
           : 'not available'
       });
 
@@ -55,7 +55,7 @@ export class ForgejoClient {
         if (typeof response.text === 'function') {
            errorBody = await response.text().catch(() => 'Unable to read response body');
         }
-        
+
         logError('API request failed:', {
           status: response.status,
           statusText: response.statusText,
@@ -95,11 +95,37 @@ export class ForgejoClient {
   }
 
   /**
+   * Fetch all pages of a paginated API endpoint that returns an array.
+   * Appends page=N&limit=L to the endpoint URL, continuing until a page
+   * returns fewer items than the limit.
+   */
+  private async requestAllPages<T>(endpoint: string, limit: number = 50): Promise<T[]> {
+    const allItems: T[] = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const separator = endpoint.includes('?') ? '&' : '?';
+      const pagedEndpoint = `${endpoint}${separator}page=${page}&limit=${limit}`;
+      const items = await this.request<T[]>(pagedEndpoint);
+      allItems.push(...items);
+
+      if (items.length < limit) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    }
+
+    return allItems;
+  }
+
+  /**
    * Get list of pull requests for a repository
    */
   async getPullRequests(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<PullRequestListItem[]> {
-    const endpoint = `/repos/${owner}/${repo}/pulls?state=${state}&limit=50`;
-    return this.request<PullRequestListItem[]>(endpoint);
+    const endpoint = `/repos/${owner}/${repo}/pulls?state=${state}`;
+    return this.requestAllPages<PullRequestListItem>(endpoint);
   }
 
   /**
@@ -114,8 +140,8 @@ export class ForgejoClient {
    * Get list of issues for a repository (excludes pull requests)
    */
   async getIssues(owner: string, repo: string, state: 'open' | 'closed' | 'all' = 'all'): Promise<IssueListItem[]> {
-    const endpoint = `/repos/${owner}/${repo}/issues?state=${state}&limit=50`;
-    const items = await this.request<IssueListItem[]>(endpoint);
+    const endpoint = `/repos/${owner}/${repo}/issues?state=${state}`;
+    const items = await this.requestAllPages<IssueListItem>(endpoint);
     // Filter out pull requests - they have a pull_request field
     const issues = items.filter(item => !item.pull_request);
     console.log(`[Forgejo] Fetched ${items.length} items from issues API, filtered to ${issues.length} actual issues (excluded ${items.length - issues.length} PRs)`);
@@ -681,12 +707,34 @@ export class ForgejoClient {
    * Get list of workflow runs for a repository
    */
   async getWorkflowRuns(owner: string, repo: string, status?: string): Promise<ActionTasksResponse> {
-    let endpoint = `/repos/${owner}/${repo}/actions/tasks?limit=50`;
+    let endpoint = `/repos/${owner}/${repo}/actions/tasks`;
     if (status) {
-      endpoint += `&status=${status}`;
+      endpoint += `?status=${status}`;
     }
     logDebug('Fetching workflow runs:', { owner, repo, status });
-    return this.request<ActionTasksResponse>(endpoint);
+
+    const limit = 50;
+    const allRuns: ActionTasksResponse['workflow_runs'] = [];
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      const separator = endpoint.includes('?') ? '&' : '?';
+      const pagedEndpoint = `${endpoint}${separator}page=${page}&limit=${limit}`;
+      const response = await this.request<ActionTasksResponse>(pagedEndpoint);
+      allRuns.push(...response.workflow_runs);
+
+      if (response.workflow_runs.length < limit) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    }
+
+    return {
+      total_count: allRuns.length,
+      workflow_runs: allRuns
+    };
   }
 
   /**
