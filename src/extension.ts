@@ -19,6 +19,7 @@ import { showDiagnostics } from './commands/diagnostics';
 import { logger, logInfo, logError } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
+import { detectAllGitRemotes } from './utils/gitUtils';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -261,6 +262,52 @@ export async function activate(context: vscode.ExtensionContext) {
         prTreeProvider.refresh();
         issueTreeProvider.refresh();
         actionsTreeProvider.refresh();
+      }
+    })
+  );
+
+  // Register select remote command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.selectRemote', async () => {
+      try {
+        const remotes = await detectAllGitRemotes();
+
+        if (remotes.size === 0) {
+          vscode.window.showInformationMessage('No git remotes found in the current workspace.');
+          return;
+        }
+
+        // Build quick pick items with remote name and URL
+        const items = Array.from(remotes.entries()).map(([name, info]) => ({
+          label: name,
+          description: `${info.instanceUrl}/${info.owner}/${info.repo}`,
+          remoteName: name
+        }));
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: 'Select a git remote to use for Forgejo'
+        });
+
+        if (!selected) {
+          return; // User cancelled
+        }
+
+        // Save the selected remote to configuration
+        const config = vscode.workspace.getConfiguration('forgejo');
+        await config.update('preferredRemote', selected.remoteName, vscode.ConfigurationTarget.Workspace);
+
+        logInfo(`Selected git remote: ${selected.remoteName}`);
+        vscode.window.showInformationMessage(`Forgejo remote set to: ${selected.label}`);
+
+        // Refresh all tree providers
+        prTreeProvider.refresh();
+        issueTreeProvider.refresh();
+        actionsTreeProvider.refresh();
+      } catch (error) {
+        logError('Error selecting git remote:', error);
+        vscode.window.showErrorMessage(
+          `Failed to select git remote: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
       }
     })
   );

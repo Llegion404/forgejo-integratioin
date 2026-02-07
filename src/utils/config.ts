@@ -32,8 +32,12 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 		return null;
 	}
 
-	// Get git remote info
-	const gitInfo = await detectGitRemote();
+	// Get preferred remote name from configuration
+	const forgejoSettings = vscode.workspace.getConfiguration('forgejo');
+	const preferredRemote = forgejoSettings.get<string>('preferredRemote', '');
+
+	// Get git remote info, using preferred remote if configured
+	const gitInfo = await detectGitRemote(preferredRemote || undefined);
 
 	let selectedInstance: ForgejoInstance | undefined;
 	let confidence: 'exact' | 'domain' | 'default' | 'first' = 'first';
