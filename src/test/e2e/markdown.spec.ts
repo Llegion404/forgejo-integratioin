@@ -227,6 +227,12 @@ test.describe('Markdown Rendering', () => {
       const link = desc.locator('a');
       await expect(link).toHaveAttribute('href', 'mailto:test@example.com');
     });
+
+    test('sanitizes onerror handlers in images', async ({ page }) => {
+      const desc = await renderMarkdown(page, '<img src=x onerror="alert(1)">');
+      const imgs = desc.locator('img[onerror]');
+      await expect(imgs).toHaveCount(0);
+    });
   });
 
   test.describe('Complex Markdown', () => {
