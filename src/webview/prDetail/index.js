@@ -507,7 +507,6 @@
       'change_issue_ref': 'changed the issue reference',
       'pull_scheduled_merge': 'scheduled auto-merge',
       'pull_cancel_scheduled_merge': 'cancelled auto-merge',
-      'change_time_estimate': 'changed time estimate',
       // GitHub-style event names (fallback compatibility)
       'closed': 'closed this pull request',
       'merged': 'merged this pull request',
@@ -537,7 +536,7 @@
 
     // Enhance with contextual details when available
     if (activity.event === 'label' && activity.label) {
-      eventText = (activity.body === '' || !activity.body ? 'added' : 'removed') + ' label <strong>' + escapeHtml(activity.label.name || '') + '</strong>';
+      eventText = 'changed label <strong>' + escapeHtml(activity.label.name || '') + '</strong>';
     }
     if (activity.event === 'change_title' && activity.old_title && activity.new_title) {
       eventText = 'changed title from <del>' + escapeHtml(activity.old_title) + '</del> to <strong>' + escapeHtml(activity.new_title) + '</strong>';
