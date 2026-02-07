@@ -495,15 +495,8 @@
     var codeBlocks = [];
 
     // Extract fenced code blocks and replace with placeholders
-    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_match, lang, code) {
-      var langAttr = lang ? ' class="language-' + lang + '"' : '';
-      var idx = codeBlocks.length;
-      codeBlocks.push('<pre><code' + langAttr + '>' + code + '</code></pre>');
-      return '\n%%CODEBLOCK_' + idx + '%%\n';
-    });
-
-    // Also handle ``` blocks without newline after language tag
-    html = html.replace(/```(\w*)([\s\S]*?)```/g, function(_match, lang, code) {
+    // Single regex handles both ``` with and without newline after language tag
+    html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(_match, lang, code) {
       var langAttr = lang ? ' class="language-' + lang + '"' : '';
       var idx = codeBlocks.length;
       codeBlocks.push('<pre><code' + langAttr + '>' + code + '</code></pre>');
@@ -562,8 +555,8 @@
         listType = '';
       }
 
-      // Horizontal rule
-      if (line.match(/^(---|\*\*\*|___)\s*$/)) {
+      // Horizontal rule (handles spaced variants like "- - -", "* * *", "_ _ _")
+      if (line.match(/^\s*([-*_]\s*){3,}$/)) {
         if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
         result.push('<hr>');
         continue;
@@ -675,32 +668,54 @@
   }
 
   /**
-   * Process inline Markdown elements: images, links, bold+italic, bold, italic,
+   * Sanitize a URL to only allow safe schemes (http, https, mailto).
+   * Returns empty string for javascript:, data:, vbscript:, etc.
+   */
+  function sanitizeUrl(url) {
+    var trimmed = url.trim().toLowerCase();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('mailto:')) {
+      return url.trim();
+    }
+    return '';
+  }
+
+  /**
+   * Process inline Markdown elements: links, images, bold+italic, bold, italic,
    * strikethrough. Assumes input is already HTML-escaped.
+   *
+   * Processing order: links -> images -> code -> bold -> italic -> strikethrough
    */
   function processInline(text) {
     if (!text) return '';
 
-    // Images: ![alt](url)
-    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;">');
+    // Links: [text](url) -- processed first to protect URLs from italic/bold mangling
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_match, linkText, url) {
+      var safe = sanitizeUrl(url);
+      if (!safe) return linkText;
+      return '<a href="' + safe + '">' + linkText + '</a>';
+    });
 
-    // Links: [text](url)
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    // Images: ![alt](url)
+    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_match, alt, url) {
+      var safe = sanitizeUrl(url);
+      if (!safe) return alt;
+      return '<img src="' + safe + '" alt="' + alt + '" style="max-width:100%;">';
+    });
 
     // Bold + italic: ***text*** or ___text___
-    text = text.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
-    text = text.replace(/___(.*?)___/g, '<strong><em>$1</em></strong>');
+    text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+    text = text.replace(/___([^_]+)___/g, '<strong><em>$1</em></strong>');
 
     // Bold: **text** or __text__
-    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    text = text.replace(/__(.*?)__/g, '<strong>$1</strong>');
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
 
     // Italic: *text* or _text_
-    text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
-    text = text.replace(/\b_(.*?)_\b/g, '<em>$1</em>');
+    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    text = text.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
 
     // Strikethrough: ~~text~~
-    text = text.replace(/~~(.*?)~~/g, '<del>$1</del>');
+    text = text.replace(/~~([^~]+)~~/g, '<del>$1</del>');
 
     return text;
   }
@@ -717,8 +732,8 @@
     var headerCells = parseTableRow(lines[0]);
     var alignments = [];
 
-    // Check if second line is a separator row (contains dashes and optional colons)
-    var isSeparator = lines[1].replace(/\s/g, '').match(/^\|?[\s:|-]+\|?$/);
+    // Check if second line is a separator row (each cell must contain at least one dash)
+    var isSeparator = lines[1].replace(/\s/g, '').match(/^\|?(:?-+:?\|)*:?-+:?\|?$/);
     var bodyStartIndex = 1;
 
     if (isSeparator) {
