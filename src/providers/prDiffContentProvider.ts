@@ -48,7 +48,7 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
 
     const owner = parts[0];
     const repo = parts[1];
-    const filepath = parts.slice(2).join('/');
+    const filepath = decodeURIComponent(parts.slice(2).join('/'));
 
     // Extract ref from query parameter
     const queryParams = new URLSearchParams(uri.query);
@@ -104,8 +104,10 @@ export function createPRFileUri(
   ref: string,
   filepath: string
 ): vscode.Uri {
+  // Encode each filepath segment to handle special characters (#, &, spaces, etc.)
+  const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
   // The ref is passed as a query parameter to avoid ambiguity with
   // branch names containing slashes (e.g., feature/branch)
-  const path = `/${owner}/${repo}/${filepath}`;
+  const path = `/${owner}/${repo}/${encodedPath}`;
   return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}?ref=${encodeURIComponent(ref)}`);
 }

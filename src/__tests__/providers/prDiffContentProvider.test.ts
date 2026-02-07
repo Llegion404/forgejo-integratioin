@@ -289,8 +289,8 @@ describe('PRDiffContentProvider', () => {
     test('should encode special characters in filepath', () => {
       const uri = createPRFileUri('owner', 'repo', 'main', 'src/file with spaces.ts');
 
-      expect(uri.path).toContain('file with spaces.ts');
-      expect(uri.toString()).toContain('file with spaces.ts');
+      expect(uri.path).toContain('file%20with%20spaces.ts');
+      expect(uri.toString()).toContain('file%20with%20spaces.ts');
     });
 
     test('should handle branch names with slashes via query parameter', () => {
