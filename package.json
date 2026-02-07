@@ -7,6 +7,16 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "license": "Apache-2.0",
+  "keywords": [
+    "forgejo",
+    "codeberg",
+    "git",
+    "scm",
+    "issues",
+    "pull-request",
+    "code-review"
+  ],
   "categories": [
     "SCM Providers",
     "Other"
