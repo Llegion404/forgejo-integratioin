@@ -58,7 +58,7 @@
     console.log('[Forgejo Webview] Initializing...');
     setupEventListeners();
     setupMessageHandler();
-    
+
     // Notify extension that webview is ready
     console.log('[Forgejo Webview] Posting ready message');
     vscode.postMessage({ type: 'ready' });
@@ -67,7 +67,7 @@
 
   function setupEventListeners() {
     console.log('[Forgejo Webview] Setting up event listeners');
-    
+
     retryBtn.addEventListener('click', () => {
       console.log('[Forgejo Webview] Retry clicked');
       vscode.postMessage({ type: 'refresh' });
@@ -77,9 +77,9 @@
       console.log('[Forgejo Webview] Copy URL clicked');
       if (currentData && currentData.pr && currentData.pr.html_url) {
         navigator.clipboard.writeText(currentData.pr.html_url);
-        copyUrlBtn.textContent = '✓';
+        copyUrlBtn.textContent = '\u2713';
         setTimeout(() => {
-          copyUrlBtn.textContent = '📋';
+          copyUrlBtn.textContent = '\uD83D\uDCCB';
         }, 2000);
       }
     });
@@ -170,7 +170,7 @@
 
   function setupMessageHandler() {
     console.log('[Forgejo Webview] Setting up message handler');
-    
+
     window.addEventListener('message', event => {
       const message = event.data;
       console.log('[Forgejo Webview] Received message:', message.type);
@@ -231,7 +231,7 @@
     // Update status badge
     let statusText = pr.state || 'open';
     let statusClass = (pr.state || 'open').toLowerCase();
-    
+
     if (pr.draft) {
       statusText = 'Draft';
       statusClass = 'draft';
@@ -239,7 +239,7 @@
       statusText = 'Merged';
       statusClass = 'merged';
     }
-    
+
     prStatusBadge.textContent = statusText;
     prStatusBadge.className = 'status-badge ' + statusClass;
 
@@ -260,8 +260,12 @@
       headBranch.textContent = pr.head.ref || 'unknown';
     }
 
-    // Update description
-    prDescriptionEl.textContent = pr.body || 'No description provided.';
+    // Update description with Markdown rendering
+    if (pr.body) {
+      prDescriptionEl.innerHTML = renderMarkdown(pr.body);
+    } else {
+      prDescriptionEl.innerHTML = '<p style="color:var(--vscode-descriptionForeground)">No description provided.</p>';
+    }
 
     // Update CI status
     if (statuses && statuses.length > 0) {
@@ -304,7 +308,7 @@
     const activityCount = activities ? activities.length : 0;
     console.log('[Forgejo Webview] Activities:', activityCount);
     activityCountEl.textContent = `(${activityCount} events)`;
-    
+
     if (activities && activities.length > 0) {
       activityTimeline.innerHTML = activities.map(activity => renderActivity(activity, owner, repo)).join('');
     } else {
@@ -331,7 +335,7 @@
               <span class="activity-action">commented</span>
               <span class="activity-time">${timeAgo}</span>
             </div>
-            ${activity.body ? `<div class="activity-body">${escapeHtml(activity.body)}</div>` : ''}
+            ${activity.body ? `<div class="activity-body markdown-body">${renderMarkdown(activity.body)}</div>` : ''}
           </div>
         </div>
       `;
@@ -350,7 +354,7 @@
               <span class="activity-action">reviewed: ${reviewState}</span>
               <span class="activity-time">${timeAgo}</span>
             </div>
-            ${activity.body ? `<div class="activity-body">${escapeHtml(activity.body)}</div>` : ''}
+            ${activity.body ? `<div class="activity-body markdown-body">${renderMarkdown(activity.body)}</div>` : ''}
           </div>
         </div>
       `;
@@ -428,18 +432,18 @@
 
   function statusIconForStatus(status) {
     const icons = {
-      'pending': '⏳',
-      'success': '✅',
-      'error': '❌',
-      'failure': '❌',
-      'warning': '⚠️'
+      'pending': '\u23F3',
+      'success': '\u2705',
+      'error': '\u274C',
+      'failure': '\u274C',
+      'warning': '\u26A0\uFE0F'
     };
     return icons[status] || icons['pending'];
   }
 
   function formatTimeAgo(dateString) {
     if (!dateString) return '';
-    
+
     const date = new Date(dateString);
     const now = new Date();
     const diffMs = now - date;
@@ -461,6 +465,304 @@
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  /**
+   * Converts Markdown text to sanitized HTML.
+   *
+   * Supported syntax:
+   * - Fenced code blocks (```lang ... ```)
+   * - Inline code (`code`)
+   * - Headings (h1-h6 via # syntax)
+   * - Bold (**text** or __text__), italic (*text* or _text_), bold+italic
+   * - Strikethrough (~~text~~)
+   * - Links ([text](url)) and images (![alt](url))
+   * - Blockquotes (> text)
+   * - Unordered lists (-, *, +) and ordered lists (1. 2. 3.)
+   * - Task lists (- [x] done, - [ ] todo)
+   * - Tables (pipe-delimited with alignment support)
+   * - Horizontal rules (---, ***, ___)
+   *
+   * Input is HTML-escaped first to prevent XSS, then markdown syntax is converted.
+   */
+  function renderMarkdown(text) {
+    if (!text) return '';
+
+    // Escape HTML first for security
+    var html = escapeHtml(text);
+
+    // Placeholder map to protect code blocks from further processing
+    var codeBlocks = [];
+
+    // Extract fenced code blocks and replace with placeholders
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_match, lang, code) {
+      var langAttr = lang ? ' class="language-' + lang + '"' : '';
+      var idx = codeBlocks.length;
+      codeBlocks.push('<pre><code' + langAttr + '>' + code + '</code></pre>');
+      return '\n%%CODEBLOCK_' + idx + '%%\n';
+    });
+
+    // Also handle ``` blocks without newline after language tag
+    html = html.replace(/```(\w*)([\s\S]*?)```/g, function(_match, lang, code) {
+      var langAttr = lang ? ' class="language-' + lang + '"' : '';
+      var idx = codeBlocks.length;
+      codeBlocks.push('<pre><code' + langAttr + '>' + code + '</code></pre>');
+      return '\n%%CODEBLOCK_' + idx + '%%\n';
+    });
+
+    // Extract inline code and replace with placeholders
+    var inlineCodes = [];
+    html = html.replace(/`([^`\n]+)`/g, function(_match, code) {
+      var idx = inlineCodes.length;
+      inlineCodes.push('<code>' + code + '</code>');
+      return '%%INLINECODE_' + idx + '%%';
+    });
+
+    // Split into lines for block-level processing
+    var lines = html.split('\n');
+    var result = [];
+    var inList = false;
+    var listType = '';
+    var inBlockquote = false;
+    var blockquoteLines = [];
+    var inTable = false;
+    var tableLines = [];
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+
+      // Code block placeholder -- pass through directly
+      if (line.trim().match(/^%%CODEBLOCK_\d+%%$/)) {
+        // Close any open structures first
+        if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
+        if (inBlockquote) { result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>'); blockquoteLines = []; inBlockquote = false; }
+        if (inTable) { result.push(buildTable(tableLines)); tableLines = []; inTable = false; }
+        result.push(line.trim());
+        continue;
+      }
+
+      // Close blockquote if current line is not a blockquote line
+      if (inBlockquote && !line.match(/^&gt;\s?/)) {
+        result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>');
+        blockquoteLines = [];
+        inBlockquote = false;
+      }
+
+      // Close table if current line is not a table row
+      if (inTable && !line.match(/^\|/)) {
+        result.push(buildTable(tableLines));
+        tableLines = [];
+        inTable = false;
+      }
+
+      // Close list if current line is not a list item and not empty
+      if (inList && line.trim() !== '' && !line.match(/^(\s*[-*+]\s|\s*\d+\.\s)/)) {
+        result.push('</' + listType + '>');
+        inList = false;
+        listType = '';
+      }
+
+      // Horizontal rule
+      if (line.match(/^(---|\*\*\*|___)\s*$/)) {
+        if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
+        result.push('<hr>');
+        continue;
+      }
+
+      // Headings (h1-h6)
+      var headingMatch = line.match(/^(#{1,6})\s+(.*?)$/);
+      if (headingMatch) {
+        var level = headingMatch[1].length;
+        var headingText = processInline(headingMatch[2]);
+        result.push('<h' + level + '>' + headingText + '</h' + level + '>');
+        continue;
+      }
+
+      // Blockquotes (escaped > becomes &gt;)
+      if (line.match(/^&gt;\s?/)) {
+        inBlockquote = true;
+        blockquoteLines.push(line.replace(/^&gt;\s?/, ''));
+        continue;
+      }
+
+      // Table rows (lines starting with |)
+      if (line.match(/^\|/)) {
+        if (!inTable) {
+          inTable = true;
+          tableLines = [];
+        }
+        tableLines.push(line);
+        continue;
+      }
+
+      // Unordered list items
+      var ulMatch = line.match(/^(\s*)[-*+]\s+(.*)/);
+      if (ulMatch) {
+        if (!inList || listType !== 'ul') {
+          if (inList) { result.push('</' + listType + '>'); }
+          result.push('<ul>');
+          inList = true;
+          listType = 'ul';
+        }
+        var liContent = ulMatch[2];
+        // Task list item: - [x] or - [ ]
+        var taskMatch = liContent.match(/^\[([ xX])\]\s+(.*)/);
+        if (taskMatch) {
+          var checked = taskMatch[1] !== ' ' ? ' checked disabled' : ' disabled';
+          result.push('<li class="task-list-item"><input type="checkbox"' + checked + '> ' + processInline(taskMatch[2]) + '</li>');
+        } else {
+          result.push('<li>' + processInline(liContent) + '</li>');
+        }
+        continue;
+      }
+
+      // Ordered list items
+      var olMatch = line.match(/^(\s*)\d+\.\s+(.*)/);
+      if (olMatch) {
+        if (!inList || listType !== 'ol') {
+          if (inList) { result.push('</' + listType + '>'); }
+          result.push('<ol>');
+          inList = true;
+          listType = 'ol';
+        }
+        result.push('<li>' + processInline(olMatch[2]) + '</li>');
+        continue;
+      }
+
+      // Empty line
+      if (line.trim() === '') {
+        continue;
+      }
+
+      // Regular paragraph line
+      result.push('<p>' + processInline(line) + '</p>');
+    }
+
+    // Close any remaining open elements
+    if (inBlockquote) {
+      result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>');
+    }
+    if (inTable) {
+      result.push(buildTable(tableLines));
+    }
+    if (inList) {
+      result.push('</' + listType + '>');
+    }
+
+    var output = result.join('\n');
+
+    // Restore code block placeholders
+    for (var cb = 0; cb < codeBlocks.length; cb++) {
+      output = output.replace('%%CODEBLOCK_' + cb + '%%', codeBlocks[cb]);
+    }
+
+    // Restore inline code placeholders
+    for (var ic = 0; ic < inlineCodes.length; ic++) {
+      output = output.replace(new RegExp('%%INLINECODE_' + ic + '%%', 'g'), inlineCodes[ic]);
+    }
+
+    return output;
+  }
+
+  /**
+   * Process blockquote content lines, rendering inline formatting on each line.
+   */
+  function processBlockquoteContent(lines) {
+    return lines.map(function(line) {
+      if (line.trim() === '') return '';
+      return '<p>' + processInline(line) + '</p>';
+    }).join('\n');
+  }
+
+  /**
+   * Process inline Markdown elements: images, links, bold+italic, bold, italic,
+   * strikethrough. Assumes input is already HTML-escaped.
+   */
+  function processInline(text) {
+    if (!text) return '';
+
+    // Images: ![alt](url)
+    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;">');
+
+    // Links: [text](url)
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+    // Bold + italic: ***text*** or ___text___
+    text = text.replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    text = text.replace(/___(.*?)___/g, '<strong><em>$1</em></strong>');
+
+    // Bold: **text** or __text__
+    text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/__(.*?)__/g, '<strong>$1</strong>');
+
+    // Italic: *text* or _text_
+    text = text.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    text = text.replace(/\b_(.*?)_\b/g, '<em>$1</em>');
+
+    // Strikethrough: ~~text~~
+    text = text.replace(/~~(.*?)~~/g, '<del>$1</del>');
+
+    return text;
+  }
+
+  /**
+   * Build an HTML table from pipe-delimited lines.
+   * Handles header row, separator row (with alignment via colons), and body rows.
+   */
+  function buildTable(lines) {
+    if (lines.length < 2) {
+      return lines.map(function(l) { return '<p>' + processInline(l) + '</p>'; }).join('\n');
+    }
+
+    var headerCells = parseTableRow(lines[0]);
+    var alignments = [];
+
+    // Check if second line is a separator row (contains dashes and optional colons)
+    var isSeparator = lines[1].replace(/\s/g, '').match(/^\|?[\s:|-]+\|?$/);
+    var bodyStartIndex = 1;
+
+    if (isSeparator) {
+      bodyStartIndex = 2;
+      var sepCells = parseTableRow(lines[1]);
+      for (var a = 0; a < sepCells.length; a++) {
+        var cell = sepCells[a].trim();
+        if (cell.match(/^:-+:$/)) {
+          alignments.push('center');
+        } else if (cell.match(/^-+:$/)) {
+          alignments.push('right');
+        } else {
+          alignments.push('left');
+        }
+      }
+    }
+
+    var tableHtml = '<table>\n<thead>\n<tr>';
+    for (var h = 0; h < headerCells.length; h++) {
+      var alignAttr = alignments[h] ? ' style="text-align:' + alignments[h] + '"' : '';
+      tableHtml += '<th' + alignAttr + '>' + processInline(headerCells[h].trim()) + '</th>';
+    }
+    tableHtml += '</tr>\n</thead>\n<tbody>';
+
+    for (var r = bodyStartIndex; r < lines.length; r++) {
+      var cells = parseTableRow(lines[r]);
+      tableHtml += '\n<tr>';
+      for (var c = 0; c < cells.length; c++) {
+        var cellAlignAttr = alignments[c] ? ' style="text-align:' + alignments[c] + '"' : '';
+        tableHtml += '<td' + cellAlignAttr + '>' + processInline(cells[c].trim()) + '</td>';
+      }
+      tableHtml += '</tr>';
+    }
+
+    tableHtml += '\n</tbody>\n</table>';
+    return tableHtml;
+  }
+
+  /**
+   * Parse a pipe-delimited table row into an array of cell contents.
+   */
+  function parseTableRow(row) {
+    var trimmed = row.replace(/^\|/, '').replace(/\|$/, '');
+    return trimmed.split('|');
   }
 
   function applyTheme(theme) {
