@@ -24,6 +24,9 @@
     "node_modules",
     "src/test/**",
     "src/__tests__/**",
-    "**/*.test.ts"
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/test/e2e/**",
+    "playwright.config.ts"
   ]
 }

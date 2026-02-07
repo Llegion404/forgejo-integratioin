@@ -339,9 +339,12 @@
     "pretest:integration": "npm run compile",
     "test:integration": "vscode-test",
     "test": "npm run test:unit && npm run test:integration",
+    "test:e2e": "npx playwright test",
+    "test:e2e:headed": "npx playwright test --headed",
     "test:ci": "npm run lint && npm run test:unit:coverage && npm run test:integration"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/glob": "^8.1.0",
     "@types/jest": "^29.5.0",
     "@types/mocha": "^10.0.6",
