@@ -128,14 +128,7 @@
         // Disable button and show loading state to prevent double-submit
         submitCommentBtn.disabled = true;
         submitCommentBtn.textContent = 'Submitting...';
-        submitCommentBtn.disabled = true;
-        submitCommentBtn.textContent = 'Submitting...';
         vscode.postMessage({ type: 'addComment', body });
-        // Re-enable after a delay (data refresh will also reset the view)
-        setTimeout(() => {
-          submitCommentBtn.disabled = false;
-          submitCommentBtn.textContent = 'Submit';
-        }, 2000);
       }
     });
 
@@ -148,10 +141,10 @@
     // Keyboard shortcuts for comment input
     commentInput.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        // Ctrl+Enter submits the comment
+        e.preventDefault();
         submitCommentBtn.click();
       } else if (e.key === 'Escape') {
-        // Escape cancels the comment
+        e.preventDefault();
         cancelCommentBtn.click();
       }
     });
@@ -162,13 +155,7 @@
       console.log('[Forgejo Webview] Submit review clicked, state:', state);
       submitReviewBtn.disabled = true;
       submitReviewBtn.textContent = 'Submitting...';
-      submitReviewBtn.disabled = true;
-      submitReviewBtn.textContent = 'Submitting...';
       vscode.postMessage({ type: 'addReview', state, body });
-      setTimeout(() => {
-        submitReviewBtn.disabled = false;
-        submitReviewBtn.textContent = 'Submit Review';
-      }, 2000);
     });
 
     cancelReviewBtn.addEventListener('click', () => {
@@ -193,13 +180,7 @@
       console.log('[Forgejo Webview] Confirm merge clicked, strategy:', strategy);
       confirmMergeBtn.disabled = true;
       confirmMergeBtn.textContent = 'Merging...';
-      confirmMergeBtn.disabled = true;
-      confirmMergeBtn.textContent = 'Merging...';
       vscode.postMessage({ type: 'merge', strategy, message });
-      setTimeout(() => {
-        confirmMergeBtn.disabled = false;
-        confirmMergeBtn.textContent = 'Merge';
-      }, 2000);
     });
 
     cancelMergeBtn.addEventListener('click', () => {
