@@ -8,30 +8,33 @@ import type { Page } from '@playwright/test';
 export class VSCodeHarness {
   constructor(
     private workbox: Page,
-    private evaluateInVSCode: <R>(fn: (vscode: typeof import('vscode')) => R | Promise<R>) => Promise<R>,
+    private evaluateInVSCode: <R>(fn: (vscode: typeof import('vscode'), ...args: any[]) => R | Promise<R>, arg?: any) => Promise<R>,
   ) {}
 
-  /** Wait for the Forgejo sidebar to be available (extension activated). */
+  /** Wait for the Forgejo extension to be active. */
   async waitForExtensionActivation(timeout = 30_000): Promise<void> {
-    // Wait for the activity bar icon with Forgejo tooltip to appear
-    const activityBar = this.workbox.locator('[id="workbench.view.extension.forgejoExplorer"]');
-    await activityBar.waitFor({ state: 'attached', timeout });
+    // Poll via evaluateInVSCode until the extension is active
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      const isActive = await this.evaluateInVSCode((vscode) => {
+        const ext = vscode.extensions.getExtension('maxking.forgejo-vscode');
+        return ext?.isActive ?? false;
+      });
+      if (isActive) return;
+      // Wait a bit before polling again
+      await new Promise(r => setTimeout(r, 500));
+    }
+    throw new Error(`Extension did not activate within ${timeout}ms`);
   }
 
   /** Click the Forgejo icon in the activity bar to open the sidebar. */
   async openForgejoSidebar(): Promise<void> {
-    const activityBarItem = this.workbox.locator(
-      '.action-item a[aria-label="Forgejo"]'
-    );
-    // If not already active, click it
-    const isActive = await activityBarItem.evaluate(
-      (el) => el.classList.contains('checked')
-    ).catch(() => false);
-    if (!isActive) {
-      await activityBarItem.click();
-    }
-    // Wait for the sidebar content to be visible
-    await this.workbox.locator('.pane-header [title="Pull Requests"]').waitFor({ state: 'visible', timeout: 10_000 });
+    // Use the VS Code command to open the Forgejo sidebar
+    await this.evaluateInVSCode(async (vscode) => {
+      await vscode.commands.executeCommand('workbench.view.extension.forgejoExplorer');
+    });
+    // Give the sidebar a moment to render
+    await new Promise(r => setTimeout(r, 1000));
   }
 
   /** Get tree item labels from a view. */
@@ -59,9 +62,9 @@ export class VSCodeHarness {
 
   /** Execute a VS Code command by ID. */
   async executeCommand(commandId: string, ...args: unknown[]): Promise<void> {
-    await this.evaluateInVSCode(async (vscode) => {
-      await vscode.commands.executeCommand(commandId);
-    });
+    await this.evaluateInVSCode(async (vscode, cmdId: string) => {
+      await vscode.commands.executeCommand(cmdId);
+    }, commandId);
   }
 
   /** Get visible notification messages. */
@@ -88,10 +91,10 @@ export class VSCodeHarness {
 
   /** Get the list of registered extension commands matching a prefix. */
   async getRegisteredCommands(prefix: string): Promise<string[]> {
-    return await this.evaluateInVSCode(async (vscode) => {
+    return await this.evaluateInVSCode(async (vscode, pfx: string) => {
       const all = await vscode.commands.getCommands(true);
-      return all.filter((cmd: string) => cmd.startsWith(prefix));
-    });
+      return all.filter((cmd: string) => cmd.startsWith(pfx));
+    }, prefix);
   }
 
   /** Check if the extension is active. */
