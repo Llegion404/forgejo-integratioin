@@ -175,12 +175,6 @@ The extension looks for the `origin` remote. Supported URL formats:
 - SSH: `git@codeberg.org:owner/repo.git`
 - SSH protocol: `ssh://git@codeberg.org/owner/repo.git`
 
-## Known Limitations
-
-- **50 item limit**: Fetches max 50 PRs/Issues (no pagination yet)
-- **Single remote**: Only detects the `origin` remote
-- **Read-mostly**: Can view, merge, and close PRs but cannot create or comment
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
