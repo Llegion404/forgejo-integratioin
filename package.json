@@ -343,6 +343,7 @@
     }
   },
   "scripts": {
+    "postinstall": "node scripts/patch-vscode-test-playwright.js",
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/",
     "watch": "tsc -watch -p ./",
@@ -357,9 +358,13 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:debug": "playwright test --debug",
+    "test:e2e:vscode": "playwright test --config playwright.vscode.config.ts",
+    "test:e2e:vscode:headed": "playwright test --config playwright.vscode.config.ts --headed",
+    "test:e2e:vscode:debug": "playwright test --config playwright.vscode.config.ts --debug",
     "test:ci": "npm run lint && npm run test:unit:coverage && npm run test:integration"
   },
   "devDependencies": {
+    "@mshanemc/vscode-test-playwright": "^0.0.1-beta14",
     "@playwright/test": "^1.58.2",
     "@types/glob": "^8.1.0",
     "@types/jest": "^29.5.0",
