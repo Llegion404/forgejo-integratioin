@@ -1,0 +1,116 @@
+name: Publish Extension
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      - '*.*.*'
+
+jobs:
+  publish:
+    runs-on: docker
+    container: node:20
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install xvfb and dependencies
+      run: |
+        apt-get update
+        apt-get install -y xvfb libgtk-3-0 libxss1 libasound2 libgbm1 libnspr4 libnss3
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Lint
+      run: npm run lint
+
+    - name: Run tests
+      run: |
+        npm run test:unit:coverage
+        npm run compile
+        xvfb-run -a npm run test:integration
+
+    - name: Install vsce
+      run: npm install -g @vscode/vsce
+
+    - name: Get version from tag
+      id: get_version
+      run: |
+        # Remove 'v' prefix if present
+        VERSION=${GITHUB_REF#refs/tags/}
+        VERSION=${VERSION#v}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+        # Detect pre-release versions (alpha, beta, rc)
+        if echo "$VERSION" | grep -qE '(alpha|beta|rc|a|b)'; then
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          echo "Publishing pre-release version: $VERSION"
+        else
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          echo "Publishing stable version: $VERSION"
+        fi
+
+    - name: Verify version matches package.json
+      run: |
+        PACKAGE_VERSION=$(node -p "require('./package.json').version")
+        TAG_VERSION="${{ steps.get_version.outputs.version }}"
+        if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+          echo "Error: package.json version ($PACKAGE_VERSION) does not match tag version ($TAG_VERSION)"
+          exit 1
+        fi
+        echo "Version verified: $PACKAGE_VERSION"
+
+    - name: Package extension
+      run: npm run package
+
+    - name: Publish to VS Code Marketplace
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      run: |
+        if [ "${{ steps.get_version.outputs.is_prerelease }}" = "true" ]; then
+          echo "Publishing as pre-release..."
+          vsce publish --pre-release -p $VSCE_PAT
+        else
+          echo "Publishing as stable release..."
+          vsce publish -p $VSCE_PAT
+        fi
+
+    - name: Upload VSIX artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: forgejo-vscode-${{ steps.get_version.outputs.version }}.vsix
+        path: '*.vsix'
+        retention-days: 90
+
+    - name: Create Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Extract release notes from tag annotation if available
+        TAG_MESSAGE=$(git tag -l --format='%(contents)' ${GITHUB_REF#refs/tags/})
+        if [ -z "$TAG_MESSAGE" ]; then
+          TAG_MESSAGE="Release ${{ steps.get_version.outputs.version }}"
+        fi
+
+        # Create release using Forgejo API
+        VSIX_FILE=$(ls *.vsix)
+
+        # Create the release
+        IS_PRERELEASE="${{ steps.get_version.outputs.is_prerelease }}"
+        PRERELEASE_FLAG="false"
+        if [ "$IS_PRERELEASE" = "true" ]; then
+          PRERELEASE_FLAG="true"
+        fi
+
+        curl -X POST \
+          "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/releases" \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"tag_name\": \"${GITHUB_REF#refs/tags/}\",
+            \"name\": \"v${{ steps.get_version.outputs.version }}\",
+            \"body\": \"$TAG_MESSAGE\",
+            \"draft\": false,
+            \"prerelease\": $PRERELEASE_FLAG
+          }"
