@@ -30,6 +30,7 @@ jest.config.js
 # Documentation
 CLAUDE.md
 TESTING.md
+MAINTAINERS.md
 
 # Dependencies
 node_modules/**
@@ -51,3 +52,4 @@ BUGS.md
 # Config files
 .vscode-test.mjs
 tsconfig.test.json
+research
