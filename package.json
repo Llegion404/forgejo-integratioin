@@ -8,6 +8,10 @@
     "vscode": "^1.85.0"
   },
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://codeberg.org/maxking/forgejo-vscode.git"
+  },
   "keywords": [
     "forgejo",
     "codeberg",
