@@ -161,6 +161,13 @@ const commands = {
   executeCommand: jest.fn()
 };
 
+const env = {
+  clipboard: {
+    readText: jest.fn(),
+    writeText: jest.fn()
+  }
+};
+
 module.exports = {
   EventEmitter,
   Uri,
@@ -171,5 +178,6 @@ module.exports = {
   ThemeColor,
   window,
   workspace,
-  commands
+  commands,
+  env
 };

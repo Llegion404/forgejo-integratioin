@@ -35,29 +35,24 @@ export async function activate(context: vscode.ExtensionContext) {
   const issueTreeProvider = new IssueTreeProvider();
   const actionsTreeProvider = new ActionsTreeProvider();
 
-  // Check for first-time setup asynchronously (after tree providers are created)
-  // This way the dialog doesn't block extension activation
-  (async () => {
+  // Helper to update the context key for viewsWelcome
+  async function updateNoInstanceContext() {
     const instances = await getAllInstances();
+    const config = await getForgejoConfig();
+    // Show welcome content only when no instances AND no usable git remote
+    await vscode.commands.executeCommand('setContext', 'forgejo.noInstanceConfigured', instances.length === 0 && !config);
+    return instances;
+  }
+
+  // Set initial context and check for first-time setup
+  (async () => {
+    const instances = await updateNoInstanceContext();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const isTest = process.env.NODE_ENV === 'test' || typeof (global as any).it === 'function';
 
     if (instances.length === 0 && !isTest) {
-      const action = await vscode.window.showInformationMessage(
-        'Welcome to Forgejo! Configure your first instance to get started.',
-        'Get Started',
-        'Later'
-      );
-
-      if (action === 'Get Started') {
-        const success = await vscode.commands.executeCommand('forgejo.addInstance');
-        // Refresh tree providers after adding first instance
-        if (success) {
-          prTreeProvider.refresh();
-          issueTreeProvider.refresh();
-          actionsTreeProvider.refresh();
-        }
-      }
+      // viewsWelcome content now provides the primary onboarding UX
+      // No dismissible dialog needed - the welcome view buttons persist
     }
   })();
 
@@ -96,6 +91,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('forgejo.addInstance', async () => {
       const success = await startOnboarding();
       if (success) {
+        await updateNoInstanceContext();
         prTreeProvider.refresh();
         issueTreeProvider.refresh();
         actionsTreeProvider.refresh();
@@ -106,6 +102,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('forgejo.manageInstances', async () => {
       await manageInstances();
+      await updateNoInstanceContext();
       prTreeProvider.refresh();
       issueTreeProvider.refresh();
       actionsTreeProvider.refresh();

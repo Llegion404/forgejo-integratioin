@@ -27,11 +27,6 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 	// Get all configured instances
 	const instances = await getAllInstances();
 
-	if (instances.length === 0) {
-		logInfo('No instances configured');
-		return null;
-	}
-
 	// Get preferred remote name from configuration
 	const forgejoSettings = vscode.workspace.getConfiguration('forgejo');
 	const preferredRemote = forgejoSettings.get<string>('preferredRemote', '');
@@ -42,35 +37,52 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 	let selectedInstance: ForgejoInstance | undefined;
 	let confidence: 'exact' | 'domain' | 'default' | 'first' = 'first';
 
-	// Try to match instance to git remote
-	if (gitInfo) {
-		const match = findBestInstanceMatch(instances, gitInfo.instanceUrl);
-		if (match) {
-			selectedInstance = match.instance;
-			confidence = match.confidence;
-			logInfo(`Matched instance: ${selectedInstance.name} (${confidence} match)`);
+	if (instances.length > 0) {
+		// Try to match instance to git remote
+		if (gitInfo) {
+			const match = findBestInstanceMatch(instances, gitInfo.instanceUrl);
+			if (match) {
+				selectedInstance = match.instance;
+				confidence = match.confidence;
+				logInfo(`Matched instance: ${selectedInstance.name} (${confidence} match)`);
+			}
 		}
-	}
 
-	// Fall back to default or first instance
-	if (!selectedInstance) {
-		selectedInstance = await getDefaultOrFirstInstance();
-		confidence = selectedInstance?.isDefault ? 'default' : 'first';
+		// Fall back to default or first instance
+		if (!selectedInstance) {
+			selectedInstance = await getDefaultOrFirstInstance();
+			confidence = selectedInstance?.isDefault ? 'default' : 'first';
 
-		if (selectedInstance) {
-			logInfo(`Using ${confidence} instance: ${selectedInstance.name}`);
+			if (selectedInstance) {
+				logInfo(`Using ${confidence} instance: ${selectedInstance.name}`);
+			}
 		}
-	}
-
-	if (!selectedInstance) {
-		logInfo('No instance available');
-		return null;
 	}
 
 	// If we don't have git info, we can't determine owner/repo
 	if (!gitInfo) {
 		logInfo('Could not determine owner/repo from git remote');
 		return null;
+	}
+
+	// If no instance matched but we have git remote info, try unauthenticated access
+	// This enables zero-config browsing of public repos
+	if (!selectedInstance) {
+		logInfo('No instances configured, using git remote for unauthenticated access');
+		const finalConfig: ForgejoConfig = {
+			instanceUrl: normalizeUrl(gitInfo.instanceUrl),
+			token: '',
+			owner: gitInfo.owner,
+			repo: gitInfo.repo,
+			matchConfidence: 'default'
+		};
+
+		logDebug('Final configuration (unauthenticated):', {
+			...finalConfig,
+			token: '(not set)'
+		});
+
+		return finalConfig;
 	}
 
 	const finalConfig: ForgejoConfig = {

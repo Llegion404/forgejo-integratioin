@@ -1,7 +1,7 @@
 {
   "name": "forgejo-vscode",
   "displayName": "Forgejo Integration",
-  "description": "Browse Forgejo Pull Requests and Issues directly in VS Code",
+  "description": "Browse Pull Requests, Issues, and Actions from Forgejo, Gitea, and Codeberg directly in VS Code",
   "version": "0.2.0",
   "publisher": "maxking",
   "engines": {
@@ -15,11 +15,15 @@
   "keywords": [
     "forgejo",
     "codeberg",
+    "gitea",
     "git",
     "scm",
+    "self-hosted",
     "issues",
     "pull-request",
-    "code-review"
+    "code-review",
+    "actions",
+    "ci-cd"
   ],
   "categories": [
     "SCM Providers",
@@ -295,6 +299,23 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "forgejoPullRequests",
+        "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
+        "when": "forgejo.noInstanceConfigured"
+      },
+      {
+        "view": "forgejoIssues",
+        "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
+        "when": "forgejo.noInstanceConfigured"
+      },
+      {
+        "view": "forgejoActions",
+        "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
+        "when": "forgejo.noInstanceConfigured"
+      }
+    ],
     "configuration": {
       "title": "Forgejo",
       "properties": {
