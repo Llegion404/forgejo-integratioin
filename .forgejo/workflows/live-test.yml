@@ -35,7 +35,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        apt-get update && apt-get install -y jq curl
+        apt-get update && apt-get install -y jq curl xvfb libgtk-3-0 libxss1 libasound2 libgbm1 libnspr4 libnss3
         npm ci
 
     - name: Wait for Forgejo & setup test data
@@ -43,3 +43,18 @@ jobs:
 
     - name: Run live integration tests
       run: npm run test:live
+
+    - name: Create test workspace for Playwright
+      run: |
+        mkdir -p /tmp/forgejo-test-workspace
+        cd /tmp/forgejo-test-workspace
+        git init
+        git remote add origin http://forgejo:3000/testuser/test-repo.git
+
+    - name: Compile extension
+      run: npm run compile
+
+    - name: Run Playwright VS Code live tests
+      run: xvfb-run -a npm run test:e2e:live
+      env:
+        FORGEJO_LIVE_WORKSPACE: /tmp/forgejo-test-workspace

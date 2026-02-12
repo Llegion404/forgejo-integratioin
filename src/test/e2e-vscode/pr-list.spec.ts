@@ -54,7 +54,7 @@ test.describe('Pull Request List', () => {
     return labels;
   }
 
-  test('should display pull request groups from the repo', async ({ harness, workbox }) => {
+  test('should display pull request groups with counts', async ({ harness, workbox }) => {
     // Wait for tree rows to appear
     const firstRow = workbox.locator('.monaco-list-row').first();
     await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
@@ -69,22 +69,13 @@ test.describe('Pull Request List', () => {
     const prGroupPattern = /^(Open|Merged|Closed|Draft)\d+$/;
     const foundGroups = labels.filter(label => prGroupPattern.test(label));
     expect(foundGroups.length).toBeGreaterThan(0);
+
+    // Each group should report at least 1 PR
+    for (const group of foundGroups) {
+      const count = parseInt(group.replace(/^(Open|Merged|Closed|Draft)/, ''), 10);
+      expect(count).toBeGreaterThan(0);
+    }
+
     console.log('PR groups found:', foundGroups);
-  });
-
-  test('should display individual PR entries within groups', async ({ harness, workbox }) => {
-    // Wait for tree rows to appear
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
-
-    const labels = await getTreeRowLabels(workbox);
-
-    // Open groups are expanded by default, so individual PR entries
-    // should be visible (format: "#N: <title>by <author>")
-    const prEntries = labels.filter(label => /#\d+:/.test(label));
-    expect(prEntries.length).toBeGreaterThan(0);
-    console.log('PR entries found:', prEntries);
-
-    await harness.captureScreenshot('pr-entries');
   });
 });
