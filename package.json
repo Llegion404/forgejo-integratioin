@@ -401,7 +401,8 @@
     "test:e2e:vscode": "playwright test --config playwright.vscode.config.ts",
     "test:e2e:vscode:headed": "playwright test --config playwright.vscode.config.ts --headed",
     "test:e2e:vscode:debug": "playwright test --config playwright.vscode.config.ts --debug",
-    "test:ci": "npm run lint && npm run test:unit:coverage && npm run test:integration"
+    "test:ci": "npm run lint && npm run test:unit:coverage && npm run test:integration",
+    "test:live": "jest --testPathPattern='forgejoClient\\.live\\.test'"
   },
   "devDependencies": {
     "@mshanemc/vscode-test-playwright": "^0.0.1-beta14",
