@@ -1,40 +1,14 @@
-diff --git a/node_modules/@mshanemc/vscode-test-playwright/package.json.orig b/node_modules/@mshanemc/vscode-test-playwright/package.json.orig
-new file mode 100644
-index 0000000..d2a22dd
---- /dev/null
-+++ b/node_modules/@mshanemc/vscode-test-playwright/package.json.orig
-@@ -0,0 +1,33 @@
-+{
-+  "name": "@mshanemc/vscode-test-playwright",
-+  "version": "0.0.1-beta14",
-+  "scripts": {
-+    "build": "tsc",
-+    "watch": "tsc --watch",
-+    "test": "playwright test"
-+  },
-+  "keywords": [],
-+  "author": "",
-+  "license": "ISC",
-+  "description": "",
-+  "exports": {
-+    ".": {
-+      "types": "./dist/index.d.ts",
-+      "import": "./dist/index.js",
-+      "require": "./dist/index.js",
-+      "default": "./dist/index.js"
-+    },
-+    "./package.json": "./package.json"
-+  },
-+  "devDependencies": {
-+    "@playwright/test": "^1.52.0",
-+    "@types/node": "^22.15.29",
-+    "@types/vscode": "^1.100.0",
-+    "@types/ws": "^8.18.1",
-+    "typescript": "^5.8.3"
-+  },
-+  "dependencies": {
-+    "@vscode/test-electron": "^2.5.2",
-+    "ws": "^8.18.2"
-+  }
-+}
-\ No newline at end of file
+diff --git a/node_modules/@mshanemc/vscode-test-playwright/package.json b/node_modules/@mshanemc/vscode-test-playwright/package.json
+index d2a22dd..c795968 100644
+--- a/node_modules/@mshanemc/vscode-test-playwright/package.json
++++ b/node_modules/@mshanemc/vscode-test-playwright/package.json
+@@ -17,7 +17,8 @@
+       "require": "./dist/index.js",
+       "default": "./dist/index.js"
+     },
+-    "./package.json": "./package.json"
++    "./package.json": "./package.json",
++    "./dist/injected/index.js": "./dist/injected/index.js"
+   },
+   "devDependencies": {
+     "@playwright/test": "^1.52.0",
