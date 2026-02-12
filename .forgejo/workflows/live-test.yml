@@ -24,8 +24,6 @@ jobs:
           FORGEJO__database__DB_TYPE: sqlite3
           FORGEJO__service__DISABLE_REGISTRATION: "false"
           FORGEJO__service__REQUIRE_SIGNIN_VIEW: "false"
-        ports:
-          - 3000:3000
 
     env:
       FORGEJO_TEST_URL: http://forgejo:3000
