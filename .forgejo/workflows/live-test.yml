@@ -1,0 +1,41 @@
+name: Live Integration Tests
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ master, dev ]
+
+jobs:
+  live-test:
+    runs-on: docker
+    container: node:20
+
+    services:
+      forgejo:
+        image: codeberg.org/forgejo/forgejo:10
+        env:
+          FORGEJO__security__INSTALL_LOCK: "true"
+          FORGEJO__server__ROOT_URL: "http://forgejo:3000"
+          FORGEJO__database__DB_TYPE: sqlite3
+          FORGEJO__service__DISABLE_REGISTRATION: "false"
+          FORGEJO__service__REQUIRE_SIGNIN_VIEW: "false"
+        ports:
+          - 3000:3000
+
+    env:
+      FORGEJO_TEST_URL: http://forgejo:3000
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt-get update && apt-get install -y jq curl
+        npm ci
+
+    - name: Wait for Forgejo & setup test data
+      run: bash scripts/setup-forgejo-test.sh
+
+    - name: Run live integration tests
+      run: npm run test:live
