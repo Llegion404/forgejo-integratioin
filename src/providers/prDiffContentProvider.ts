@@ -54,7 +54,8 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
     const queryParams = new URLSearchParams(uri.query);
     const ref = queryParams.get('ref');
     if (!ref) {
-      throw new Error('Invalid PR diff URI: missing ref query parameter');
+      console.warn('[Forgejo] Missing ref query parameter in URI:', uri.toString());
+      return '// This PR diff tab could not be restored.\n// Please re-open the file from the Pull Requests tree view.';
     }
 
     console.log('[Forgejo] Fetching file:', { owner, repo, ref, filepath });
