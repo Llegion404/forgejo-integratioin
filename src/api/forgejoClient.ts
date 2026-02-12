@@ -701,6 +701,72 @@ export class ForgejoClient {
     }
   }
 
+
+  /**
+   * Create a new pull request in a repository
+   */
+  async createPullRequest(
+    owner: string,
+    repo: string,
+    title: string,
+    head: string,
+    base: string,
+    body?: string
+  ): Promise<PullRequest> {
+    const endpoint = `/repos/${owner}/${repo}/pulls`;
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    const payload: Record<string, string> = { title, head, base };
+    if (body) {
+      payload.body = body;
+    }
+
+    logDebug('Creating pull request:', { owner, repo, title, head, base });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Create pull request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+
+        if (response.status === 409) {
+          throw new Error('A pull request already exists for this branch');
+        } else if (response.status === 422) {
+          throw new Error(`Validation error: ${errorBody}`);
+        }
+
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const pr = await response.json() as PullRequest;
+      logInfo('Pull request created successfully:', { owner, repo, number: pr.number, title: pr.title });
+      return pr;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to create pull request: ${String(error)}`);
+    }
+  }
+
   // ==================== Actions API Methods ====================
 
   /**

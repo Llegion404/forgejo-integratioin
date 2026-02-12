@@ -1306,4 +1306,107 @@ describe('ForgejoClient', () => {
         .toThrow();
     });
   });
+
+  describe('createPullRequest', () => {
+    const mockCreatedPR = {
+      id: 100,
+      number: 100,
+      title: 'Test PR',
+      body: 'Test body',
+      state: 'open',
+      user: { login: 'testuser', avatar_url: 'https://example.com/avatar.png' },
+      html_url: 'https://git.example.com/owner/repo/pulls/100',
+      head: { ref: 'feature-branch', sha: 'abc123', repo: { full_name: 'owner/repo' } },
+      base: { ref: 'main' },
+      mergeable: true,
+      merged: false,
+      merge_commit_sha: null,
+      draft: false,
+      comments: 0,
+      labels: [],
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z'
+    };
+
+    test('should create PR with title, head, base, and body', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => mockCreatedPR
+      } as unknown as Response);
+
+      const result = await client.createPullRequest('owner', 'repo', 'Test PR', 'feature-branch', 'main', 'Test body');
+
+      expect(result).toEqual(mockCreatedPR);
+      expect(result.number).toBe(100);
+      expect(result.title).toBe('Test PR');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/pulls',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ title: 'Test PR', head: 'feature-branch', base: 'main', body: 'Test body' })
+        })
+      );
+    });
+
+    test('should create PR without body', async () => {
+      const prWithoutBody = { ...mockCreatedPR, body: '' };
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => prWithoutBody
+      } as unknown as Response);
+
+      const result = await client.createPullRequest('owner', 'repo', 'Test PR', 'feature-branch', 'main');
+
+      expect(result).toEqual(prWithoutBody);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/api/v1/repos/owner/repo/pulls',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ title: 'Test PR', head: 'feature-branch', base: 'main' })
+        })
+      );
+    });
+
+    test('should handle 401 unauthorized', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: async () => 'Invalid token'
+      } as unknown as Response);
+
+      await expect(client.createPullRequest('owner', 'repo', 'Test PR', 'feature-branch', 'main'))
+        .rejects
+        .toThrow('HTTP 401: Unauthorized');
+    });
+
+    test('should handle 409 conflict (PR already exists)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        statusText: 'Conflict',
+        text: async () => 'pull request already exists'
+      } as unknown as Response);
+
+      await expect(client.createPullRequest('owner', 'repo', 'Test PR', 'feature-branch', 'main'))
+        .rejects
+        .toThrow('A pull request already exists for this branch');
+    });
+
+    test('should handle 422 validation error', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 422,
+        statusText: 'Unprocessable Entity',
+        text: async () => 'head branch does not exist'
+      } as unknown as Response);
+
+      await expect(client.createPullRequest('owner', 'repo', 'Test PR', 'nonexistent-branch', 'main'))
+        .rejects
+        .toThrow('Validation error: head branch does not exist');
+    });
+  });
+
 });
