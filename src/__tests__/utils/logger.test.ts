@@ -25,6 +25,16 @@ beforeAll(() => {
   logger.info('test-init');
 });
 
+// Note: Logger is a singleton with lazy OutputChannel init. We capture the mock
+// channel in beforeAll before jest's resetMocks can clear it. This couples tests
+// to init order but is necessary given the singleton pattern.
+
+// Helper to suppress console output in warn/error tests
+function withSuppressedConsole(method: 'warn' | 'error', fn: () => void) {
+  const spy = jest.spyOn(console, method).mockImplementation();
+  try { fn(); } finally { spy.mockRestore(); }
+}
+
 describe('Logger', () => {
   beforeEach(() => {
     // Clear call history but keep the mock channel alive
@@ -63,12 +73,12 @@ describe('Logger', () => {
 
   describe('warn()', () => {
     it('should log formatted warn message to output channel', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-      logger.warn('Warning message');
-      expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining('[WARN] Warning message')
-      );
-      consoleSpy.mockRestore();
+      withSuppressedConsole('warn', () => {
+        logger.warn('Warning message');
+        expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
+          expect.stringContaining('[WARN] Warning message')
+        );
+      });
     });
 
     it('should also log to console.warn', () => {
@@ -81,12 +91,12 @@ describe('Logger', () => {
 
   describe('error()', () => {
     it('should log formatted error message to output channel', () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-      logger.error('Error message');
-      expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining('[ERROR] Error message')
-      );
-      consoleSpy.mockRestore();
+      withSuppressedConsole('error', () => {
+        logger.error('Error message');
+        expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
+          expect.stringContaining('[ERROR] Error message')
+        );
+      });
     });
 
     it('should also log to console.error', () => {
@@ -133,21 +143,21 @@ describe('Logger', () => {
     });
 
     it('logWarn should log warn message', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation();
-      logWarn('Warning');
-      expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining('[WARN] Warning')
-      );
-      consoleSpy.mockRestore();
+      withSuppressedConsole('warn', () => {
+        logWarn('Warning');
+        expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
+          expect.stringContaining('[WARN] Warning')
+        );
+      });
     });
 
     it('logError should log error message', () => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
-      logError('Error');
-      expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
-        expect.stringContaining('[ERROR] Error')
-      );
-      consoleSpy.mockRestore();
+      withSuppressedConsole('error', () => {
+        logError('Error');
+        expect(mockOutputChannel.appendLine).toHaveBeenCalledWith(
+          expect.stringContaining('[ERROR] Error')
+        );
+      });
     });
 
     it('logDebug should not throw', () => {

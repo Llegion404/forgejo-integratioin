@@ -154,7 +154,13 @@ describe('instanceManager', () => {
 
       await manageInstances();
 
-      expect(vscode.window.withProgress).toHaveBeenCalled();
+      expect(vscode.window.withProgress).toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining('Testing') }),
+        expect.any(Function)
+      );
+      expect(mockTestInstanceConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ id: '1', instanceUrl: 'https://test.com' })
+      );
     });
   });
 

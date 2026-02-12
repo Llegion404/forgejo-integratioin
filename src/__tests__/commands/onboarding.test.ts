@@ -24,22 +24,27 @@ const mockGetDefaultInstanceName = getDefaultInstanceName as jest.MockedFunction
 const mockAddInstance = addInstance as jest.MockedFunction<typeof addInstance>;
 const mockTestInstanceConnection = testInstanceConnection as jest.MockedFunction<typeof testInstanceConnection>;
 
-// Override setTimeout to be immediate for tests
-const originalSetTimeout = global.setTimeout;
-beforeAll(() => {
-  global.setTimeout = ((fn: Function) => { fn(); return 0; }) as any;
-});
-afterAll(() => {
-  global.setTimeout = originalSetTimeout;
-});
-
 describe('onboarding', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.useFakeTimers();
     mockGenerateUUID.mockReturnValue('test-uuid');
     mockNormalizeUrl.mockImplementation((url: string) => url.startsWith('http') ? url : `https://${url}`);
     mockGetDefaultInstanceName.mockReturnValue('Test Instance');
   });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  // Helper: start onboarding and advance past the 500ms browser-open delay.
+  // Uses advanceTimersByTimeAsync to process microtasks (awaits) before
+  // advancing, ensuring the setTimeout is registered before we try to fire it.
+  async function runOnboarding(): Promise<boolean> {
+    const promise = startOnboarding();
+    await jest.advanceTimersByTimeAsync(600);
+    return promise;
+  }
 
   describe('startOnboarding', () => {
     it('should return false when user cancels URL input', async () => {
@@ -52,27 +57,27 @@ describe('onboarding', () => {
 
     it('should return false when user cancels token input', async () => {
       (vscode.window.showInputBox as jest.Mock)
-        .mockResolvedValueOnce('https://codeberg.org') // URL
-        .mockResolvedValueOnce(undefined); // Token cancelled
+        .mockResolvedValueOnce('https://codeberg.org')
+        .mockResolvedValueOnce(undefined);
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
 
-      const result = await startOnboarding();
+      const result = await runOnboarding();
 
       expect(result).toBe(false);
     });
 
     it('should return false when user cancels name input', async () => {
       (vscode.window.showInputBox as jest.Mock)
-        .mockResolvedValueOnce('https://codeberg.org') // URL
-        .mockResolvedValueOnce('test-token') // Token
-        .mockResolvedValueOnce(undefined); // Name cancelled
+        .mockResolvedValueOnce('https://codeberg.org')
+        .mockResolvedValueOnce('test-token')
+        .mockResolvedValueOnce(undefined);
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
       mockTestInstanceConnection.mockResolvedValue(true);
 
-      const result = await startOnboarding();
+      const result = await runOnboarding();
 
       expect(result).toBe(false);
     });
@@ -80,20 +85,20 @@ describe('onboarding', () => {
     it('should open browser for token creation', async () => {
       (vscode.window.showInputBox as jest.Mock)
         .mockResolvedValueOnce('https://codeberg.org')
-        .mockResolvedValueOnce(undefined); // Cancel at token
+        .mockResolvedValueOnce(undefined);
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
 
-      await startOnboarding();
+      await runOnboarding();
 
       expect(vscode.env.openExternal).toHaveBeenCalled();
     });
 
     it('should save instance on successful flow', async () => {
       (vscode.window.showInputBox as jest.Mock)
-        .mockResolvedValueOnce('https://codeberg.org') // URL
-        .mockResolvedValueOnce('test-token') // Token
-        .mockResolvedValueOnce('My Codeberg'); // Name
+        .mockResolvedValueOnce('https://codeberg.org')
+        .mockResolvedValueOnce('test-token')
+        .mockResolvedValueOnce('My Codeberg');
 
       (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
       (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
@@ -101,7 +106,7 @@ describe('onboarding', () => {
       mockAddInstance.mockResolvedValue(undefined);
       (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
 
-      const result = await startOnboarding();
+      const result = await runOnboarding();
 
       expect(result).toBe(true);
       expect(mockAddInstance).toHaveBeenCalledWith(
@@ -126,7 +131,7 @@ describe('onboarding', () => {
       mockAddInstance.mockResolvedValue(undefined);
       (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
 
-      await startOnboarding();
+      await runOnboarding();
 
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
         expect.stringContaining('Successfully added Forgejo instance'),
@@ -148,7 +153,7 @@ describe('onboarding', () => {
       mockAddInstance.mockResolvedValue(undefined);
       (vscode.window.showWarningMessage as jest.Mock).mockResolvedValue(undefined);
 
-      const result = await startOnboarding();
+      const result = await runOnboarding();
 
       expect(result).toBe(true);
       expect(mockAddInstance).toHaveBeenCalled();
@@ -164,7 +169,7 @@ describe('onboarding', () => {
       mockTestInstanceConnection.mockResolvedValue(false);
       (vscode.window.showWarningMessage as jest.Mock).mockResolvedValueOnce('Cancel');
 
-      const result = await startOnboarding();
+      const result = await runOnboarding();
 
       expect(result).toBe(false);
       expect(mockAddInstance).not.toHaveBeenCalled();
@@ -180,9 +185,41 @@ describe('onboarding', () => {
       mockTestInstanceConnection.mockResolvedValue(false);
       (vscode.window.showWarningMessage as jest.Mock).mockResolvedValueOnce(undefined);
 
-      const result = await startOnboarding();
+      const result = await runOnboarding();
 
       expect(result).toBe(false);
+    });
+
+    it('should retry when connection test fails and user chooses Try Again', async () => {
+      // First attempt: URL -> token -> connection fails -> Try Again
+      // Second attempt: URL -> token -> connection succeeds -> name -> save
+      (vscode.window.showInputBox as jest.Mock)
+        .mockResolvedValueOnce('https://codeberg.org')  // 1st: URL
+        .mockResolvedValueOnce('bad-token')              // 1st: Token
+        .mockResolvedValueOnce('https://codeberg.org')  // 2nd: URL (retry)
+        .mockResolvedValueOnce('good-token')             // 2nd: Token
+        .mockResolvedValueOnce('Codeberg');              // 2nd: Name
+
+      (vscode.env.openExternal as jest.Mock).mockResolvedValue(true);
+      (vscode.window.withProgress as jest.Mock).mockImplementation(async (_opts: any, task: any) => task());
+      mockTestInstanceConnection
+        .mockResolvedValueOnce(false)   // 1st attempt fails
+        .mockResolvedValueOnce(true);   // 2nd attempt succeeds
+      (vscode.window.showWarningMessage as jest.Mock).mockResolvedValueOnce('Try Again');
+      mockAddInstance.mockResolvedValue(undefined);
+      (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
+
+      // Recursive call means two setTimeouts (one per attempt)
+      const promise = startOnboarding();
+      await jest.advanceTimersByTimeAsync(600);
+      await jest.advanceTimersByTimeAsync(600);
+      const result = await promise;
+
+      expect(result).toBe(true);
+      expect(mockTestInstanceConnection).toHaveBeenCalledTimes(2);
+      expect(mockAddInstance).toHaveBeenCalledWith(
+        expect.objectContaining({ token: 'good-token' })
+      );
     });
 
     it('should handle addInstance failure', async () => {
@@ -197,7 +234,7 @@ describe('onboarding', () => {
       mockAddInstance.mockRejectedValue(new Error('Storage error'));
       (vscode.window.showErrorMessage as jest.Mock).mockResolvedValue(undefined);
 
-      const result = await startOnboarding();
+      const result = await runOnboarding();
 
       expect(result).toBe(false);
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
@@ -220,9 +257,8 @@ describe('onboarding', () => {
         .mockResolvedValue(undefined);
       mockAddInstance.mockResolvedValue(undefined);
 
-      await startOnboarding();
+      await runOnboarding();
 
-      // showWarningMessage is called at least twice: save anyway prompt + saved but failed notification
       expect(vscode.window.showWarningMessage).toHaveBeenCalledTimes(2);
     });
 
@@ -238,7 +274,7 @@ describe('onboarding', () => {
       mockAddInstance.mockResolvedValue(undefined);
       (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
 
-      await startOnboarding();
+      await runOnboarding();
 
       expect(mockAddInstance).toHaveBeenCalledWith(
         expect.objectContaining({ token: 'test-token' })
@@ -257,7 +293,7 @@ describe('onboarding', () => {
       mockAddInstance.mockResolvedValue(undefined);
       (vscode.window.showInformationMessage as jest.Mock).mockResolvedValue(undefined);
 
-      await startOnboarding();
+      await runOnboarding();
 
       expect(mockAddInstance).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'My Instance' })

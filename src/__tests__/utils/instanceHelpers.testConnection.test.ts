@@ -20,7 +20,10 @@ const MockForgejoClient = ForgejoClient as jest.MockedClass<typeof ForgejoClient
 const mockConfig = (instances: any[]) => {
   let currentInstances = [...instances];
 
-  const get = jest.fn().mockImplementation(() => currentInstances);
+  const get = jest.fn().mockImplementation((key: string) => {
+    if (key === 'instances') { return currentInstances; }
+    return undefined;
+  });
   const update = jest.fn().mockImplementation((key, value) => {
     if (key === 'instances') {
       currentInstances = value;

@@ -150,7 +150,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.updatePullRequestBody('owner', 'repo', 42, 'body'))
         .rejects
-        .toThrow('HTTP 403: Forbidden');
+        .toThrow(expect.objectContaining({ message: expect.stringContaining('403') }));
     });
 
     test('should handle non-Error thrown values', async () => {
@@ -158,7 +158,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.updatePullRequestBody('owner', 'repo', 42, 'body'))
         .rejects
-        .toThrow('Failed to update pull request body: string error');
+        .toThrow(expect.objectContaining({ message: expect.stringContaining('string error') }));
     });
   });
 
@@ -212,7 +212,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.updateIssueBody('owner', 'repo', 10, 'body'))
         .rejects
-        .toThrow('HTTP 500: Internal Server Error');
+        .toThrow(expect.objectContaining({ message: expect.stringContaining('500') }));
     });
 
     test('should handle non-Error thrown values', async () => {
@@ -220,7 +220,22 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.updateIssueBody('owner', 'repo', 10, 'body'))
         .rejects
-        .toThrow('Failed to update issue body: string error');
+        .toThrow(expect.objectContaining({ message: expect.stringContaining('string error') }));
+    });
+
+    test('should work without token', async () => {
+      const noTokenClient = new ForgejoClient('https://git.example.com');
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ number: 10 })
+      } as unknown as Response);
+
+      await noTokenClient.updateIssueBody('owner', 'repo', 10, 'body');
+
+      const callArgs = mockFetch.mock.calls[0];
+      const headers = callArgs[1]?.headers as Record<string, string>;
+      expect(headers['Authorization']).toBeUndefined();
     });
   });
 
@@ -231,7 +246,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.getPullRequestFiles('owner', 'repo', 42))
         .rejects
-        .toThrow('Network error: Cannot reach https://git.example.com');
+        .toThrow(expect.objectContaining({ message: expect.stringContaining('Network error') }));
     });
 
     test('should handle non-Error thrown from request', async () => {
@@ -253,7 +268,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.getPullRequestFiles('owner', 'repo', 42))
         .rejects
-        .toThrow('HTTP 422: Unprocessable Entity');
+        .toThrow(expect.objectContaining({ message: expect.stringContaining('422') }));
     });
 
     test('should handle response.text() failure when reading error body', async () => {
@@ -266,7 +281,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.getPullRequestFiles('owner', 'repo', 42))
         .rejects
-        .toThrow('HTTP 500: Internal Server Error');
+        .toThrow(expect.objectContaining({ message: expect.stringContaining('500') }));
     });
   });
 

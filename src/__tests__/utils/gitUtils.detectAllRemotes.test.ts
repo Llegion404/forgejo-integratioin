@@ -33,10 +33,12 @@ describe('detectAllGitRemotes', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    // First call: git remote
-    mockedExecSync.mockReturnValueOnce('origin\n');
-    // Second call: git config --get remote.origin.url
-    mockedExecSync.mockReturnValueOnce('https://codeberg.org/owner/repo.git\n');
+    mockedExecSync.mockImplementation((cmd: string) => {
+      const cmdStr = String(cmd);
+      if (cmdStr === 'git remote') { return 'origin\n'; }
+      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
+      return '';
+    });
 
     const result = await detectAllGitRemotes();
     expect(result.size).toBe(1);
@@ -51,9 +53,13 @@ describe('detectAllGitRemotes', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    mockedExecSync.mockReturnValueOnce('origin\nupstream\n');
-    mockedExecSync.mockReturnValueOnce('https://codeberg.org/owner/repo.git\n');
-    mockedExecSync.mockReturnValueOnce('git@github.com:upstream-owner/repo.git\n');
+    mockedExecSync.mockImplementation((cmd: string) => {
+      const cmdStr = String(cmd);
+      if (cmdStr === 'git remote') { return 'origin\nupstream\n'; }
+      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
+      if (cmdStr.includes('remote.upstream.url')) { return 'git@github.com:upstream-owner/repo.git\n'; }
+      return '';
+    });
 
     const result = await detectAllGitRemotes();
     expect(result.size).toBe(2);
@@ -73,9 +79,13 @@ describe('detectAllGitRemotes', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    mockedExecSync.mockReturnValueOnce('origin\nbad-remote\n');
-    mockedExecSync.mockReturnValueOnce('https://codeberg.org/owner/repo.git\n');
-    mockedExecSync.mockReturnValueOnce('not-a-valid-url\n');
+    mockedExecSync.mockImplementation((cmd: string) => {
+      const cmdStr = String(cmd);
+      if (cmdStr === 'git remote') { return 'origin\nbad-remote\n'; }
+      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
+      if (cmdStr.includes('remote.bad-remote.url')) { return 'not-a-valid-url\n'; }
+      return '';
+    });
 
     const result = await detectAllGitRemotes();
     expect(result.size).toBe(1);
@@ -87,9 +97,13 @@ describe('detectAllGitRemotes', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    mockedExecSync.mockReturnValueOnce('origin\nbroken\n');
-    mockedExecSync.mockReturnValueOnce('https://codeberg.org/owner/repo.git\n');
-    mockedExecSync.mockImplementationOnce(() => { throw new Error('failed'); });
+    mockedExecSync.mockImplementation((cmd: string) => {
+      const cmdStr = String(cmd);
+      if (cmdStr === 'git remote') { return 'origin\nbroken\n'; }
+      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
+      if (cmdStr.includes('remote.broken.url')) { throw new Error('failed'); }
+      return '';
+    });
 
     const result = await detectAllGitRemotes();
     expect(result.size).toBe(1);
@@ -110,9 +124,13 @@ describe('detectAllGitRemotes', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    mockedExecSync.mockReturnValueOnce('  origin  \n  upstream  \n');
-    mockedExecSync.mockReturnValueOnce('https://codeberg.org/owner/repo.git\n');
-    mockedExecSync.mockReturnValueOnce('https://git.example.com/other/repo.git\n');
+    mockedExecSync.mockImplementation((cmd: string) => {
+      const cmdStr = String(cmd);
+      if (cmdStr === 'git remote') { return '  origin  \n  upstream  \n'; }
+      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
+      if (cmdStr.includes('remote.upstream.url')) { return 'https://git.example.com/other/repo.git\n'; }
+      return '';
+    });
 
     const result = await detectAllGitRemotes();
     expect(result.size).toBe(2);
