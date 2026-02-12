@@ -51,6 +51,10 @@ if [ "$HTTP_CODE" != "201" ]; then
 fi
 
 echo "Creating API token..."
+# Delete existing token if present (idempotent for re-runs with persisted data)
+curl -sf -X DELETE "${FORGEJO_URL}/api/v1/users/testuser/tokens/ci-test-token" \
+  -u "testuser:testpass123" >/dev/null 2>&1 || true
+
 TOKEN=$(curl -sf -X POST "${FORGEJO_URL}/api/v1/users/testuser/tokens" \
   -u "testuser:testpass123" \
   -H "Content-Type: application/json" \
@@ -66,32 +70,51 @@ echo "Creating test repository..."
 curl -sf -X POST "${FORGEJO_URL}/api/v1/user/repos" \
   -H "Authorization: token ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"name":"test-repo","auto_init":true,"default_branch":"main"}' >/dev/null
+  -d '{"name":"test-repo","auto_init":true,"default_branch":"main"}' >/dev/null 2>&1 || echo "Repository may already exist, continuing..."
 
 echo "Creating feature branch..."
 curl -sf -X POST "${FORGEJO_URL}/api/v1/repos/testuser/test-repo/branches" \
   -H "Authorization: token ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"new_branch_name":"feature-branch","old_branch_name":"main"}' >/dev/null
+  -d '{"new_branch_name":"feature-branch","old_branch_name":"main"}' >/dev/null 2>&1 || echo "Branch may already exist, continuing..."
 
 echo "Adding test file on feature branch..."
 CONTENT=$(echo -n "Hello World" | base64)
 curl -sf -X POST "${FORGEJO_URL}/api/v1/repos/testuser/test-repo/contents/test.txt" \
   -H "Authorization: token ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d "{\"message\":\"add test file\",\"content\":\"${CONTENT}\",\"branch\":\"feature-branch\"}" >/dev/null
+  -d "{\"message\":\"add test file\",\"content\":\"${CONTENT}\",\"branch\":\"feature-branch\"}" >/dev/null 2>&1 || echo "File may already exist, continuing..."
 
 echo "Creating pull request..."
 curl -sf -X POST "${FORGEJO_URL}/api/v1/repos/testuser/test-repo/pulls" \
   -H "Authorization: token ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Test PR","body":"This is a test PR","head":"feature-branch","base":"main"}' >/dev/null
+  -d '{"title":"Test PR","body":"This is a test PR","head":"feature-branch","base":"main"}' >/dev/null 2>&1 || echo "PR may already exist, continuing..."
 
 echo "Creating issue..."
 curl -sf -X POST "${FORGEJO_URL}/api/v1/repos/testuser/test-repo/issues" \
   -H "Authorization: token ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Test Issue","body":"This is a test issue"}' >/dev/null
+  -d '{"title":"Test Issue","body":"This is a test issue"}' >/dev/null 2>&1 || echo "Issue may already exist, continuing..."
+
+echo "Creating second feature branch for interaction tests..."
+curl -sf -X POST "${FORGEJO_URL}/api/v1/repos/testuser/test-repo/branches" \
+  -H "Authorization: token ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"new_branch_name":"feature-branch-2","old_branch_name":"main"}' >/dev/null 2>&1 || echo "Branch may already exist, continuing..."
+
+echo "Adding test file on second feature branch..."
+CONTENT2=$(echo -n "Hello World 2" | base64)
+curl -sf -X POST "${FORGEJO_URL}/api/v1/repos/testuser/test-repo/contents/test2.txt" \
+  -H "Authorization: token ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{\"message\":\"add test file 2\",\"content\":\"${CONTENT2}\",\"branch\":\"feature-branch-2\"}" >/dev/null 2>&1 || echo "File may already exist, continuing..."
+
+echo "Creating second issue for interaction tests..."
+curl -sf -X POST "${FORGEJO_URL}/api/v1/repos/testuser/test-repo/issues" \
+  -H "Authorization: token ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Test Issue 2","body":"Second test issue for interaction tests"}' >/dev/null 2>&1 || echo "Issue may already exist, continuing..."
 
 echo "Setup complete!"
 

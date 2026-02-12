@@ -38,6 +38,17 @@ export class WebviewHarness {
   }
 
   /**
+   * Load the Action Detail webview with mock data.
+   */
+  async loadActionDetail(): Promise<void> {
+    const html = this.buildActionDetailHtml();
+    await this.page.setContent(html);
+    await this.page.waitForFunction(() => {
+      return document.getElementById('loading') !== null;
+    });
+  }
+
+  /**
    * Send a message to the webview simulating the extension posting data.
    */
   async postMessage(message: Record<string, unknown>): Promise<void> {
@@ -59,6 +70,14 @@ export class WebviewHarness {
    * Send Issue update data to the webview.
    */
   async sendIssueUpdate(data: IssueDetailData): Promise<void> {
+    await this.postMessage({ type: 'update', data });
+    await this.page.waitForSelector('#content', { state: 'visible', timeout: 5000 });
+  }
+
+  /**
+   * Send Action update data to the webview.
+   */
+  async sendActionUpdate(data: ActionDetailData): Promise<void> {
     await this.postMessage({ type: 'update', data });
     await this.page.waitForSelector('#content', { state: 'visible', timeout: 5000 });
   }
@@ -272,6 +291,93 @@ export class WebviewHarness {
   }
 
   /**
+   * Build the Action Detail HTML with inline styles and scripts.
+   */
+  private buildActionDetailHtml(): string {
+    const cssContent = this.readWebviewFile('actionDetail', 'styles.css');
+    const jsContent = this.readWebviewFile('actionDetail', 'index.js');
+
+    const patchedJs = this.patchJsForTesting(jsContent);
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Action Details - Test</title>
+  <style>${cssContent}</style>
+</head>
+<body>
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <p>Loading action details...</p>
+  </div>
+
+  <div id="error" class="error" style="display: none;">
+    <h3>Error</h3>
+    <p id="error-message"></p>
+    <button id="retry-btn" class="btn btn-primary">Retry</button>
+  </div>
+
+  <div id="content" style="display: none;">
+    <!-- Health Summary -->
+    <div class="health-summary">
+      <span id="health-badge" class="health-badge"></span>
+      <span id="health-stats" class="health-stats"></span>
+    </div>
+
+    <!-- Run Info Header -->
+    <header class="action-header">
+      <div class="action-title-row">
+        <h1 id="action-name"></h1>
+        <span id="run-number"></span>
+      </div>
+      <div class="run-meta">
+        <div class="run-meta-item">
+          <span class="label">Commit:</span>
+          <span id="commit-info"></span>
+        </div>
+        <div class="run-meta-item">
+          <span class="label">Branch:</span>
+          <span id="branch-name"></span>
+        </div>
+        <div class="run-meta-item">
+          <span class="label">Trigger:</span>
+          <span id="event-type"></span>
+        </div>
+        <div class="run-meta-item">
+          <span class="label">Duration:</span>
+          <span id="duration"></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Action Bar -->
+    <nav class="action-bar">
+      <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
+      <button id="rerun-btn" class="btn btn-primary">Re-run Workflow</button>
+      <button id="open-web-btn" class="btn btn-secondary">Open in Browser</button>
+    </nav>
+
+    <!-- Jobs Section -->
+    <section class="jobs-section">
+      <h2>Jobs <span id="jobs-count"></span></h2>
+      <div id="jobs-list"></div>
+    </section>
+
+    <!-- Failing Steps Summary -->
+    <section id="failures-section" class="failures-section" style="display: none;">
+      <h2>Failed Steps</h2>
+      <div id="failures-list"></div>
+    </section>
+  </div>
+
+  <script>${patchedJs}</script>
+</body>
+</html>`;
+  }
+
+  /**
    * Read a file from the webview source directory.
    */
   private readWebviewFile(webview: string, filename: string): string {
@@ -309,6 +415,48 @@ function acquireVsCodeApi() {
  */
 export async function getPostedMessages(page: Page): Promise<Record<string, unknown>[]> {
   return page.evaluate(() => (window as any).__vscodeMessages);
+}
+
+// ---- Action Detail support ----
+
+export interface ActionDetailData {
+  run: {
+    name: string;
+    run_number: number;
+    status: string;
+    conclusion?: string | null;
+    head_sha: string;
+    head_branch: string;
+    event: string;
+    display_title: string;
+    created_at: string;
+    updated_at: string;
+    started_at?: string | null;
+    stopped_at?: string | null;
+    run_started_at?: string;
+    id: number;
+    workflow_id: string;
+    url: string;
+  };
+  jobs: Array<{
+    id: number;
+    run_id: number;
+    name: string;
+    status: string;
+    conclusion?: string | null;
+    started_at?: string | null;
+    completed_at?: string | null;
+    steps: Array<{
+      name: string;
+      status: string;
+      conclusion?: string | null;
+      number: number;
+      started_at?: string;
+      completed_at?: string;
+    }>;
+  }>;
+  owner: string;
+  repo: string;
 }
 
 // ---- Mock data types ----
@@ -412,6 +560,33 @@ export function createMockIssueData(overrides: Partial<IssueDetailData['issue']>
       ...overrides,
     },
     activities: [],
+    owner: 'owner',
+    repo: 'repo',
+  };
+}
+
+export function createMockActionData(overrides: Partial<ActionDetailData['run']> = {}, jobs: ActionDetailData['jobs'] = []): ActionDetailData {
+  return {
+    run: {
+      id: 1,
+      name: 'CI Pipeline',
+      run_number: 15,
+      status: 'success',
+      conclusion: null,
+      head_sha: 'abc1234567890def',
+      head_branch: 'main',
+      event: 'push',
+      display_title: 'Fix login bug',
+      created_at: '2025-01-15T10:00:00Z',
+      updated_at: '2025-01-15T10:05:00Z',
+      started_at: '2025-01-15T10:00:00Z',
+      stopped_at: '2025-01-15T10:05:00Z',
+      run_started_at: '2025-01-15T10:00:00Z',
+      workflow_id: 'ci.yml',
+      url: 'https://git.example.com/owner/repo/actions/runs/15',
+      ...overrides,
+    },
+    jobs,
     owner: 'owner',
     repo: 'repo',
   };
