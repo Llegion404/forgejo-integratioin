@@ -81,27 +81,10 @@ git push origin master --tags
 # Result: Published as pre-release, users must opt-in
 ```
 
-#### Short Form Pre-releases
-
-You can also use abbreviated notations:
-
-```bash
-# Alpha: v0.3.0-a1
-npm version 0.3.0-a1 --no-git-tag-version
-git add package.json && git commit -m "chore: Prepare alpha release 0.3.0-a1"
-git tag v0.3.0-a1
-git push origin master --tags
-
-# Beta: v0.3.0-b1
-npm version 0.3.0-b1 --no-git-tag-version
-git add package.json && git commit -m "chore: Prepare beta release 0.3.0-b1"
-git tag v0.3.0-b1
-git push origin master --tags
-```
-
 ### Supported Version Formats
 
-The workflow automatically detects these patterns:
+The workflow detects pre-release versions by matching `-alpha`, `-beta`, or `-rc`
+followed by a dot, dash, or end-of-string (e.g., `-alpha.1`, `-beta1`, `-rc.2`).
 
 | Version Format | Type | Published As |
 |----------------|------|--------------|
@@ -111,8 +94,6 @@ The workflow automatically detects these patterns:
 | `v0.3.0-beta.1` | Pre-release | Pre-release |
 | `v0.3.0-beta1` | Pre-release | Pre-release |
 | `v0.3.0-rc.1` | Pre-release | Pre-release |
-| `v0.3.0-a1` | Pre-release | Pre-release |
-| `v0.3.0-b1` | Pre-release | Pre-release |
 
 ### Example Development Cycle
 
@@ -324,6 +305,21 @@ The workflow runs on any tag matching:
 - [ ] Review and close stale issues
 - [ ] Update documentation as needed
 - [ ] Rotate VSCE_PAT token yearly (security best practice)
+
+## Dependency Notes
+
+### Playwright Version Pinning
+
+Playwright is pinned to `~1.52.0` for compatibility with `@mshanemc/vscode-test-playwright@0.0.1-beta14`,
+which depends on Playwright 1.52.x APIs. Do not upgrade Playwright without testing the e2e VS Code
+tests (`npm run test:e2e:vscode`). This constraint can be relaxed once the upstream package publishes
+a stable release with broader Playwright version support.
+
+### @mshanemc/vscode-test-playwright Patch
+
+The `@mshanemc/vscode-test-playwright` package has a bug in its `exports` map — it is missing the
+`./dist/injected/index.js` subpath entry. We use `patch-package` (via the `postinstall` script)
+to add this entry automatically. The patch file is at `patches/@mshanemc+vscode-test-playwright+0.0.1-beta14.patch`.
 
 ## Support
 

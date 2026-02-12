@@ -54,6 +54,16 @@ class Uri {
     }
   }
 
+  static from(components) {
+    return new Uri(
+      components.scheme || '',
+      components.authority || '',
+      components.path || '',
+      components.query ? `?${components.query.replace(/^\?/, '')}` : '',
+      components.fragment ? `#${components.fragment.replace(/^#/, '')}` : ''
+    );
+  }
+
   static file(path) {
     return new Uri('file', '', path, '', '');
   }

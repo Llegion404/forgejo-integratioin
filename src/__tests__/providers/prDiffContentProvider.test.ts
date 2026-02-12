@@ -85,10 +85,44 @@ describe('PRDiffContentProvider', () => {
       await expect(provider.provideTextDocumentContent(uri)).rejects.toThrow('Invalid PR diff URI format');
     });
 
-    test('should throw error when ref query parameter is missing', async () => {
+    test('should return helpful message when ref query parameter is missing', async () => {
       const uri = vscode.Uri.parse('forgejo-pr:/owner/repo/src/file.ts');
 
-      await expect(provider.provideTextDocumentContent(uri)).rejects.toThrow('Invalid PR diff URI: missing ref query parameter');
+      const content = await provider.provideTextDocumentContent(uri);
+
+      expect(content).toContain('could not be restored');
+      expect(content).toContain('Pull Requests tree view');
+    });
+
+    test('should return helpful message when branch name with slashes is embedded in path without ref param', async () => {
+      // Reproduces: forgejo-pr:/maxking/forgejo-vscode/feat/auto-publish-workflow/research/marketing-analysis.md
+      // This is the exact URI pattern from the bug where the ref was missing
+      const uri = vscode.Uri.parse('forgejo-pr:/maxking/forgejo-vscode/feat/auto-publish-workflow/research/marketing-analysis.md');
+
+      const content = await provider.provideTextDocumentContent(uri);
+
+      expect(content).toContain('could not be restored');
+      expect(content).toContain('Pull Requests tree view');
+    });
+
+    test('should correctly round-trip branch with slashes and simple filepath via createPRFileUri', async () => {
+      const uri = createPRFileUri('maxking', 'forgejo-vscode', 'feat/auto-publish-workflow', 'research/marketing-analysis.md');
+      mockGetForgejoConfig.mockResolvedValue({
+        instanceUrl: 'https://codeberg.org',
+        owner: 'maxking',
+        repo: 'forgejo-vscode',
+        token: 'test-token'
+      });
+      mockClient.getFileContents.mockResolvedValue(mockPlainTextContent);
+
+      await provider.provideTextDocumentContent(uri);
+
+      expect(mockClient.getFileContents).toHaveBeenCalledWith(
+        'maxking',
+        'forgejo-vscode',
+        'research/marketing-analysis.md',
+        'feat/auto-publish-workflow'
+      );
     });
   });
 
