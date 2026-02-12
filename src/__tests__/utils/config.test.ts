@@ -40,13 +40,26 @@ describe('config', () => {
             }
         ];
 
-        it('should return null if no instances configured', async () => {
+        it('should return unauthenticated config from git remote when no instances configured', async () => {
             mockConfig([]);
             (detectGitRemote as jest.Mock).mockResolvedValue({
                 instanceUrl: 'https://codeberg.org',
                 owner: 'owner',
                 repo: 'repo'
             });
+
+            const config = await getForgejoConfig();
+            expect(config).not.toBeNull();
+            expect(config!.instanceUrl).toBe('https://codeberg.org');
+            expect(config!.owner).toBe('owner');
+            expect(config!.repo).toBe('repo');
+            expect(config!.token).toBe('');
+            expect(config!.matchConfidence).toBe('default');
+        });
+
+        it('should return null if no instances and no git remote', async () => {
+            mockConfig([]);
+            (detectGitRemote as jest.Mock).mockResolvedValue(null);
 
             const config = await getForgejoConfig();
             expect(config).toBeNull();
