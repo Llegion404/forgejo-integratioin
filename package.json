@@ -183,6 +183,10 @@
         "command": "forgejo.showActionDetails",
         "title": "View Action Details",
         "icon": "$(info)"
+      },
+      {
+        "command": "forgejo.selectRemote",
+        "title": "Forgejo: Select Git Remote"
       }
     ],
     "menus": {
@@ -338,6 +342,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show notifications when opening files that were added or deleted in a pull request"
+        },
+        "forgejo.preferredRemote": {
+          "type": "string",
+          "default": "",
+          "description": "Preferred git remote name to use for Forgejo detection (default: auto-detect, falls back to origin)"
         }
       }
     }

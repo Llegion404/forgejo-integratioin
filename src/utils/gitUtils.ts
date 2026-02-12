@@ -9,8 +9,9 @@ export interface GitRemoteInfo {
 
 /**
  * Detect git repository and extract remote information
+ * @param remoteName Optional remote name to use instead of 'origin'
  */
-export async function detectGitRemote(): Promise<GitRemoteInfo | null> {
+export async function detectGitRemote(remoteName?: string): Promise<GitRemoteInfo | null> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
 
   if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -19,11 +20,12 @@ export async function detectGitRemote(): Promise<GitRemoteInfo | null> {
   }
 
   const workspaceRoot = workspaceFolders[0].uri.fsPath;
-  console.log('[Forgejo] Detecting git remote in:', workspaceRoot);
+  const remote = remoteName || 'origin';
+  console.log('[Forgejo] Detecting git remote in:', workspaceRoot, 'using remote:', remote);
 
   try {
     // Get the remote URL
-    const remoteUrl = execSync('git config --get remote.origin.url', {
+    const remoteUrl = execSync(`git config --get remote.${remote}.url`, {
       cwd: workspaceRoot,
       encoding: 'utf-8'
     }).trim();
@@ -37,6 +39,62 @@ export async function detectGitRemote(): Promise<GitRemoteInfo | null> {
     console.log('[Forgejo] No git repository or remote found:', error instanceof Error ? error.message : error);
     return null;
   }
+}
+
+/**
+ * Detect all git remotes and extract their information
+ * Returns a Map of remote name to GitRemoteInfo
+ */
+export async function detectAllGitRemotes(): Promise<Map<string, GitRemoteInfo>> {
+  const result = new Map<string, GitRemoteInfo>();
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+
+  if (!workspaceFolders || workspaceFolders.length === 0) {
+    console.log('[Forgejo] No workspace folders found');
+    return result;
+  }
+
+  const workspaceRoot = workspaceFolders[0].uri.fsPath;
+  console.log('[Forgejo] Detecting all git remotes in:', workspaceRoot);
+
+  try {
+    // List all remote names
+    const remotesOutput = execSync('git remote', {
+      cwd: workspaceRoot,
+      encoding: 'utf-8'
+    }).trim();
+
+    if (!remotesOutput) {
+      console.log('[Forgejo] No git remotes found');
+      return result;
+    }
+
+    const remoteNames = remotesOutput.split('\n').map(name => name.trim()).filter(name => name.length > 0);
+    console.log('[Forgejo] Found git remotes:', remoteNames);
+
+    for (const name of remoteNames) {
+      try {
+        const remoteUrl = execSync(`git config --get remote.${name}.url`, {
+          cwd: workspaceRoot,
+          encoding: 'utf-8'
+        }).trim();
+
+        const parsed = parseRemoteUrl(remoteUrl);
+        if (parsed) {
+          result.set(name, parsed);
+          console.log(`[Forgejo] Parsed remote '${name}':`, parsed);
+        } else {
+          console.log(`[Forgejo] Could not parse remote '${name}' URL:`, remoteUrl);
+        }
+      } catch (error) {
+        console.log(`[Forgejo] Error getting URL for remote '${name}':`, error instanceof Error ? error.message : error);
+      }
+    }
+  } catch (error) {
+    console.log('[Forgejo] Error listing git remotes:', error instanceof Error ? error.message : error);
+  }
+
+  return result;
 }
 
 /**
