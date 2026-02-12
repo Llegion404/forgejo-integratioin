@@ -329,4 +329,213 @@ describe('PRTreeProvider', () => {
       expect(typeof provider.getChildren).toBe('function');
     });
   });
+
+  describe('PR Grouping (getChildren at root level)', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    });
+
+    test('should group open PRs into "Open" group', async () => {
+      const openPR: PullRequestListItem = { ...mockPR, state: 'open', draft: false, merged: false };
+      mockClient.getPullRequests.mockResolvedValue([openPR]);
+
+      const children = await provider.getChildren();
+
+      expect(children.length).toBe(1);
+      expect((children[0] as any).label).toBe('Open');
+      expect((children[0] as any).pullRequests).toEqual([openPR]);
+    });
+
+    test('should group draft PRs into "Draft" group', async () => {
+      const draftPR: PullRequestListItem = { ...mockPR, state: 'open', draft: true, merged: false };
+      mockClient.getPullRequests.mockResolvedValue([draftPR]);
+
+      const children = await provider.getChildren();
+
+      expect(children.length).toBe(1);
+      expect((children[0] as any).label).toBe('Draft');
+      expect((children[0] as any).pullRequests).toEqual([draftPR]);
+    });
+
+    test('should group merged PRs into "Merged" group', async () => {
+      const mergedPR: PullRequestListItem = { ...mockPR, state: 'closed', merged: true, draft: false };
+      mockClient.getPullRequests.mockResolvedValue([mergedPR]);
+
+      const children = await provider.getChildren();
+
+      expect(children.length).toBe(1);
+      expect((children[0] as any).label).toBe('Merged');
+      expect((children[0] as any).pullRequests).toEqual([mergedPR]);
+    });
+
+    test('should group closed (non-merged) PRs into "Closed" group', async () => {
+      const closedPR: PullRequestListItem = { ...mockPR, state: 'closed', merged: false, draft: false };
+      mockClient.getPullRequests.mockResolvedValue([closedPR]);
+
+      const children = await provider.getChildren();
+
+      expect(children.length).toBe(1);
+      expect((children[0] as any).label).toBe('Closed');
+      expect((children[0] as any).pullRequests).toEqual([closedPR]);
+    });
+
+    test('should return error message when no config', async () => {
+      mockGetForgejoConfig.mockResolvedValue(null as any);
+      mockClient.getPullRequests.mockRejectedValue(new Error('No config'));
+
+      // fetchPullRequests sets error when config is null
+      // But since getPullRequests is called on the client which is constructed from config,
+      // we need to simulate what happens when getForgejoConfig returns null
+      const noConfigProvider = new PRTreeProvider();
+      jest.clearAllMocks();
+      mockGetForgejoConfig.mockResolvedValue(null as any);
+
+      const children = await noConfigProvider.getChildren();
+
+      expect(children.length).toBe(1);
+      expect((children[0] as any).message).toContain('No Forgejo configuration found');
+      expect((children[0] as any).isError).toBe(true);
+    });
+
+    test('should return "No pull requests found" when empty', async () => {
+      mockClient.getPullRequests.mockResolvedValue([]);
+
+      const children = await provider.getChildren();
+
+      expect(children.length).toBe(1);
+      expect((children[0] as any).message).toBe('No pull requests found');
+      expect((children[0] as any).isError).toBe(false);
+    });
+
+    test('should return error message on fetch failure', async () => {
+      mockClient.getPullRequests.mockRejectedValue(new Error('Network error'));
+
+      const children = await provider.getChildren();
+
+      expect(children.length).toBe(1);
+      expect((children[0] as any).message).toBe('Network error');
+      expect((children[0] as any).isError).toBe(true);
+    });
+  });
+
+  describe('PRGroupItem children', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    });
+
+    test('should return PRTreeItems for group pull requests', async () => {
+      const pr1: PullRequestListItem = { ...mockPR, number: 1, title: 'PR One' };
+      const pr2: PullRequestListItem = { ...mockPR, number: 2, title: 'PR Two' };
+      mockClient.getPullRequests.mockResolvedValue([pr1, pr2]);
+
+      // Get root children (groups)
+      const groups = await provider.getChildren();
+      expect(groups.length).toBe(1);
+
+      // Get children of the Open group
+      const prItems = await provider.getChildren(groups[0]);
+
+      expect(prItems.length).toBe(2);
+      expect(prItems[0]).toBeInstanceOf(PRTreeItem);
+      expect(prItems[1]).toBeInstanceOf(PRTreeItem);
+      expect((prItems[0] as PRTreeItem).pr.number).toBe(1);
+      expect((prItems[1] as PRTreeItem).pr.number).toBe(2);
+    });
+  });
+
+  describe('getPRFiles (PRTreeItem children)', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    });
+
+    test('should return overview + file items on successful fetch', async () => {
+      mockClient.getPullRequestFiles.mockResolvedValue(mockAllFileTypes);
+      mockClient.getPullRequestRefs.mockResolvedValue(mockStandardRefs);
+
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(prItem);
+
+      // First item should be overview, rest are file items
+      expect(children.length).toBe(1 + mockAllFileTypes.length);
+      expect((children[0] as any).label).toBe('Overview');
+      expect((children[0] as any).contextValue).toBe('prOverview');
+      // File items follow
+      for (let i = 1; i < children.length; i++) {
+        expect((children[i] as any).contextValue).toBe('prFile');
+      }
+    });
+
+    test('should return cached files on second call', async () => {
+      mockClient.getPullRequestFiles.mockResolvedValue(mockAllFileTypes);
+      mockClient.getPullRequestRefs.mockResolvedValue(mockStandardRefs);
+
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
+
+      // First call fetches from API
+      await provider.getChildren(prItem);
+      expect(mockClient.getPullRequestFiles).toHaveBeenCalledTimes(1);
+
+      // Second call should use cache
+      const children = await provider.getChildren(prItem);
+      expect(mockClient.getPullRequestFiles).toHaveBeenCalledTimes(1); // Still 1
+      expect(children.length).toBe(1 + mockAllFileTypes.length);
+    });
+
+    test('should return error message on file fetch failure', async () => {
+      mockClient.getPullRequestFiles.mockRejectedValue(new Error('API rate limit'));
+      mockClient.getPullRequestRefs.mockResolvedValue(mockStandardRefs);
+
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(prItem);
+
+      expect(children.length).toBe(2);
+      expect((children[0] as any).label).toBe('Overview');
+      expect((children[1] as any).message).toBe('API rate limit');
+      expect((children[1] as any).isError).toBe(true);
+    });
+
+    test('should return "No files changed" message for empty files', async () => {
+      mockClient.getPullRequestFiles.mockResolvedValue([]);
+      mockClient.getPullRequestRefs.mockResolvedValue(mockStandardRefs);
+
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(prItem);
+
+      expect(children.length).toBe(2);
+      expect((children[0] as any).label).toBe('Overview');
+      expect((children[1] as any).message).toBe('No files changed');
+      expect((children[1] as any).isError).toBe(false);
+    });
+
+    test('should return overview + error when config missing', async () => {
+      mockGetForgejoConfig.mockResolvedValue(null as any);
+
+      const prItem = new PRTreeItem(mockPR, mockPR.html_url, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(prItem);
+
+      expect(children.length).toBe(2);
+      expect((children[0] as any).label).toBe('Overview');
+      expect((children[1] as any).message).toBe('Configuration not available');
+      expect((children[1] as any).isError).toBe(true);
+    });
+  });
+
+  describe('PRTreeItem tooltip', () => {
+    test('should show merged state in tooltip', () => {
+      const mergedPR: PullRequestListItem = { ...mockPR, merged: true };
+      const prItem = new PRTreeItem(mergedPR, mergedPR.html_url, 'owner', 'repo');
+
+      expect(prItem.tooltip).toContain('(merged)');
+    });
+
+    test('should show draft state in tooltip', () => {
+      const draftPR: PullRequestListItem = { ...mockPR, draft: true };
+      const prItem = new PRTreeItem(draftPR, draftPR.html_url, 'owner', 'repo');
+
+      expect(prItem.tooltip).toContain('(draft)');
+    });
+  });
 });
