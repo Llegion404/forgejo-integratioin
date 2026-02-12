@@ -8,12 +8,16 @@ on:
 
 jobs:
   live-test:
+    strategy:
+      matrix:
+        forgejo-version: ['10', '11']
+
     runs-on: docker
     container: node:20
 
     services:
       forgejo:
-        image: codeberg.org/forgejo/forgejo:10
+        image: codeberg.org/forgejo/forgejo:${{ matrix.forgejo-version }}
         env:
           FORGEJO__security__INSTALL_LOCK: "true"
           FORGEJO__server__ROOT_URL: "http://forgejo:3000"
