@@ -131,10 +131,23 @@ class ThemeColor {
   }
 }
 
+const ProgressLocation = {
+  Notification: 15,
+  SourceControl: 1,
+  Window: 10
+};
+
+const QuickPickItemKind = {
+  Separator: -1,
+  Default: 0
+};
+
 const window = {
   showInformationMessage: jest.fn(),
   showErrorMessage: jest.fn(),
+  showWarningMessage: jest.fn(),
   showInputBox: jest.fn(),
+  showQuickPick: jest.fn(),
   createTreeView: jest.fn(),
   createOutputChannel: jest.fn().mockImplementation(() => ({
     append: jest.fn(),
@@ -165,7 +178,8 @@ const env = {
   clipboard: {
     readText: jest.fn(),
     writeText: jest.fn()
-  }
+  },
+  openExternal: jest.fn()
 };
 
 module.exports = {
@@ -176,6 +190,8 @@ module.exports = {
   ConfigurationTarget,
   ThemeIcon,
   ThemeColor,
+  ProgressLocation,
+  QuickPickItemKind,
   window,
   workspace,
   commands,
