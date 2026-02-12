@@ -43,7 +43,7 @@ jobs:
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
         # Detect pre-release versions (alpha, beta, rc)
-        if echo "$VERSION" | grep -qE '(alpha|beta|rc|a|b)'; then
+        if echo "$VERSION" | grep -qE '-(alpha|beta|rc)([.-]|$)'; then
           echo "is_prerelease=true" >> $GITHUB_OUTPUT
           echo "Publishing pre-release version: $VERSION"
         else
@@ -103,7 +103,7 @@ jobs:
           PRERELEASE_FLAG="true"
         fi
 
-        curl -X POST \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
           "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/releases" \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Content-Type: application/json" \
@@ -113,4 +113,11 @@ jobs:
             \"body\": \"$TAG_MESSAGE\",
             \"draft\": false,
             \"prerelease\": $PRERELEASE_FLAG
-          }"
+          }")
+        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+        if [ "$HTTP_CODE" -ne 201 ]; then
+          echo "Failed to create Forgejo release: HTTP $HTTP_CODE"
+          echo "$RESPONSE" | head -n -1
+          exit 1
+        fi
+        echo "Release created successfully"

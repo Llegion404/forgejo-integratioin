@@ -59,8 +59,8 @@ class Uri {
       components.scheme || '',
       components.authority || '',
       components.path || '',
-      components.query ? `?${components.query}` : '',
-      components.fragment ? `#${components.fragment}` : ''
+      components.query ? `?${components.query.replace(/^\?/, '')}` : '',
+      components.fragment ? `#${components.fragment.replace(/^#/, '')}` : ''
     );
   }
 

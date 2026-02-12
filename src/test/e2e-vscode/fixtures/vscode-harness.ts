@@ -1,6 +1,8 @@
 import { test as base, expect } from '@mshanemc/vscode-test-playwright';
 import type { Page } from '@playwright/test';
 
+const EXTENSION_ID = 'maxking.forgejo-vscode';
+
 /**
  * VSCodeHarness encapsulates common VS Code UI interactions
  * for the Forgejo extension e2e tests.
@@ -16,10 +18,10 @@ export class VSCodeHarness {
     // Poll via evaluateInVSCode until the extension is active
     const start = Date.now();
     while (Date.now() - start < timeout) {
-      const isActive = await this.evaluateInVSCode((vscode) => {
-        const ext = vscode.extensions.getExtension('maxking.forgejo-vscode');
+      const isActive = await this.evaluateInVSCode((vscode, extId: string) => {
+        const ext = vscode.extensions.getExtension(extId);
         return ext?.isActive ?? false;
-      });
+      }, EXTENSION_ID);
       if (isActive) return;
       // Wait a bit before polling again
       await new Promise(r => setTimeout(r, 500));
@@ -39,12 +41,6 @@ export class VSCodeHarness {
 
   /** Get tree item labels from a view. */
   async getTreeItems(viewId: string): Promise<string[]> {
-    const items = await this.evaluateInVSCode(async (vscode) => {
-      // There's no direct API to read tree items, but we can check commands
-      // Instead, we'll read the UI
-      return [] as string[];
-    });
-
     // Use Playwright to scrape the tree view items from the DOM
     const treeRows = this.workbox.locator(
       `[id="${viewId}"] .monaco-list-row .label-name`
@@ -99,10 +95,10 @@ export class VSCodeHarness {
 
   /** Check if the extension is active. */
   async isExtensionActive(): Promise<boolean> {
-    return await this.evaluateInVSCode((vscode) => {
-      const ext = vscode.extensions.getExtension('maxking.forgejo-vscode');
+    return await this.evaluateInVSCode((vscode, extId: string) => {
+      const ext = vscode.extensions.getExtension(extId);
       return ext?.isActive ?? false;
-    });
+    }, EXTENSION_ID);
   }
 }
 

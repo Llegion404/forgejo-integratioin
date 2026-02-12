@@ -51,18 +51,12 @@ test.describe('Forgejo Extension UI', () => {
     expect(commands).toContain('forgejoIssues.focus');
   });
 
-  test('forgejo.showOutput command opens output channel', async ({ harness, evaluateInVSCode }) => {
+  test('forgejo.showOutput command executes without error', async ({ harness }) => {
+    // Verify the command executes without throwing.
+    // We cannot programmatically verify the output panel contents because
+    // VS Code does not expose an API to query output channels.
     await harness.executeCommand('forgejo.showOutput');
     await harness.captureScreenshot('output-channel');
-
-    // Verify the output channel was opened by checking that the panel is visible
-    // The panel area should now contain the output channel
-    const isOutputVisible = await evaluateInVSCode(async (vscode) => {
-      // Check if there's an active output channel with "Forgejo" in the name
-      // We can't directly query output channels, but the command should have opened it
-      return true;
-    });
-    expect(isOutputVisible).toBe(true);
   });
 
   test('forgejo.showDiagnostics command executes without error', async ({ harness }) => {
