@@ -4,10 +4,11 @@ import { getForgejoConfig } from '../utils/config';
 
 /**
  * Custom URI scheme for PR diff virtual documents
- * Format: forgejo-pr:/{owner}/{repo}/{filepath}?ref={ref}
+ * Format: forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
  *
- * The ref (branch/tag/SHA) is passed as a query parameter to avoid
- * ambiguity with branch names that contain slashes (e.g., feature/branch).
+ * The ref (branch/tag/SHA) is base64url-encoded into a path segment to:
+ * 1. Avoid ambiguity with branch names that contain slashes (e.g., feature/branch)
+ * 2. Survive VS Code tab serialization, which strips query parameters from custom scheme URIs
  */
 export const PR_DIFF_SCHEME = 'forgejo-pr';
 
@@ -40,21 +41,27 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
       return cached;
     }
 
-    // Parse URI: forgejo-pr:/{owner}/{repo}/{filepath}?ref={ref}
+    // Parse URI: forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
     const parts = uri.path.split('/').filter(p => p);
-    if (parts.length < 3) {
+    if (parts.length < 4) {
       throw new Error('Invalid PR diff URI format');
     }
 
     const owner = parts[0];
     const repo = parts[1];
-    const filepath = decodeURIComponent(parts.slice(2).join('/'));
+    const encodedRef = parts[2];
+    const filepath = decodeURIComponent(parts.slice(3).join('/'));
 
-    // Extract ref from query parameter
-    const queryParams = new URLSearchParams(uri.query);
-    const ref = queryParams.get('ref');
+    // Decode base64url-encoded ref
+    let ref: string;
+    try {
+      ref = Buffer.from(encodedRef, 'base64url').toString();
+    } catch {
+      console.warn('[Forgejo] Failed to decode ref from URI:', uri.toString());
+      return '// This PR diff tab could not be restored.\n// Please re-open the file from the Pull Requests tree view.';
+    }
     if (!ref) {
-      console.warn('[Forgejo] Missing ref query parameter in URI:', uri.toString());
+      console.warn('[Forgejo] Empty ref after decoding in URI:', uri.toString());
       return '// This PR diff tab could not be restored.\n// Please re-open the file from the Pull Requests tree view.';
     }
 
@@ -105,10 +112,11 @@ export function createPRFileUri(
   ref: string,
   filepath: string
 ): vscode.Uri {
+  // Base64url-encode the ref so it's a single path segment (no slashes)
+  // and survives VS Code tab serialization (which strips query parameters)
+  const encodedRef = Buffer.from(ref).toString('base64url');
   // Encode each filepath segment to handle special characters (#, &, spaces, etc.)
   const encodedPath = filepath.split('/').map(encodeURIComponent).join('/');
-  // The ref is passed as a query parameter to avoid ambiguity with
-  // branch names containing slashes (e.g., feature/branch)
-  const path = `/${owner}/${repo}/${encodedPath}`;
-  return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}?ref=${encodeURIComponent(ref)}`);
+  const path = `/${owner}/${repo}/${encodedRef}/${encodedPath}`;
+  return vscode.Uri.parse(`${PR_DIFF_SCHEME}:${path}`);
 }
