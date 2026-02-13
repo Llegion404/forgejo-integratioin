@@ -1,0 +1,22 @@
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:12
+    ports:
+      - "3000:3000"
+    environment:
+      FORGEJO__security__INSTALL_LOCK: "true"
+      FORGEJO__server__ROOT_URL: "http://localhost:3000"
+      FORGEJO__database__DB_TYPE: sqlite3
+      FORGEJO__service__DISABLE_REGISTRATION: "false"
+      FORGEJO__service__REQUIRE_SIGNIN_VIEW: "false"
+    volumes:
+      - forgejo-e2e-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/v1/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  forgejo-e2e-data:

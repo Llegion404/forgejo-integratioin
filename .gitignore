@@ -15,5 +15,6 @@ research/vscode-extension-debugging.md
 .claude/settings.local.json
 playwright-report/
 test-results/
+forgejo-data/
 # Work-in-progress assets
 forgejo_icon.png
