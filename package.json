@@ -7,6 +7,7 @@
   "engines": {
     "vscode": "^1.85.0"
   },
+  "icon": "forgejo_icon.png",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

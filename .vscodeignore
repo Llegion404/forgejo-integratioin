@@ -27,10 +27,24 @@ jest.config.js
 .github/**
 .forgejo/**
 
+# Playwright / E2E
+playwright-report/**
+test-results/**
+playwright.config.ts
+playwright.live.config.ts
+playwright.vscode.config.ts
+docker-compose.e2e.yml
+scripts/**
+
 # Documentation
 CLAUDE.md
 TESTING.md
+TESTING-E2E.md
+PLAN-E2E-COVERAGE.md
 MAINTAINERS.md
+
+# Patches
+patches/**
 
 # Dependencies
 node_modules/**

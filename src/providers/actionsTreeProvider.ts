@@ -105,22 +105,6 @@ export class JobTreeItem extends vscode.TreeItem {
 }
 
 /**
- * Groups workflow runs by status
- */
-class ActionGroupItem extends vscode.TreeItem {
-  constructor(
-    public readonly groupLabel: string,
-    public readonly runs: Map<number, WorkflowRunListItem[]>,  // run_number -> jobs
-    public readonly owner: string,
-    public readonly repo: string
-  ) {
-    super(groupLabel, vscode.TreeItemCollapsibleState.Expanded);
-    this.description = `${runs.size}`;
-    this.contextValue = 'actionGroup';
-  }
-}
-
-/**
  * Message item for errors or info
  */
 class ActionMessageItem extends vscode.TreeItem {
@@ -134,7 +118,7 @@ class ActionMessageItem extends vscode.TreeItem {
   }
 }
 
-type ActionTreeElement = WorkflowRunTreeItem | JobTreeItem | ActionGroupItem | ActionMessageItem;
+type ActionTreeElement = WorkflowRunTreeItem | JobTreeItem | ActionMessageItem;
 
 export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ActionTreeElement | undefined | null | void> = new vscode.EventEmitter<ActionTreeElement | undefined | null | void>();
@@ -159,7 +143,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
 
   async getChildren(element?: ActionTreeElement): Promise<ActionTreeElement[]> {
     if (!element) {
-      // Root level - fetch workflow runs and group them
+      // Root level - fetch workflow runs and list chronologically (newest first)
       try {
         await this.fetchWorkflowRuns();
 
@@ -172,7 +156,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
           return [new ActionMessageItem('No workflow runs found', false)];
         }
 
-        // Group jobs by run_number first
+        // Group jobs by run_number
         const runsByNumber = new Map<number, WorkflowRunListItem[]>();
         for (const job of this.workflowRuns) {
           const existing = runsByNumber.get(job.run_number) || [];
@@ -180,76 +164,15 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
           runsByNumber.set(job.run_number, existing);
         }
 
-        // Determine aggregate status for each run
-        const getRunStatus = (jobs: WorkflowRunListItem[]): string => {
-          if (jobs.some(j => j.status === 'in_progress' || j.status === 'queued' || j.status === 'waiting')) {
-            return 'running';
-          }
-          if (jobs.some(j => j.status === 'failure')) {
-            return 'failed';
-          }
-          if (jobs.every(j => j.status === 'success')) {
-            return 'success';
-          }
-          if (jobs.some(j => j.status === 'cancelled' || j.status === 'skipped')) {
-            return 'cancelled';
-          }
-          return 'other';
-        };
-
-        // Group runs by aggregate status
-        const running = new Map<number, WorkflowRunListItem[]>();
-        const failed = new Map<number, WorkflowRunListItem[]>();
-        const success = new Map<number, WorkflowRunListItem[]>();
-        const cancelled = new Map<number, WorkflowRunListItem[]>();
-
-        for (const [runNumber, jobs] of runsByNumber) {
-          const status = getRunStatus(jobs);
-          switch (status) {
-            case 'running':
-              running.set(runNumber, jobs);
-              break;
-            case 'failed':
-              failed.set(runNumber, jobs);
-              break;
-            case 'success':
-              success.set(runNumber, jobs);
-              break;
-            case 'cancelled':
-              cancelled.set(runNumber, jobs);
-              break;
-          }
-        }
-
-        const groups: ActionGroupItem[] = [];
-
-        if (running.size > 0) {
-          groups.push(new ActionGroupItem('Running', running, this.owner, this.repo));
-        }
-        if (failed.size > 0) {
-          groups.push(new ActionGroupItem('Failed', failed, this.owner, this.repo));
-        }
-        if (success.size > 0) {
-          groups.push(new ActionGroupItem('Success', success, this.owner, this.repo));
-        }
-        if (cancelled.size > 0) {
-          groups.push(new ActionGroupItem('Cancelled', cancelled, this.owner, this.repo));
-        }
-
-        return groups;
+        // Sort by run_number descending (newest first)
+        const sortedRuns = Array.from(runsByNumber.entries()).sort((a, b) => b[0] - a[0]);
+        return sortedRuns.map(([runNumber, jobs]) =>
+          new WorkflowRunTreeItem(runNumber, jobs, this.owner, this.repo)
+        );
       } catch (error) {
         this.error = error instanceof Error ? error.message : 'Unknown error';
         return [new ActionMessageItem(this.error, true)];
       }
-    } else if (element instanceof ActionGroupItem) {
-      // Show runs in this status group
-      const runItems: WorkflowRunTreeItem[] = [];
-      // Sort by run_number descending (newest first)
-      const sortedRuns = Array.from(element.runs.entries()).sort((a, b) => b[0] - a[0]);
-      for (const [runNumber, jobs] of sortedRuns) {
-        runItems.push(new WorkflowRunTreeItem(runNumber, jobs, element.owner, element.repo));
-      }
-      return runItems;
     } else if (element instanceof WorkflowRunTreeItem) {
       // Show jobs within this run
       return element.jobs.map((job, index) =>
