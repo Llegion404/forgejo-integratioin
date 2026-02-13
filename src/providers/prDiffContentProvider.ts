@@ -53,13 +53,7 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
     const filepath = decodeURIComponent(parts.slice(3).join('/'));
 
     // Decode base64url-encoded ref
-    let ref: string;
-    try {
-      ref = Buffer.from(encodedRef, 'base64url').toString();
-    } catch {
-      console.warn('[Forgejo] Failed to decode ref from URI:', uri.toString());
-      return '// This PR diff tab could not be restored.\n// Please re-open the file from the Pull Requests tree view.';
-    }
+    const ref = Buffer.from(encodedRef, 'base64url').toString();
     if (!ref) {
       console.warn('[Forgejo] Empty ref after decoding in URI:', uri.toString());
       return '// This PR diff tab could not be restored.\n// Please re-open the file from the Pull Requests tree view.';

@@ -91,11 +91,7 @@ describe('PRDiffContentProvider', () => {
       await expect(provider.provideTextDocumentContent(uri)).rejects.toThrow('Invalid PR diff URI format');
     });
 
-    test('should return helpful message when ref segment is invalid base64url', async () => {
-      // "not-valid-b64" will decode to something non-empty, so we use a segment
-      // that decodes to an empty buffer result - but actually most base64url strings
-      // decode to something. Instead test the round-trip still works by checking
-      // that a properly created URI works correctly
+    test('should correctly round-trip branch with slashes via base64url encoding', async () => {
       const uri = createPRFileUri('maxking', 'forgejo-vscode', 'feat/auto-publish-workflow', 'research/marketing-analysis.md');
       mockGetForgejoConfig.mockResolvedValue({
         instanceUrl: 'https://codeberg.org',
