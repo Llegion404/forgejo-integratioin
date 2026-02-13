@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { execSync } from 'child_process';
 import { PRTreeProvider } from './providers/prTreeProvider';
 import { IssueTreeProvider } from './providers/issueTreeProvider';
-import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem } from './providers/actionsTreeProvider';
+import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem } from './providers/actionsTreeProvider';
 import { WorkflowRunListItem, WorkflowJob } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
@@ -658,11 +658,17 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'forgejo.openActionInBrowser',
-      (item: WorkflowRunTreeItem | JobTreeItem) => {
-        // Get the run data from either a run item or a job item
-        const run = item instanceof WorkflowRunTreeItem ? item.jobs[0] : item.job;
-        if (run && run.url) {
-          vscode.env.openExternal(vscode.Uri.parse(run.url));
+      (item: WorkflowRunTreeItem | JobTreeItem | StepTreeItem) => {
+        if (item instanceof WorkflowRunTreeItem) {
+          const run = item.jobs[0];
+          if (run?.url) {
+            vscode.env.openExternal(vscode.Uri.parse(run.url));
+          }
+        } else if (item instanceof JobTreeItem || item instanceof StepTreeItem) {
+          const url = item.job.html_url;
+          if (url) {
+            vscode.env.openExternal(vscode.Uri.parse(url));
+          }
         }
       }
     )
@@ -683,15 +689,22 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'forgejo.rerunAction',
       async (item: WorkflowRunTreeItem | JobTreeItem) => {
-        // Get the run data from either a run item or a job item
-        const run = item instanceof WorkflowRunTreeItem ? item.jobs[0] : item.job;
-        if (!run) {
-          return;
+        let runId: number;
+        let displayName: string;
+
+        if (item instanceof WorkflowRunTreeItem) {
+          const run = item.jobs[0];
+          if (!run) { return; }
+          runId = run.id;
+          displayName = run.display_title || run.name;
+        } else {
+          runId = item.job.run_id;
+          displayName = item.job.name;
         }
 
         try {
           const confirm = await vscode.window.showWarningMessage(
-            `Re-run workflow "${run.display_title || run.name}"?`,
+            `Re-run workflow "${displayName}"?`,
             { modal: true },
             'Re-run'
           );
@@ -707,7 +720,7 @@ export async function activate(context: vscode.ExtensionContext) {
           }
 
           const client = new ForgejoClient(config.instanceUrl, config.token);
-          await client.rerunWorkflow(item.owner, item.repo, run.id);
+          await client.rerunWorkflow(item.owner, item.repo, runId);
 
           vscode.window.showInformationMessage('Workflow re-run triggered!');
           actionsTreeProvider.refresh();
@@ -774,6 +787,47 @@ export async function activate(context: vscode.ExtensionContext) {
           );
         } catch (error) {
           console.error('[Forgejo] Error fetching logs:', error);
+          vscode.window.showErrorMessage(
+            `Failed to fetch logs: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    )
+  );
+
+  // Register step log viewer command (triggered by clicking a step in the tree)
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.viewStepLogs',
+      async (stepItem: StepTreeItem) => {
+        try {
+          const config = await getForgejoConfig();
+          if (!config) {
+            vscode.window.showErrorMessage('Forgejo configuration not found');
+            return;
+          }
+
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: `Fetching logs for ${stepItem.step.name}...`,
+              cancellable: false
+            },
+            async () => {
+              const client = new ForgejoClient(config.instanceUrl, config.token);
+              const logs = await client.getWorkflowLogs(
+                stepItem.owner, stepItem.repo, stepItem.runNumber, stepItem.jobIndex
+              );
+
+              const doc = await vscode.workspace.openTextDocument({
+                content: logs,
+                language: 'log'
+              });
+              await vscode.window.showTextDocument(doc, { preview: true });
+            }
+          );
+        } catch (error) {
+          console.error('[Forgejo] Error fetching step logs:', error);
           vscode.window.showErrorMessage(
             `Failed to fetch logs: ${error instanceof Error ? error.message : 'Unknown error'}`
           );

@@ -16,6 +16,15 @@ test.describe('Forgejo Extension UI', () => {
     expect(commands).toContain('forgejo.showOutput');
   });
 
+  test('actions commands are registered', async ({ harness }) => {
+    await harness.waitForExtensionActivation();
+    const commands = await harness.getRegisteredCommands('forgejo.');
+    expect(commands).toContain('forgejo.refreshActions');
+    expect(commands).toContain('forgejo.viewStepLogs');
+    expect(commands).toContain('forgejo.showActionDetails');
+    expect(commands).toContain('forgejo.viewActionLogs');
+  });
+
   test('Forgejo view container is registered', async ({ harness, evaluateInVSCode }) => {
     await harness.waitForExtensionActivation();
 

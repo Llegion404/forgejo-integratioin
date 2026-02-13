@@ -1,15 +1,20 @@
 import * as vscode from 'vscode';
-import { WorkflowRunTreeItem, JobTreeItem, ActionsTreeProvider } from '../../providers/actionsTreeProvider';
+import { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, ActionsTreeProvider, formatDuration } from '../../providers/actionsTreeProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
-import { WorkflowRunListItem } from '../../models/action';
+import { WorkflowRunListItem, WorkflowJob } from '../../models/action';
 import {
   mockWorkflowRunSuccess,
   mockWorkflowRunFailed,
   mockWorkflowRunInProgress,
   mockWorkflowRunCancelled,
   mockActionTasksResponse,
-  mockEmptyActionTasksResponse
+  mockEmptyActionTasksResponse,
+  mockWorkflowJobSuccess,
+  mockWorkflowJobFailed,
+  mockWorkflowJobNoSteps,
+  mockWorkflowJobsResponse,
+  mockMultiJobResponse
 } from '../fixtures/workflowRuns';
 
 // Mock dependencies
@@ -30,7 +35,8 @@ describe('ActionsTreeProvider', () => {
 
   beforeEach(() => {
     mockClient = {
-      getWorkflowRuns: jest.fn()
+      getWorkflowRuns: jest.fn(),
+      getWorkflowJobs: jest.fn()
     } as any;
 
     mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
@@ -44,6 +50,40 @@ describe('ActionsTreeProvider', () => {
     provider = new ActionsTreeProvider();
 
     jest.clearAllMocks();
+  });
+
+  describe('formatDuration', () => {
+    test('should return empty string when startedAt is null', () => {
+      expect(formatDuration(null, '2024-01-15T10:00:00Z')).toBe('');
+    });
+
+    test('should return empty string when completedAt is null', () => {
+      expect(formatDuration('2024-01-15T10:00:00Z', null)).toBe('');
+    });
+
+    test('should return empty string when startedAt is undefined', () => {
+      expect(formatDuration(undefined, '2024-01-15T10:00:00Z')).toBe('');
+    });
+
+    test('should format seconds only', () => {
+      expect(formatDuration('2024-01-15T10:00:00Z', '2024-01-15T10:00:05Z')).toBe('5s');
+    });
+
+    test('should format minutes and seconds', () => {
+      expect(formatDuration('2024-01-15T10:00:00Z', '2024-01-15T10:03:45Z')).toBe('3m 45s');
+    });
+
+    test('should format hours and minutes', () => {
+      expect(formatDuration('2024-01-15T10:00:00Z', '2024-01-15T11:12:00Z')).toBe('1h 12m');
+    });
+
+    test('should return 0s for identical timestamps', () => {
+      expect(formatDuration('2024-01-15T10:00:00Z', '2024-01-15T10:00:00Z')).toBe('0s');
+    });
+
+    test('should return empty string for negative duration', () => {
+      expect(formatDuration('2024-01-15T10:05:00Z', '2024-01-15T10:00:00Z')).toBe('');
+    });
   });
 
   describe('WorkflowRunTreeItem', () => {
@@ -74,13 +114,14 @@ describe('ActionsTreeProvider', () => {
       expect(item.contextValue).toBe('workflowRun');
     });
 
-    test('should set command to forgejo.showActionDetails', () => {
+    test('should be Collapsed (not Expanded)', () => {
       const item = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], owner, repo);
-      expect(item.command).toEqual({
-        command: 'forgejo.showActionDetails',
-        title: 'View Action Details',
-        arguments: [mockWorkflowRunSuccess, owner, repo]
-      });
+      expect(item.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
+    });
+
+    test('should not have a command (click expands/collapses)', () => {
+      const item = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], owner, repo);
+      expect(item.command).toBeUndefined();
     });
 
     test('should show running icon when any job is in_progress', () => {
@@ -134,74 +175,167 @@ describe('ActionsTreeProvider', () => {
     const repo = 'test-repo';
 
     test('should create with job name as label', () => {
-      const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo);
-      expect(item.label).toBe('CI');
+      const item = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.label).toBe('build');
     });
 
-    test('should show status in description', () => {
-      const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo);
+    test('should show status and duration in description', () => {
+      const item = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.description).toBe('success · 3m 50s');
+    });
+
+    test('should show status only when no timestamps', () => {
+      const jobNoTimes: WorkflowJob = { ...mockWorkflowJobSuccess, started_at: null, completed_at: null };
+      const item = new JobTreeItem(jobNoTimes, 0, 42, owner, repo);
       expect(item.description).toBe('success');
     });
 
-    test('should set tooltip with job info', () => {
-      const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo);
-      expect(item.tooltip).toBe('Job: CI\nStatus: success\nIndex: 0');
+    test('should set tooltip with job info including run number', () => {
+      const item = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.tooltip).toContain('Job: build');
+      expect(item.tooltip).toContain('Status: success');
+      expect(item.tooltip).toContain('Run: #42');
+      expect(item.tooltip).toContain('Index: 0');
+      expect(item.tooltip).toContain('Duration: 3m 50s');
+    });
+
+    test('should be Collapsed (has step children)', () => {
+      const item = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.collapsibleState).toBe(vscode.TreeItemCollapsibleState.Collapsed);
+    });
+
+    test('should not have a command (click expands to show steps)', () => {
+      const item = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.command).toBeUndefined();
     });
 
     test('should set correct icon for success', () => {
-      const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo);
+      const item = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('pass');
     });
 
     test('should set correct icon for failure', () => {
-      const item = new JobTreeItem(mockWorkflowRunFailed, 0, owner, repo);
+      const item = new JobTreeItem(mockWorkflowJobFailed, 0, 43, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('error');
     });
 
     test('should set correct icon for in_progress', () => {
-      const item = new JobTreeItem(mockWorkflowRunInProgress, 0, owner, repo);
+      const inProgressJob: WorkflowJob = { ...mockWorkflowJobSuccess, status: 'in_progress' };
+      const item = new JobTreeItem(inProgressJob, 0, 42, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('sync~spin');
     });
 
     test('should set correct icon for cancelled', () => {
-      const item = new JobTreeItem(mockWorkflowRunCancelled, 0, owner, repo);
+      const cancelledJob: WorkflowJob = { ...mockWorkflowJobSuccess, status: 'cancelled' };
+      const item = new JobTreeItem(cancelledJob, 0, 42, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('circle-slash');
     });
 
     test('should set correct icon for skipped', () => {
-      const skippedJob: WorkflowRunListItem = { ...mockWorkflowRunSuccess, status: 'skipped' };
-      const item = new JobTreeItem(skippedJob, 0, owner, repo);
+      const skippedJob: WorkflowJob = { ...mockWorkflowJobSuccess, status: 'skipped' };
+      const item = new JobTreeItem(skippedJob, 0, 42, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('debug-step-over');
     });
 
     test('should set default icon for unknown status', () => {
-      const unknownJob: WorkflowRunListItem = { ...mockWorkflowRunSuccess, status: 'unknown' as any };
-      const item = new JobTreeItem(unknownJob, 0, owner, repo);
+      const unknownJob: WorkflowJob = { ...mockWorkflowJobSuccess, status: 'unknown' as any };
+      const item = new JobTreeItem(unknownJob, 0, 42, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('circle-outline');
     });
 
-    test('should set command to forgejo.showActionDetails', () => {
-      const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo);
-      expect(item.command).toEqual({
-        command: 'forgejo.showActionDetails',
-        title: 'View Action Details',
-        arguments: [mockWorkflowRunSuccess, owner, repo]
-      });
+    test('should set contextValue to workflowJob', () => {
+      const item = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.contextValue).toBe('workflowJob');
     });
 
-    test('should set contextValue to workflowJob', () => {
-      const item = new JobTreeItem(mockWorkflowRunSuccess, 0, owner, repo);
-      expect(item.contextValue).toBe('workflowJob');
+    test('should store runNumber', () => {
+      const item = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.runNumber).toBe(42);
     });
   });
 
-  describe('Provider getChildren', () => {
+  describe('StepTreeItem', () => {
+    const owner = 'test-owner';
+    const repo = 'test-repo';
+    const step = mockWorkflowJobSuccess.steps[0]; // Checkout, 5s
+
+    test('should create with step name as label', () => {
+      const item = new StepTreeItem(step, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.label).toBe('Checkout');
+    });
+
+    test('should show duration in description', () => {
+      const item = new StepTreeItem(step, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.description).toBe('5s');
+    });
+
+    test('should have undefined description when no timestamps', () => {
+      const stepNoTimes = { ...step, started_at: undefined, completed_at: undefined };
+      const item = new StepTreeItem(stepNoTimes, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.description).toBeUndefined();
+    });
+
+    test('should set tooltip with step info', () => {
+      const item = new StepTreeItem(step, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.tooltip).toContain('Step: Checkout');
+      expect(item.tooltip).toContain('Status: success');
+      expect(item.tooltip).toContain('Duration: 5s');
+    });
+
+    test('should be a leaf node (None collapsible state)', () => {
+      const item = new StepTreeItem(step, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.collapsibleState).toBe(vscode.TreeItemCollapsibleState.None);
+    });
+
+    test('should set contextValue to workflowStep', () => {
+      const item = new StepTreeItem(step, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.contextValue).toBe('workflowStep');
+    });
+
+    test('should set command to forgejo.viewStepLogs', () => {
+      const item = new StepTreeItem(step, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      expect(item.command).toBeDefined();
+      expect(item.command!.command).toBe('forgejo.viewStepLogs');
+      expect(item.command!.arguments).toEqual([item]);
+    });
+
+    test('should set correct icon for success', () => {
+      const item = new StepTreeItem(step, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      const icon = item.iconPath as vscode.ThemeIcon;
+      expect(icon.id).toBe('pass');
+    });
+
+    test('should set correct icon for failure', () => {
+      const failStep = { ...step, status: 'failure' as const };
+      const item = new StepTreeItem(failStep, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      const icon = item.iconPath as vscode.ThemeIcon;
+      expect(icon.id).toBe('error');
+    });
+
+    test('should set correct icon for in_progress', () => {
+      const runningStep = { ...step, status: 'in_progress' as const };
+      const item = new StepTreeItem(runningStep, mockWorkflowJobSuccess, 0, 42, owner, repo);
+      const icon = item.iconPath as vscode.ThemeIcon;
+      expect(icon.id).toBe('sync~spin');
+    });
+
+    test('should store job, jobIndex, runNumber, owner, repo', () => {
+      const item = new StepTreeItem(step, mockWorkflowJobSuccess, 2, 42, owner, repo);
+      expect(item.job).toBe(mockWorkflowJobSuccess);
+      expect(item.jobIndex).toBe(2);
+      expect(item.runNumber).toBe(42);
+      expect(item.owner).toBe(owner);
+      expect(item.repo).toBe(repo);
+    });
+  });
+
+  describe('Provider getChildren - Root level', () => {
     test('should return error message when no config', async () => {
       mockGetForgejoConfig.mockResolvedValue(null as any);
       mockClient.getWorkflowRuns.mockResolvedValue(mockEmptyActionTasksResponse);
@@ -267,21 +401,6 @@ describe('ActionsTreeProvider', () => {
       expect((groupChildren[1] as WorkflowRunTreeItem).runNumber).toBe(42);
     });
 
-    test('should return job items as children of WorkflowRunTreeItem', async () => {
-      const job1: WorkflowRunListItem = { ...mockWorkflowRunSuccess, id: 301, name: 'Build' };
-      const job2: WorkflowRunListItem = { ...mockWorkflowRunSuccess, id: 302, name: 'Test' };
-
-      const runItem = new WorkflowRunTreeItem(42, [job1, job2], 'owner', 'repo');
-
-      const children = await provider.getChildren(runItem);
-
-      expect(children).toHaveLength(2);
-      expect((children[0] as JobTreeItem).job.name).toBe('Build');
-      expect((children[1] as JobTreeItem).job.name).toBe('Test');
-      expect((children[0] as JobTreeItem).jobIndex).toBe(0);
-      expect((children[1] as JobTreeItem).jobIndex).toBe(1);
-    });
-
     test('should return error message on fetch failure', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
       mockClient.getWorkflowRuns.mockRejectedValue(new Error('Network error'));
@@ -292,6 +411,144 @@ describe('ActionsTreeProvider', () => {
       const msg = children[0] as any;
       expect(msg.label).toBe('Network error');
       expect(msg.contextValue).toBe('error');
+    });
+  });
+
+  describe('Provider getChildren - WorkflowRunTreeItem (lazy job loading)', () => {
+    test('should fetch jobs from API when expanding a run', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getWorkflowJobs.mockResolvedValue(mockWorkflowJobsResponse);
+
+      const runItem = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], 'test-owner', 'test-repo');
+      const children = await provider.getChildren(runItem);
+
+      expect(mockClient.getWorkflowJobs).toHaveBeenCalledWith('test-owner', 'test-repo', 123); // firstJob.id
+      expect(children).toHaveLength(1);
+      expect(children[0]).toBeInstanceOf(JobTreeItem);
+      expect((children[0] as JobTreeItem).job.name).toBe('build');
+    });
+
+    test('should cache fetched jobs on the run item', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getWorkflowJobs.mockResolvedValue(mockWorkflowJobsResponse);
+
+      const runItem = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], 'test-owner', 'test-repo');
+
+      // First call - fetches from API
+      await provider.getChildren(runItem);
+      expect(mockClient.getWorkflowJobs).toHaveBeenCalledTimes(1);
+
+      // Second call - uses cache
+      jest.clearAllMocks();
+      const children2 = await provider.getChildren(runItem);
+      expect(mockClient.getWorkflowJobs).not.toHaveBeenCalled();
+      expect(children2).toHaveLength(1);
+    });
+
+    test('should return error message when job fetch fails', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getWorkflowJobs.mockRejectedValue(new Error('API timeout'));
+
+      const runItem = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], 'test-owner', 'test-repo');
+      const children = await provider.getChildren(runItem);
+
+      expect(children).toHaveLength(1);
+      const msg = children[0] as any;
+      expect(msg.label).toBe('API timeout');
+      expect(msg.contextValue).toBe('error');
+    });
+
+    test('should cache error and return it on subsequent calls', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getWorkflowJobs.mockRejectedValue(new Error('API timeout'));
+
+      const runItem = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], 'test-owner', 'test-repo');
+
+      // First call - hits API
+      await provider.getChildren(runItem);
+
+      // Second call - returns cached error
+      jest.clearAllMocks();
+      const children = await provider.getChildren(runItem);
+      expect(mockClient.getWorkflowJobs).not.toHaveBeenCalled();
+      expect(children).toHaveLength(1);
+      expect((children[0] as any).label).toBe('API timeout');
+    });
+
+    test('should handle multi-job response', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getWorkflowJobs.mockResolvedValue(mockMultiJobResponse);
+
+      const runItem = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], 'test-owner', 'test-repo');
+      const children = await provider.getChildren(runItem);
+
+      expect(children).toHaveLength(2);
+      expect((children[0] as JobTreeItem).job.name).toBe('build');
+      expect((children[0] as JobTreeItem).jobIndex).toBe(0);
+      expect((children[1] as JobTreeItem).job.name).toBe('deploy');
+      expect((children[1] as JobTreeItem).jobIndex).toBe(1);
+    });
+
+    test('should pass runNumber to JobTreeItem', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getWorkflowJobs.mockResolvedValue(mockWorkflowJobsResponse);
+
+      const runItem = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], 'test-owner', 'test-repo');
+      const children = await provider.getChildren(runItem);
+
+      expect((children[0] as JobTreeItem).runNumber).toBe(42);
+    });
+
+    test('should return error when no config during job fetch', async () => {
+      mockGetForgejoConfig.mockResolvedValue(null as any);
+
+      const runItem = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], 'test-owner', 'test-repo');
+      const children = await provider.getChildren(runItem);
+
+      expect(children).toHaveLength(1);
+      expect((children[0] as any).label).toBe('No Forgejo configuration found');
+    });
+  });
+
+  describe('Provider getChildren - JobTreeItem (steps)', () => {
+    test('should return steps as StepTreeItem children', async () => {
+      const jobItem = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(jobItem);
+
+      expect(children).toHaveLength(3);
+      expect(children[0]).toBeInstanceOf(StepTreeItem);
+      expect((children[0] as StepTreeItem).step.name).toBe('Checkout');
+      expect((children[1] as StepTreeItem).step.name).toBe('Build');
+      expect((children[2] as StepTreeItem).step.name).toBe('Test');
+    });
+
+    test('should return empty array for job with no steps', async () => {
+      const jobItem = new JobTreeItem(mockWorkflowJobNoSteps, 0, 42, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(jobItem);
+
+      expect(children).toHaveLength(0);
+    });
+
+    test('should pass job metadata to StepTreeItem', async () => {
+      const jobItem = new JobTreeItem(mockWorkflowJobSuccess, 1, 42, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(jobItem);
+
+      const stepItem = children[0] as StepTreeItem;
+      expect(stepItem.job).toBe(mockWorkflowJobSuccess);
+      expect(stepItem.jobIndex).toBe(1);
+      expect(stepItem.runNumber).toBe(42);
+      expect(stepItem.owner).toBe('test-owner');
+      expect(stepItem.repo).toBe('test-repo');
+    });
+  });
+
+  describe('Provider getChildren - StepTreeItem (leaf)', () => {
+    test('should return empty array for step items', async () => {
+      const step = mockWorkflowJobSuccess.steps[0];
+      const stepItem = new StepTreeItem(step, mockWorkflowJobSuccess, 0, 42, 'test-owner', 'test-repo');
+      const children = await provider.getChildren(stepItem);
+
+      expect(children).toHaveLength(0);
     });
   });
 
@@ -310,7 +567,7 @@ describe('ActionsTreeProvider', () => {
     });
 
     test('should return element from getTreeItem', () => {
-      const item = new JobTreeItem(mockWorkflowRunSuccess, 0, 'owner', 'repo');
+      const item = new JobTreeItem(mockWorkflowJobSuccess, 0, 42, 'owner', 'repo');
       expect(provider.getTreeItem(item)).toBe(item);
     });
   });

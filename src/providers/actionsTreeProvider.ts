@@ -1,12 +1,66 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { WorkflowRunListItem } from '../models/action';
+import { WorkflowRunListItem, WorkflowJob, WorkflowStep } from '../models/action';
 import { getForgejoConfig } from '../utils/config';
 
 /**
- * Represents a grouped workflow run (parent of jobs)
+ * Format a duration between two ISO timestamps as a human-readable string.
+ * Returns "" when either timestamp is null/undefined.
+ */
+export function formatDuration(startedAt: string | null | undefined, completedAt: string | null | undefined): string {
+  if (!startedAt || !completedAt) {
+    return '';
+  }
+  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+  if (ms < 0 || isNaN(ms)) {
+    return '';
+  }
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`;
+  }
+  return `${seconds}s`;
+}
+
+/**
+ * Get a status icon for a workflow status string.
+ */
+function getStatusIcon(status: string): vscode.ThemeIcon {
+  switch (status) {
+    case 'in_progress':
+    case 'queued':
+    case 'waiting':
+      return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));
+    case 'success':
+      return new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
+    case 'failure':
+      return new vscode.ThemeIcon('error', new vscode.ThemeColor('testing.iconFailed'));
+    case 'cancelled':
+      return new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
+    case 'skipped':
+      return new vscode.ThemeIcon('debug-step-over', new vscode.ThemeColor('disabledForeground'));
+    default:
+      return new vscode.ThemeIcon('circle-outline');
+  }
+}
+
+/**
+ * Represents a grouped workflow run (parent of jobs).
+ * Expanding this node lazy-loads jobs from the API.
  */
 export class WorkflowRunTreeItem extends vscode.TreeItem {
+  /** Cached jobs fetched from the API */
+  fetchedJobs?: WorkflowJob[];
+  /** Error from the last job fetch attempt */
+  fetchError?: string;
+
   constructor(
     public readonly runNumber: number,
     public readonly jobs: WorkflowRunListItem[],
@@ -18,7 +72,7 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
     const shortSha = firstJob.head_sha.substring(0, 7);
     const label = `Run #${runNumber}`;
 
-    super(label, vscode.TreeItemCollapsibleState.Expanded);
+    super(label, vscode.TreeItemCollapsibleState.Collapsed);
 
     // Description shows commit info
     this.description = `${shortSha} · ${firstJob.display_title}`;
@@ -27,13 +81,6 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
 
     // Icon based on aggregate status
     this.iconPath = this.getAggregateStatusIcon(jobs);
-
-    // Click to open action details panel (use first job's data)
-    this.command = {
-      command: 'forgejo.showActionDetails',
-      title: 'View Action Details',
-      arguments: [firstJob, owner, repo]
-    };
   }
 
   private getAggregateStatusIcon(jobs: WorkflowRunListItem[]): vscode.ThemeIcon {
@@ -58,49 +105,55 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
 }
 
 /**
- * Represents a single job within a workflow run
+ * Represents a single job within a workflow run (parent of steps).
  */
 export class JobTreeItem extends vscode.TreeItem {
   constructor(
-    public readonly job: WorkflowRunListItem,
+    public readonly job: WorkflowJob,
     public readonly jobIndex: number,
+    public readonly runNumber: number,
     public readonly owner: string,
     public readonly repo: string
   ) {
-    super(job.name, vscode.TreeItemCollapsibleState.None);
+    super(job.name, vscode.TreeItemCollapsibleState.Collapsed);
 
-    this.description = job.status;
-    this.tooltip = `Job: ${job.name}\nStatus: ${job.status}\nIndex: ${jobIndex}`;
+    const duration = formatDuration(job.started_at, job.completed_at);
+    this.description = duration ? `${job.status} · ${duration}` : job.status;
+    this.tooltip = `Job: ${job.name}\nStatus: ${job.status}\nRun: #${runNumber}\nIndex: ${jobIndex}${duration ? `\nDuration: ${duration}` : ''}`;
     this.contextValue = 'workflowJob';
 
     // Set icon based on status
-    this.iconPath = this.getStatusIcon(job.status);
-
-    // Click to open action details panel
-    this.command = {
-      command: 'forgejo.showActionDetails',
-      title: 'View Action Details',
-      arguments: [job, owner, repo]
-    };
+    this.iconPath = getStatusIcon(job.status);
   }
+}
 
-  private getStatusIcon(status: string): vscode.ThemeIcon {
-    switch (status) {
-      case 'in_progress':
-      case 'queued':
-      case 'waiting':
-        return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));
-      case 'success':
-        return new vscode.ThemeIcon('pass', new vscode.ThemeColor('testing.iconPassed'));
-      case 'failure':
-        return new vscode.ThemeIcon('error', new vscode.ThemeColor('testing.iconFailed'));
-      case 'cancelled':
-        return new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
-      case 'skipped':
-        return new vscode.ThemeIcon('debug-step-over', new vscode.ThemeColor('disabledForeground'));
-      default:
-        return new vscode.ThemeIcon('circle-outline');
-    }
+/**
+ * Represents a single step within a workflow job (leaf node).
+ */
+export class StepTreeItem extends vscode.TreeItem {
+  constructor(
+    public readonly step: WorkflowStep,
+    public readonly job: WorkflowJob,
+    public readonly jobIndex: number,
+    public readonly runNumber: number,
+    public readonly owner: string,
+    public readonly repo: string
+  ) {
+    super(step.name, vscode.TreeItemCollapsibleState.None);
+
+    const duration = formatDuration(step.started_at, step.completed_at);
+    this.description = duration || undefined;
+    this.tooltip = `Step: ${step.name}\nStatus: ${step.status}${duration ? `\nDuration: ${duration}` : ''}`;
+    this.contextValue = 'workflowStep';
+
+    this.iconPath = getStatusIcon(step.status);
+
+    // Click to view step logs
+    this.command = {
+      command: 'forgejo.viewStepLogs',
+      title: 'View Step Logs',
+      arguments: [this]
+    };
   }
 }
 
@@ -118,7 +171,7 @@ class ActionMessageItem extends vscode.TreeItem {
   }
 }
 
-type ActionTreeElement = WorkflowRunTreeItem | JobTreeItem | ActionMessageItem;
+type ActionTreeElement = WorkflowRunTreeItem | JobTreeItem | StepTreeItem | ActionMessageItem;
 
 export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ActionTreeElement | undefined | null | void> = new vscode.EventEmitter<ActionTreeElement | undefined | null | void>();
@@ -174,13 +227,57 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
         return [new ActionMessageItem(this.error, true)];
       }
     } else if (element instanceof WorkflowRunTreeItem) {
-      // Show jobs within this run
-      return element.jobs.map((job, index) =>
-        new JobTreeItem(job, index, element.owner, element.repo)
+      // Lazy-load jobs from the API
+      return this.getRunJobs(element);
+    } else if (element instanceof JobTreeItem) {
+      // Return steps from the job data
+      return (element.job.steps || []).map(step =>
+        new StepTreeItem(step, element.job, element.jobIndex, element.runNumber, element.owner, element.repo)
       );
     }
 
     return [];
+  }
+
+  /**
+   * Lazy-load jobs for a workflow run from the API.
+   * Results are cached on the WorkflowRunTreeItem.
+   */
+  private async getRunJobs(runItem: WorkflowRunTreeItem): Promise<ActionTreeElement[]> {
+    // Return cached result if available
+    if (runItem.fetchedJobs) {
+      return runItem.fetchedJobs.map((job, index) =>
+        new JobTreeItem(job, index, runItem.runNumber, runItem.owner, runItem.repo)
+      );
+    }
+    if (runItem.fetchError) {
+      return [new ActionMessageItem(runItem.fetchError, true)];
+    }
+
+    try {
+      const config = await getForgejoConfig();
+      if (!config) {
+        const err = 'No Forgejo configuration found';
+        runItem.fetchError = err;
+        return [new ActionMessageItem(err, true)];
+      }
+
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      // Use the first job's id as the run_id for the API call
+      const firstJob = runItem.jobs[0];
+      const runId = firstJob.id;
+      const jobsResponse = await client.getWorkflowJobs(config.owner, config.repo, runId);
+
+      runItem.fetchedJobs = jobsResponse.jobs;
+      return jobsResponse.jobs.map((job, index) =>
+        new JobTreeItem(job, index, runItem.runNumber, runItem.owner, runItem.repo)
+      );
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Failed to fetch jobs';
+      runItem.fetchError = errMsg;
+      console.error('[Forgejo] Error fetching jobs for run:', error);
+      return [new ActionMessageItem(errMsg, true)];
+    }
   }
 
   private async fetchWorkflowRuns(): Promise<void> {

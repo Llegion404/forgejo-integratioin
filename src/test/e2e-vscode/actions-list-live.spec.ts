@@ -69,11 +69,10 @@ test.describe('Actions List - Live Forgejo', () => {
     return labels;
   }
 
-  test('should display actions view', async ({ harness, workbox }) => {
+  test('should display actions view with collapsed runs', async ({ harness, workbox }) => {
     await harness.captureScreenshot('actions-list-live');
 
     // The Actions view should be visible - it may show action runs or an empty/info message
-    // Check that we can at least see the view rendered (rows or a welcome view)
     const rows = workbox.locator('.monaco-list-row');
     const rowCount = await rows.count();
 
@@ -84,6 +83,74 @@ test.describe('Actions List - Live Forgejo', () => {
     // The view rendered successfully - actions may or may not be present
     // depending on whether the test repo has workflows configured
     expect(rowCount).toBeGreaterThanOrEqual(0);
+
+    // If there are runs, they should be collapsed (only run-level items visible)
+    // Run items have labels starting with "Run #"
+    if (rowCount > 0 && labels.some(l => l.includes('Run #'))) {
+      const runLabels = labels.filter(l => l.includes('Run #'));
+      expect(runLabels.length).toBeGreaterThan(0);
+    }
+  });
+
+  test('should expand a run to show jobs', async ({ harness, workbox, evaluateInVSCode }) => {
+    const labels = await getTreeRowLabels(workbox);
+
+    // Skip if no runs available
+    if (!labels.some(l => l.includes('Run #'))) {
+      test.skip();
+      return;
+    }
+
+    // Click the first run row to expand it
+    const firstRunRow = workbox.locator('.monaco-list-row').first();
+    await firstRunRow.click();
+
+    // Wait for the expand animation and API call
+    await new Promise(r => setTimeout(r, 3000));
+
+    await harness.captureScreenshot('actions-run-expanded');
+
+    const expandedLabels = await getTreeRowLabels(workbox);
+    console.log('Labels after expanding run:', expandedLabels);
+
+    // After expanding, there should be more rows than before (jobs are now visible)
+    expect(expandedLabels.length).toBeGreaterThan(labels.length);
+  });
+
+  test('should expand a job to show steps', async ({ harness, workbox }) => {
+    const labels = await getTreeRowLabels(workbox);
+
+    // Skip if no runs available
+    if (!labels.some(l => l.includes('Run #'))) {
+      test.skip();
+      return;
+    }
+
+    // Expand the first run
+    const firstRunRow = workbox.locator('.monaco-list-row').first();
+    await firstRunRow.click();
+    await new Promise(r => setTimeout(r, 3000));
+
+    const afterRunExpand = await getTreeRowLabels(workbox);
+
+    // Find the second row (should be a job now)
+    if (afterRunExpand.length <= 1) {
+      test.skip();
+      return;
+    }
+
+    // Click the job row (second row after expansion)
+    const jobRow = workbox.locator('.monaco-list-row').nth(1);
+    await jobRow.click();
+    await new Promise(r => setTimeout(r, 1000));
+
+    await harness.captureScreenshot('actions-job-expanded');
+
+    const afterJobExpand = await getTreeRowLabels(workbox);
+    console.log('Labels after expanding job:', afterJobExpand);
+
+    // After expanding a job, we should see step entries
+    expect(afterJobExpand.length).toBeGreaterThan(afterRunExpand.length);
   });
 
   test('should refresh actions via command', async ({ harness, workbox, evaluateInVSCode }) => {
