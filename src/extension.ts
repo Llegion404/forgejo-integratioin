@@ -664,11 +664,18 @@ export async function activate(context: vscode.ExtensionContext) {
           if (run?.url) {
             vscode.env.openExternal(vscode.Uri.parse(run.url));
           }
-        } else if (item instanceof JobTreeItem || item instanceof StepTreeItem) {
-          const url = item.job.html_url;
-          if (url) {
-            vscode.env.openExternal(vscode.Uri.parse(url));
+        } else if (item instanceof JobTreeItem) {
+          if (item.job.url) {
+            vscode.env.openExternal(vscode.Uri.parse(item.job.url));
           }
+        } else if (item instanceof StepTreeItem) {
+          // Steps don't have their own URL; open the parent job page
+          getForgejoConfig().then(config => {
+            if (config) {
+              const url = `${config.instanceUrl}/${item.owner}/${item.repo}/actions/runs/${item.runNumber}/jobs/${item.jobIndex}`;
+              vscode.env.openExternal(vscode.Uri.parse(url));
+            }
+          });
         }
       }
     )
@@ -689,22 +696,15 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'forgejo.rerunAction',
       async (item: WorkflowRunTreeItem | JobTreeItem) => {
-        let runId: number;
-        let displayName: string;
-
-        if (item instanceof WorkflowRunTreeItem) {
-          const run = item.jobs[0];
-          if (!run) { return; }
-          runId = run.id;
-          displayName = run.display_title || run.name;
-        } else {
-          runId = item.job.run_id;
-          displayName = item.job.name;
+        // Get the run data from either a run item or a job item
+        const run = item instanceof WorkflowRunTreeItem ? item.jobs[0] : item.job;
+        if (!run) {
+          return;
         }
 
         try {
           const confirm = await vscode.window.showWarningMessage(
-            `Re-run workflow "${displayName}"?`,
+            `Re-run workflow "${run.name}"?`,
             { modal: true },
             'Re-run'
           );
@@ -720,7 +720,7 @@ export async function activate(context: vscode.ExtensionContext) {
           }
 
           const client = new ForgejoClient(config.instanceUrl, config.token);
-          await client.rerunWorkflow(item.owner, item.repo, runId);
+          await client.rerunWorkflow(item.owner, item.repo, run.id);
 
           vscode.window.showInformationMessage('Workflow re-run triggered!');
           actionsTreeProvider.refresh();
@@ -771,11 +771,11 @@ export async function activate(context: vscode.ExtensionContext) {
             },
             async () => {
               const client = new ForgejoClient(config.instanceUrl, config.token);
-              // Find the job index (position in the jobs array)
-              const jobsResponse = await client.getWorkflowJobs(owner, repo, run.id);
-              const jobIndex = jobsResponse.jobs.findIndex(j => j.id === job.id);
+              // Extract job index from html_url (e.g., .../jobs/0)
+              const urlParts = job.html_url?.split('/') || [];
+              const jobIndex = parseInt(urlParts[urlParts.length - 1] || '0', 10) || 0;
 
-              const logs = await client.getWorkflowLogs(owner, repo, run.run_number, jobIndex >= 0 ? jobIndex : 0);
+              const logs = await client.getWorkflowLogs(owner, repo, run.run_number, jobIndex);
 
               // Create a new untitled document with the logs
               const doc = await vscode.workspace.openTextDocument({
@@ -810,7 +810,7 @@ export async function activate(context: vscode.ExtensionContext) {
           await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
-              title: `Fetching logs for ${stepItem.step.name}...`,
+              title: `Fetching logs for ${stepItem.step.summary}...`,
               cancellable: false
             },
             async () => {

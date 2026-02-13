@@ -175,6 +175,56 @@ export const mockEmptyWorkflowJobsResponse: WorkflowJobsResponse = {
   jobs: []
 };
 
+// Second job task in the same run as mockWorkflowRunSuccess (for multi-job testing)
+export const mockWorkflowRunSuccessJob2: WorkflowRunListItem = {
+  id: 127,
+  name: 'deploy',
+  run_number: 42,
+  status: 'success',
+  conclusion: null,
+  workflow_id: 'ci.yml',
+  head_branch: 'main',
+  head_sha: 'abc123def456',
+  event: 'push',
+  created_at: '2024-01-15T10:05:00Z',
+  updated_at: '2024-01-15T10:06:00Z',
+  url: 'https://git.example.com/owner/repo/actions/runs/42',
+  display_title: 'Add new feature'
+};
+
+// Scraped step fixtures (from Forgejo web page scraping)
+export const mockScrapedStepCheckout = {
+  summary: 'Checkout',
+  duration: '5s',
+  status: 'success'
+};
+
+export const mockScrapedStepBuild = {
+  summary: 'Build',
+  duration: '2m 45s',
+  status: 'success'
+};
+
+export const mockScrapedStepTest = {
+  summary: 'Test',
+  duration: '1m 0s',
+  status: 'success'
+};
+
+export const mockScrapedStepFailed = {
+  summary: 'Build',
+  duration: '30s',
+  status: 'failure'
+};
+
+export const mockScrapedStepRunning = {
+  summary: 'Deploy',
+  duration: '',
+  status: 'running'
+};
+
+export const mockScrapedSteps = [mockScrapedStepCheckout, mockScrapedStepBuild, mockScrapedStepTest];
+
 export const mockWorkflowLogs = `2024-01-15T10:00:10Z Starting job: build
 2024-01-15T10:00:10Z Checkout repository...
 2024-01-15T10:00:15Z Checkout completed successfully

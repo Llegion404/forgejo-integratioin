@@ -1,32 +1,17 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { WorkflowRunListItem, WorkflowJob, WorkflowStep } from '../models/action';
+import { WorkflowRunListItem } from '../models/action';
 import { getForgejoConfig } from '../utils/config';
 
 /**
- * Format a duration between two ISO timestamps as a human-readable string.
- * Returns "" when either timestamp is null/undefined.
+ * Step data scraped from Forgejo's web page.
+ * Forgejo v13 doesn't expose steps via REST API, so we parse the
+ * `data-initial-post-response` JSON embedded in the job web page.
  */
-export function formatDuration(startedAt: string | null | undefined, completedAt: string | null | undefined): string {
-  if (!startedAt || !completedAt) {
-    return '';
-  }
-  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
-  if (ms < 0 || isNaN(ms)) {
-    return '';
-  }
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
-  }
-  return `${seconds}s`;
+export interface ScrapedStep {
+  summary: string;
+  duration: string;
+  status: string;
 }
 
 /**
@@ -35,6 +20,7 @@ export function formatDuration(startedAt: string | null | undefined, completedAt
 function getStatusIcon(status: string): vscode.ThemeIcon {
   switch (status) {
     case 'in_progress':
+    case 'running':
     case 'queued':
     case 'waiting':
       return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));
@@ -53,14 +39,9 @@ function getStatusIcon(status: string): vscode.ThemeIcon {
 
 /**
  * Represents a grouped workflow run (parent of jobs).
- * Expanding this node lazy-loads jobs from the API.
+ * Jobs come from the /actions/tasks endpoint data, no lazy-loading needed.
  */
 export class WorkflowRunTreeItem extends vscode.TreeItem {
-  /** Cached jobs fetched from the API */
-  fetchedJobs?: WorkflowJob[];
-  /** Error from the last job fetch attempt */
-  fetchError?: string;
-
   constructor(
     public readonly runNumber: number,
     public readonly jobs: WorkflowRunListItem[],
@@ -106,20 +87,24 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
 
 /**
  * Represents a single job within a workflow run (parent of steps).
+ * Steps are lazy-loaded by scraping the Forgejo web page.
  */
 export class JobTreeItem extends vscode.TreeItem {
+  /** Cached steps fetched from web scraping */
+  fetchedSteps?: ScrapedStep[];
+  /** Error from the last step fetch attempt */
+  fetchError?: string;
+
   constructor(
-    public readonly job: WorkflowJob,
+    public readonly job: WorkflowRunListItem,
     public readonly jobIndex: number,
-    public readonly runNumber: number,
     public readonly owner: string,
     public readonly repo: string
   ) {
     super(job.name, vscode.TreeItemCollapsibleState.Collapsed);
 
-    const duration = formatDuration(job.started_at, job.completed_at);
-    this.description = duration ? `${job.status} · ${duration}` : job.status;
-    this.tooltip = `Job: ${job.name}\nStatus: ${job.status}\nRun: #${runNumber}\nIndex: ${jobIndex}${duration ? `\nDuration: ${duration}` : ''}`;
+    this.description = job.status;
+    this.tooltip = `Job: ${job.name}\nStatus: ${job.status}\nRun: #${job.run_number}\nIndex: ${jobIndex}`;
     this.contextValue = 'workflowJob';
 
     // Set icon based on status
@@ -129,21 +114,20 @@ export class JobTreeItem extends vscode.TreeItem {
 
 /**
  * Represents a single step within a workflow job (leaf node).
+ * Data comes from Forgejo web page scraping.
  */
 export class StepTreeItem extends vscode.TreeItem {
   constructor(
-    public readonly step: WorkflowStep,
-    public readonly job: WorkflowJob,
+    public readonly step: ScrapedStep,
     public readonly jobIndex: number,
     public readonly runNumber: number,
     public readonly owner: string,
     public readonly repo: string
   ) {
-    super(step.name, vscode.TreeItemCollapsibleState.None);
+    super(step.summary, vscode.TreeItemCollapsibleState.None);
 
-    const duration = formatDuration(step.started_at, step.completed_at);
-    this.description = duration || undefined;
-    this.tooltip = `Step: ${step.name}\nStatus: ${step.status}${duration ? `\nDuration: ${duration}` : ''}`;
+    this.description = step.duration || undefined;
+    this.tooltip = `Step: ${step.summary}\nStatus: ${step.status}${step.duration ? `\nDuration: ${step.duration}` : ''}`;
     this.contextValue = 'workflowStep';
 
     this.iconPath = getStatusIcon(step.status);
@@ -227,55 +211,57 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
         return [new ActionMessageItem(this.error, true)];
       }
     } else if (element instanceof WorkflowRunTreeItem) {
-      // Lazy-load jobs from the API
-      return this.getRunJobs(element);
-    } else if (element instanceof JobTreeItem) {
-      // Return steps from the job data
-      return (element.job.steps || []).map(step =>
-        new StepTreeItem(step, element.job, element.jobIndex, element.runNumber, element.owner, element.repo)
+      // Show jobs within this run (data already available from /actions/tasks)
+      return element.jobs.map((job, index) =>
+        new JobTreeItem(job, index, element.owner, element.repo)
       );
+    } else if (element instanceof JobTreeItem) {
+      // Lazy-load steps by scraping the Forgejo web page
+      return this.getJobSteps(element);
     }
 
     return [];
   }
 
   /**
-   * Lazy-load jobs for a workflow run from the API.
-   * Results are cached on the WorkflowRunTreeItem.
+   * Lazy-load steps for a job by scraping the Forgejo web page.
+   * Results are cached on the JobTreeItem.
    */
-  private async getRunJobs(runItem: WorkflowRunTreeItem): Promise<ActionTreeElement[]> {
+  private async getJobSteps(jobItem: JobTreeItem): Promise<ActionTreeElement[]> {
     // Return cached result if available
-    if (runItem.fetchedJobs) {
-      return runItem.fetchedJobs.map((job, index) =>
-        new JobTreeItem(job, index, runItem.runNumber, runItem.owner, runItem.repo)
+    if (jobItem.fetchedSteps) {
+      return jobItem.fetchedSteps.map(step =>
+        new StepTreeItem(step, jobItem.jobIndex, jobItem.job.run_number, jobItem.owner, jobItem.repo)
       );
     }
-    if (runItem.fetchError) {
-      return [new ActionMessageItem(runItem.fetchError, true)];
+    if (jobItem.fetchError) {
+      return [new ActionMessageItem(jobItem.fetchError, true)];
     }
 
     try {
       const config = await getForgejoConfig();
       if (!config) {
         const err = 'No Forgejo configuration found';
-        runItem.fetchError = err;
+        jobItem.fetchError = err;
         return [new ActionMessageItem(err, true)];
       }
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      // Use the first job's id as the run_id for the API call
-      const firstJob = runItem.jobs[0];
-      const runId = firstJob.id;
-      const jobsResponse = await client.getWorkflowJobs(config.owner, config.repo, runId);
+      const steps = await client.getJobSteps(config.owner, config.repo, jobItem.job.run_number, jobItem.jobIndex);
 
-      runItem.fetchedJobs = jobsResponse.jobs;
-      return jobsResponse.jobs.map((job, index) =>
-        new JobTreeItem(job, index, runItem.runNumber, runItem.owner, runItem.repo)
+      jobItem.fetchedSteps = steps;
+
+      if (steps.length === 0) {
+        return [new ActionMessageItem('No steps found', false)];
+      }
+
+      return steps.map(step =>
+        new StepTreeItem(step, jobItem.jobIndex, jobItem.job.run_number, jobItem.owner, jobItem.repo)
       );
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : 'Failed to fetch jobs';
-      runItem.fetchError = errMsg;
-      console.error('[Forgejo] Error fetching jobs for run:', error);
+      const errMsg = error instanceof Error ? error.message : 'Failed to fetch steps';
+      jobItem.fetchError = errMsg;
+      console.error('[Forgejo] Error fetching steps for job:', error);
       return [new ActionMessageItem(errMsg, true)];
     }
   }

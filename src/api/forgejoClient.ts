@@ -865,6 +865,62 @@ export class ForgejoClient {
   }
 
   /**
+   * Fetch job steps by scraping the Forgejo web page.
+   * Forgejo v13 doesn't expose a REST API for job steps, so we extract
+   * the `data-initial-post-response` JSON embedded in the job web page.
+   * @param runNumber - The run_number (index_in_repo), NOT the internal id
+   * @param jobIndex - Zero-based job index within the run
+   */
+  async getJobSteps(owner: string, repo: string, runNumber: number, jobIndex: number = 0): Promise<{summary: string; duration: string; status: string}[]> {
+    const url = `${this.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}/jobs/${jobIndex}`;
+
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    logDebug('Fetching job steps from web page:', { owner, repo, runNumber, jobIndex, url });
+
+    try {
+      const response = await fetch(url, { method: 'GET', headers });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const html = await response.text();
+
+      // Extract the data-initial-post-response JSON from the HTML
+      const match = html.match(/data-initial-post-response="([^"]*)"/);
+      if (!match) {
+        logDebug('No data-initial-post-response found in page');
+        return [];
+      }
+
+      // Decode HTML entities (&#34; → ")
+      const jsonStr = match[1].replace(/&#34;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+      const data = JSON.parse(jsonStr);
+
+      const steps = data?.state?.currentJob?.steps;
+      if (!Array.isArray(steps)) {
+        return [];
+      }
+
+      return steps.map((s: { summary?: string; duration?: string; status?: string }) => ({
+        summary: s.summary || 'Unknown step',
+        duration: s.duration || '',
+        status: s.status || 'unknown'
+      }));
+    } catch (error) {
+      logError('Failed to fetch job steps:', { error, url });
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to fetch job steps: ${String(error)}`);
+    }
+  }
+
+  /**
    * Re-run a workflow
    */
   async rerunWorkflow(owner: string, repo: string, runId: number): Promise<void> {
