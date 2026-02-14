@@ -134,11 +134,23 @@ export class PRDetailWebviewProvider {
       const prDetails = await client.getPullRequestDetails(owner, repo, number);
       logInfo('PR details fetched:', { title: prDetails.title });
 
-      const [activities, statuses] = await Promise.all([
+      const [activities, allStatuses] = await Promise.all([
         this._fetchActivities(client, owner, repo, number),
         prDetails.head?.sha ? client.getCommitStatuses(owner, repo, prDetails.head.sha) : Promise.resolve([])
       ]);
-      logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length });
+
+      // Deduplicate statuses by context, keeping only the latest per context.
+      // The API returns all historical statuses (pending + final) for a SHA.
+      const latestByContext = new Map<string, typeof allStatuses[0]>();
+      for (const status of allStatuses) {
+        const key = status.context || '';
+        const existing = latestByContext.get(key);
+        if (!existing || new Date(status.created_at) > new Date(existing.created_at)) {
+          latestByContext.set(key, status);
+        }
+      }
+      const statuses = Array.from(latestByContext.values());
+      logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length, raw: allStatuses.length });
 
       state.pendingData = { pr: prDetails, activities, statuses, owner, repo };
       logInfo('pendingData set, isReady:', state.isReady);
