@@ -202,6 +202,10 @@
         "command": "forgejo.createPullRequest",
         "title": "Forgejo: Create Pull Request",
         "icon": "$(git-pull-request-create)"
+      },
+      {
+        "command": "forgejo.submitInlineComment",
+        "title": "Submit Comment"
       }
     ],
     "menus": {

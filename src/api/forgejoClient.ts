@@ -486,6 +486,68 @@ export class ForgejoClient {
     }
   }
 
+  /**
+   * Get comments for a specific pull request review
+   */
+  async getReviewComments(owner: string, repo: string, prNumber: number, reviewId: number): Promise<any[]> {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${prNumber}/reviews/${reviewId}/comments`;
+    return this.request<any[]>(endpoint);
+  }
+
+  /**
+   * Create a review with inline comments on a pull request
+   */
+  async createReviewWithComments(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    options: {
+      body?: string;
+      event: string;
+      comments?: Array<{ body: string; path: string; new_position: number; old_position?: number }>;
+    }
+  ): Promise<any> {
+    const url = `${this.instanceUrl}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/reviews`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    logDebug('Creating review with comments:', { owner, repo, prNumber, event: options.event });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(options),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Create review with comments failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+      }
+
+      const review = await response.json();
+      logInfo('Review with comments created successfully:', { owner, repo, prNumber });
+      return review;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to create review with comments: ${String(error)}`);
+    }
+  }
+
   // ==================== Actions API Methods ====================
 
   /**

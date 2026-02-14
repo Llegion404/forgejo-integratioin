@@ -137,6 +137,42 @@ const ProgressLocation = {
   Window: 10
 };
 
+const CommentMode = {
+  Editing: 0,
+  Preview: 1
+};
+
+class MarkdownString {
+  constructor(value) {
+    this.value = value || '';
+    this.isTrusted = false;
+    this.supportThemeIcons = false;
+    this.supportHtml = false;
+  }
+}
+
+class Range {
+  constructor(startLine, startCharacter, endLine, endCharacter) {
+    this.start = { line: startLine, character: startCharacter };
+    this.end = { line: endLine, character: endCharacter };
+  }
+}
+
+const comments = {
+  createCommentController: jest.fn(() => ({
+    commentingRangeProvider: null,
+    createCommentThread: jest.fn(() => ({
+      comments: [],
+      canReply: true,
+      label: '',
+      dispose: jest.fn(),
+      uri: null,
+      range: null
+    })),
+    dispose: jest.fn(),
+  })),
+};
+
 const QuickPickItemKind = {
   Separator: -1,
   Default: 0
@@ -166,7 +202,9 @@ const workspace = {
     has: jest.fn(),
     inspect: jest.fn()
   })),
-  workspaceFolders: undefined
+  workspaceFolders: undefined,
+  onDidOpenTextDocument: jest.fn(() => ({ dispose: jest.fn() })),
+  onDidCloseTextDocument: jest.fn(() => ({ dispose: jest.fn() }))
 };
 
 const commands = {
@@ -192,6 +230,10 @@ module.exports = {
   ThemeColor,
   ProgressLocation,
   QuickPickItemKind,
+  CommentMode,
+  MarkdownString,
+  Range,
+  comments,
   window,
   workspace,
   commands,
