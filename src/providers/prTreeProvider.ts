@@ -90,6 +90,7 @@ class PRFileItem extends vscode.TreeItem {
         this.iconPath = new vscode.ThemeIcon('diff-removed', new vscode.ThemeColor('gitDecoration.deletedResourceForeground'));
         break;
       case 'modified':
+      case 'changed':
         this.iconPath = new vscode.ThemeIcon('diff-modified', new vscode.ThemeColor('gitDecoration.modifiedResourceForeground'));
         break;
       case 'renamed':
@@ -269,7 +270,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       }
 
       // Sort files: added, modified, renamed, removed
-      const statusOrder: Record<string, number> = { added: 0, modified: 1, renamed: 2, removed: 3 };
+      const statusOrder: Record<string, number> = { added: 0, modified: 1, changed: 1, renamed: 2, removed: 3 };
       const getStatusPriority = (status: string): number => statusOrder[status] ?? 99;
       const sortedFiles = files.sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status));
 
