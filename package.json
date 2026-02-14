@@ -307,6 +307,12 @@
           "when": "viewItem == workflowRun || viewItem == workflowJob || viewItem == workflowStep",
           "group": "navigation@3"
         }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "forgejo.submitInlineComment",
+          "group": "inline"
+        }
       ]
     },
     "viewsWelcome": [

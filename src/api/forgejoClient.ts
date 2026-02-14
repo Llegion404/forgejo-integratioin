@@ -1,6 +1,7 @@
 import { PullRequest, PullRequestListItem, PullRequestFile, FileContentsResponse, CommitStatus, PullRequestReview, PullRequestCommit } from '../models/pullRequest';
 import { Issue, IssueListItem, IssueComment, TimelineEvent } from '../models/issue';
 import { ActionTasksResponse, WorkflowRun, WorkflowJobsResponse } from '../models/action';
+import { ReviewComment, PullReview, CreatePullReviewOptions } from '../models/comment';
 import { logDebug, logInfo, logError } from '../utils/logger';
 
 export class ForgejoClient {
@@ -489,9 +490,9 @@ export class ForgejoClient {
   /**
    * Get comments for a specific pull request review
    */
-  async getReviewComments(owner: string, repo: string, prNumber: number, reviewId: number): Promise<any[]> {
+  async getReviewComments(owner: string, repo: string, prNumber: number, reviewId: number): Promise<ReviewComment[]> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${prNumber}/reviews/${reviewId}/comments`;
-    return this.request<any[]>(endpoint);
+    return this.request<ReviewComment[]>(endpoint);
   }
 
   /**
@@ -501,12 +502,8 @@ export class ForgejoClient {
     owner: string,
     repo: string,
     prNumber: number,
-    options: {
-      body?: string;
-      event: string;
-      comments?: Array<{ body: string; path: string; new_position: number; old_position?: number }>;
-    }
-  ): Promise<any> {
+    options: CreatePullReviewOptions
+  ): Promise<PullReview> {
     const url = `${this.instanceUrl}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/reviews`;
 
     const headers: Record<string, string> = {
@@ -537,7 +534,7 @@ export class ForgejoClient {
         throw new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
       }
 
-      const review = await response.json();
+      const review = await response.json() as PullReview;
       logInfo('Review with comments created successfully:', { owner, repo, prNumber });
       return review;
     } catch (error) {
