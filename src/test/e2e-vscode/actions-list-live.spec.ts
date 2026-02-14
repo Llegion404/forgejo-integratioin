@@ -85,9 +85,9 @@ test.describe('Actions List - Live Forgejo', () => {
     expect(rowCount).toBeGreaterThanOrEqual(0);
 
     // If there are runs, they should be collapsed (only run-level items visible)
-    // Run items have labels starting with "Run #"
-    if (rowCount > 0 && labels.some(l => l.includes('Run #'))) {
-      const runLabels = labels.filter(l => l.includes('Run #'));
+    // Run items have labels containing "(#N)"
+    if (rowCount > 0 && labels.some(l => l.match(/\(#\d+\)/))) {
+      const runLabels = labels.filter(l => l.match(/\(#\d+\)/));
       expect(runLabels.length).toBeGreaterThan(0);
     }
   });
@@ -96,7 +96,7 @@ test.describe('Actions List - Live Forgejo', () => {
     const labels = await getTreeRowLabels(workbox);
 
     // Skip if no runs available
-    if (!labels.some(l => l.includes('Run #'))) {
+    if (!labels.some(l => l.match(/\(#\d+\)/))) {
       test.skip();
       return;
     }
@@ -121,7 +121,7 @@ test.describe('Actions List - Live Forgejo', () => {
     const labels = await getTreeRowLabels(workbox);
 
     // Skip if no runs available
-    if (!labels.some(l => l.includes('Run #'))) {
+    if (!labels.some(l => l.match(/\(#\d+\)/))) {
       test.skip();
       return;
     }

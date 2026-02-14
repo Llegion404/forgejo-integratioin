@@ -58,14 +58,14 @@ describe('ActionsTreeProvider', () => {
     const owner = 'test-owner';
     const repo = 'test-repo';
 
-    test('should create with correct label "Run #N"', () => {
+    test('should create with display_title and run number as label', () => {
       const item = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], owner, repo);
-      expect(item.label).toBe('Run #42');
+      expect(item.label).toBe('Add new feature (#42)');
     });
 
-    test('should show short SHA + display_title in description', () => {
+    test('should show short SHA in description', () => {
       const item = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], owner, repo);
-      expect(item.description).toBe('abc123d · Add new feature');
+      expect(item.description).toBe('abc123d');
     });
 
     test('should set tooltip with workflow info', () => {

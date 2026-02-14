@@ -50,13 +50,12 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
   ) {
     // Use first job to get run metadata (all jobs in same run share these)
     const firstJob = jobs[0];
-    const shortSha = firstJob.head_sha.substring(0, 7);
-    const label = `Run #${runNumber}`;
+    const label = `${firstJob.display_title} (#${runNumber})`;
 
     super(label, vscode.TreeItemCollapsibleState.Collapsed);
 
-    // Description shows commit info
-    this.description = `${shortSha} · ${firstJob.display_title}`;
+    // Description shows short SHA
+    this.description = firstJob.head_sha.substring(0, 7);
     this.tooltip = `Workflow: ${firstJob.workflow_id}\nBranch: ${firstJob.head_branch}\nCommit: ${firstJob.head_sha}\n${firstJob.display_title}\nJobs: ${jobs.length}`;
     this.contextValue = 'workflowRun';
 
