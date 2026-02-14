@@ -1,5 +1,5 @@
-import { PullRequest, PullRequestListItem, PullRequestFile, FileContentsResponse, CommitStatus } from '../models/pullRequest';
-import { Issue, IssueListItem } from '../models/issue';
+import { PullRequest, PullRequestListItem, PullRequestFile, FileContentsResponse, CommitStatus, PullRequestReview, PullRequestCommit } from '../models/pullRequest';
+import { Issue, IssueListItem, IssueComment, TimelineEvent } from '../models/issue';
 import { ActionTasksResponse, WorkflowRun, WorkflowJobsResponse } from '../models/action';
 import { logDebug, logInfo, logError } from '../utils/logger';
 
@@ -13,19 +13,26 @@ export class ForgejoClient {
   }
 
   /**
+   * Build common headers for API requests
+   */
+  private buildHeaders(contentType: string = 'application/json'): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': contentType
+    };
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+    return headers;
+  }
+
+  /**
    * Make an authenticated request to the Forgejo API
    */
   private async request<T>(endpoint: string): Promise<T> {
     const url = `${this.instanceUrl}/api/v1${endpoint}`;
 
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
+    const headers = this.buildHeaders();
 
     logDebug('Making API request:', {
       url,
@@ -118,6 +125,42 @@ export class ForgejoClient {
     }
 
     return allItems;
+  }
+
+  /**
+   * Make an authenticated request with a body (POST/PATCH/PUT/DELETE) to the Forgejo API
+   */
+  private async requestWithBody<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
+    const url = `${this.instanceUrl}/api/v1${endpoint}`;
+    logDebug(`${method} ${url}`);
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: this.buildHeaders(),
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => '');
+        const error = new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+        (error as any).status = response.status;
+        (error as any).statusText = response.statusText;
+        throw error;
+      }
+      // Some endpoints return no content (e.g. 204)
+      const contentType = response.headers?.get?.('content-type') || '';
+      if (response.status === 204 || contentType === '') {
+        try {
+          return await response.json() as T;
+        } catch {
+          return undefined as T;
+        }
+      }
+      return await response.json() as T;
+    } catch (error: any) {
+      if (error.status) throw error; // Re-throw HTTP errors with status
+      logError(`Network error on ${method} ${url}: ${error.message}`);
+      throw new Error(`Network error: Cannot reach ${url}. ${error.message || ''}`);
+    }
   }
 
   /**
@@ -271,55 +314,22 @@ export class ForgejoClient {
     deleteBranchAfterMerge: boolean = false
   ): Promise<{ merged: boolean; message?: string }> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}/merge`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const body = JSON.stringify({
-      Do: method,
-      delete_branch_after_merge: deleteBranchAfterMerge
-    });
-
     logDebug('Merging pull request:', { owner, repo, number, method });
 
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body
+      await this.requestWithBody<void>('POST', endpoint, {
+        Do: method,
+        delete_branch_after_merge: deleteBranchAfterMerge
       });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Merge failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-
-        if (response.status === 405) {
-          throw new Error('Merge not allowed - PR may not be mergeable');
-        } else if (response.status === 409) {
-          throw new Error('Merge conflict - PR has conflicts that must be resolved');
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-      }
-
       logInfo('Pull request merged successfully:', { owner, repo, number, method });
       return { merged: true };
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
+    } catch (error: any) {
+      if (error.status === 405) {
+        throw new Error('Merge not allowed - PR may not be mergeable');
+      } else if (error.status === 409) {
+        throw new Error('Merge conflict - PR has conflicts that must be resolved');
       }
-      throw new Error(`Failed to merge pull request: ${String(error)}`);
+      throw error;
     }
   }
 
@@ -328,129 +338,53 @@ export class ForgejoClient {
    */
   async closePullRequest(owner: string, repo: string, number: number): Promise<PullRequest> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const body = JSON.stringify({
-      state: 'closed'
-    });
-
     logDebug('Closing pull request:', { owner, repo, number });
-
-    try {
-      const response = await fetch(url, {
-        method: 'PATCH',
-        headers,
-        body
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Close PR failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const pr = await response.json() as PullRequest;
-      logInfo('Pull request closed successfully:', { owner, repo, number });
-      return pr;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to close pull request: ${String(error)}`);
-    }
+    const pr = await this.requestWithBody<PullRequest>('PATCH', endpoint, { state: 'closed' });
+    logInfo('Pull request closed successfully:', { owner, repo, number });
+    return pr;
   }
 
   /**
    * Get issue comments
    */
-  async getIssueComments(owner: string, repo: string, number: number): Promise<any[]> {
+  async getIssueComments(owner: string, repo: string, number: number): Promise<IssueComment[]> {
     const endpoint = `/repos/${owner}/${repo}/issues/${number}/comments`;
-    return this.request<any[]>(endpoint);
+    return this.request<IssueComment[]>(endpoint);
   }
 
   /**
    * Get pull request reviews
    */
-  async getPullRequestReviews(owner: string, repo: string, number: number): Promise<any[]> {
+  async getPullRequestReviews(owner: string, repo: string, number: number): Promise<PullRequestReview[]> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}/reviews`;
-    return this.request<any[]>(endpoint);
+    return this.request<PullRequestReview[]>(endpoint);
   }
 
   /**
    * Get pull request commits
    */
-  async getPullRequestCommits(owner: string, repo: string, number: number): Promise<any[]> {
+  async getPullRequestCommits(owner: string, repo: string, number: number): Promise<PullRequestCommit[]> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}/commits`;
-    return this.request<any[]>(endpoint);
+    return this.request<PullRequestCommit[]>(endpoint);
   }
 
   /**
    * Get issue timeline events
    */
-  async getIssueTimeline(owner: string, repo: string, number: number): Promise<any[]> {
+  async getIssueTimeline(owner: string, repo: string, number: number): Promise<TimelineEvent[]> {
     const endpoint = `/repos/${owner}/${repo}/issues/${number}/timeline`;
-    return this.request<any[]>(endpoint);
+    return this.request<TimelineEvent[]>(endpoint);
   }
 
   /**
    * Create a comment on an issue or pull request
    */
-  async createComment(owner: string, repo: string, number: number, body: string): Promise<any> {
+  async createComment(owner: string, repo: string, number: number, body: string): Promise<IssueComment> {
     const endpoint = `/repos/${owner}/${repo}/issues/${number}/comments`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const bodyStr = JSON.stringify({ body });
-
     logDebug('Creating comment:', { owner, repo, number });
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: bodyStr
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Create comment failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const comment = await response.json();
-      logInfo('Comment created successfully:', { owner, repo, number });
-      return comment;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to create comment: ${String(error)}`);
-    }
+    const comment = await this.requestWithBody<IssueComment>('POST', endpoint, { body });
+    logInfo('Comment created successfully:', { owner, repo, number });
+    return comment;
   }
 
   /**
@@ -462,52 +396,12 @@ export class ForgejoClient {
     number: number,
     state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
     body: string
-  ): Promise<any> {
+  ): Promise<PullRequestReview> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}/reviews`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const bodyStr = JSON.stringify({
-      event: state,
-      body
-    });
-
     logDebug('Creating review:', { owner, repo, number, state });
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: bodyStr
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Create review failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const review = await response.json();
-      logInfo('Review created successfully:', { owner, repo, number, state });
-      return review;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to create review: ${String(error)}`);
-    }
+    const review = await this.requestWithBody<PullRequestReview>('POST', endpoint, { event: state, body });
+    logInfo('Review created successfully:', { owner, repo, number, state });
+    return review;
   }
 
   /**
@@ -515,47 +409,10 @@ export class ForgejoClient {
    */
   async updateIssueState(owner: string, repo: string, number: number, state: 'open' | 'closed'): Promise<Issue> {
     const endpoint = `/repos/${owner}/${repo}/issues/${number}`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const body = JSON.stringify({ state });
-
     logDebug('Updating issue state:', { owner, repo, number, state });
-
-    try {
-      const response = await fetch(url, {
-        method: 'PATCH',
-        headers,
-        body
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Update issue state failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const issue = await response.json() as Issue;
-      logInfo('Issue state updated successfully:', { owner, repo, number, state });
-      return issue;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to update issue state: ${String(error)}`);
-    }
+    const issue = await this.requestWithBody<Issue>('PATCH', endpoint, { state });
+    logInfo('Issue state updated successfully:', { owner, repo, number, state });
+    return issue;
   }
 
   /**
@@ -563,50 +420,14 @@ export class ForgejoClient {
    */
   async createIssue(owner: string, repo: string, title: string, body?: string): Promise<Issue> {
     const endpoint = `/repos/${owner}/${repo}/issues`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
     const payload: Record<string, string> = { title };
     if (body) {
       payload.body = body;
     }
-
     logDebug('Creating issue:', { owner, repo, title });
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Create issue failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const issue = await response.json() as Issue;
-      logInfo('Issue created successfully:', { owner, repo, number: issue.number, title: issue.title });
-      return issue;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to create issue: ${String(error)}`);
-    }
+    const issue = await this.requestWithBody<Issue>('POST', endpoint, payload);
+    logInfo('Issue created successfully:', { owner, repo, number: issue.number, title: issue.title });
+    return issue;
   }
 
   /**
@@ -614,45 +435,10 @@ export class ForgejoClient {
    */
   async updatePullRequestBody(owner: string, repo: string, index: number, body: string): Promise<PullRequest> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${index}`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
     logDebug('Updating pull request body:', { owner, repo, index });
-
-    try {
-      const response = await fetch(url, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ body })
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Update PR body failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const pr = await response.json() as PullRequest;
-      logInfo('Pull request body updated successfully:', { owner, repo, index });
-      return pr;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to update pull request body: ${String(error)}`);
-    }
+    const pr = await this.requestWithBody<PullRequest>('PATCH', endpoint, { body });
+    logInfo('Pull request body updated successfully:', { owner, repo, index });
+    return pr;
   }
 
   /**
@@ -660,47 +446,11 @@ export class ForgejoClient {
    */
   async updateIssueBody(owner: string, repo: string, index: number, body: string): Promise<Issue> {
     const endpoint = `/repos/${owner}/${repo}/issues/${index}`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
     logDebug('Updating issue body:', { owner, repo, index });
-
-    try {
-      const response = await fetch(url, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ body })
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Update issue body failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const issue = await response.json() as Issue;
-      logInfo('Issue body updated successfully:', { owner, repo, index });
-      return issue;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to update issue body: ${String(error)}`);
-    }
+    const issue = await this.requestWithBody<Issue>('PATCH', endpoint, { body });
+    logInfo('Issue body updated successfully:', { owner, repo, index });
+    return issue;
   }
-
 
   /**
    * Create a new pull request in a repository
@@ -714,56 +464,25 @@ export class ForgejoClient {
     body?: string
   ): Promise<PullRequest> {
     const endpoint = `/repos/${owner}/${repo}/pulls`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
     const payload: Record<string, string> = { title, head, base };
     if (body) {
       payload.body = body;
     }
-
     logDebug('Creating pull request:', { owner, repo, title, head, base });
 
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Create pull request failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-
-        if (response.status === 409) {
-          throw new Error('A pull request already exists for this branch');
-        } else if (response.status === 422) {
-          throw new Error(`Validation error: ${errorBody}`);
-        }
-
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const pr = await response.json() as PullRequest;
+      const pr = await this.requestWithBody<PullRequest>('POST', endpoint, payload);
       logInfo('Pull request created successfully:', { owner, repo, number: pr.number, title: pr.title });
       return pr;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
+    } catch (error: any) {
+      if (error.status === 409) {
+        throw new Error('A pull request already exists for this branch');
+      } else if (error.status === 422) {
+        // Extract the error body from the message (format: "HTTP 422: ... - <body>")
+        const bodyMatch = error.message?.match(/ - (.+)$/);
+        throw new Error(`Validation error: ${bodyMatch ? bodyMatch[1] : error.message}`);
       }
-      throw new Error(`Failed to create pull request: ${String(error)}`);
+      throw error;
     }
   }
 
@@ -925,41 +644,8 @@ export class ForgejoClient {
    */
   async rerunWorkflow(owner: string, repo: string, runId: number): Promise<void> {
     const endpoint = `/repos/${owner}/${repo}/actions/runs/${runId}/rerun`;
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
     logDebug('Re-running workflow:', { owner, repo, runId });
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Re-run workflow failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      logInfo('Workflow re-run triggered successfully:', { owner, repo, runId });
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to re-run workflow: ${String(error)}`);
-    }
+    await this.requestWithBody<void>('POST', endpoint);
+    logInfo('Workflow re-run triggered successfully:', { owner, repo, runId });
   }
 }
