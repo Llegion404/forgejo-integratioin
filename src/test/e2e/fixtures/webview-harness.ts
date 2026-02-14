@@ -492,6 +492,7 @@ export interface PRDetailData {
     status: string;
     context?: string;
     description?: string;
+    target_url?: string;
     created_at?: string;
     updated_at?: string;
   }>;
