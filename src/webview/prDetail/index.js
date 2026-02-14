@@ -419,6 +419,7 @@
             <span class="ci-status-context">${escapeHtml(status.context || 'Unknown')}</span>
             <span class="ci-status-description">${escapeHtml(status.description || '')}</span>
             <span class="ci-status-time">${timeAgo}</span>
+            ${status.target_url ? '<span class="ci-status-link-icon" title="Open in browser">&#x2197;</span>' : ''}
           </div>
         `;
       }).join('');

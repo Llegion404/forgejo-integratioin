@@ -161,6 +161,19 @@ test.describe('PR Detail Webview', () => {
     expect(ciMessage!.url).toBe('https://forgejo.example.com/owner/repo/actions/runs/1');
   });
 
+  test('clicking CI status without target_url does not send message', async ({ page }) => {
+    const data = createMockPRData();
+    data.statuses = [
+      { status: 'success', context: 'CI/build', description: 'Build passed' },
+    ];
+    await harness.sendPRUpdate(data);
+
+    await page.locator('.ci-status-item').first().click();
+    const messages = await getPostedMessages(page);
+    const ciMessage = messages.find(m => m.type === 'openCIStatus');
+    expect(ciMessage).toBeUndefined();
+  });
+
   test('hides CI section when no statuses', async ({ page }) => {
     await harness.sendPRUpdate(createMockPRData());
 

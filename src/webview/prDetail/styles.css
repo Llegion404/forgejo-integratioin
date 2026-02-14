@@ -352,6 +352,16 @@ section h2 {
   background-color: var(--vscode-list-hoverBackground);
 }
 
+.ci-status-link-icon {
+  color: var(--vscode-textLink-foreground);
+  font-size: 0.9em;
+  opacity: 0.6;
+}
+
+.ci-status-item:hover .ci-status-link-icon {
+  opacity: 1;
+}
+
 .ci-status-item.pending {
   border-left: 3px solid #ccac00;
 }
