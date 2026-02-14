@@ -344,6 +344,14 @@ section h2 {
   background-color: var(--vscode-editor-inactiveSelectionBackground);
 }
 
+.ci-status-item[data-target-url]:not([data-target-url=""]) {
+  cursor: pointer;
+}
+
+.ci-status-item[data-target-url]:not([data-target-url=""]):hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
 .ci-status-item.pending {
   border-left: 3px solid #ccac00;
 }

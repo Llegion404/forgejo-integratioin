@@ -15,7 +15,8 @@ export type WebviewMessage =
   | { type: 'openInBrowser' }
   | { type: 'viewCommit'; sha: string }
   | { type: 'viewFile'; filename: string }
-  | { type: 'updateBody'; body: string };
+  | { type: 'updateBody'; body: string }
+  | { type: 'openCIStatus'; url: string };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
@@ -232,6 +233,11 @@ export class PRDetailWebviewProvider {
       case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey); break;
       case 'openInBrowser': await this._openInBrowser(owner, repo, number); break;
       case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey); break;
+      case 'openCIStatus':
+        if (message.url) {
+          vscode.env.openExternal(vscode.Uri.parse(message.url));
+        }
+        break;
     }
   }
 

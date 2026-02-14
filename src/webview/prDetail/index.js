@@ -240,6 +240,13 @@
         cancelMergeBtn.click();
       }
     });
+
+    ciStatusList.addEventListener('click', (e) => {
+      const item = e.target.closest('.ci-status-item');
+      if (item && item.dataset.targetUrl) {
+        vscode.postMessage({ type: 'openCIStatus', url: item.dataset.targetUrl });
+      }
+    });
   }
 
   function setupMessageHandler() {
@@ -407,7 +414,7 @@
         const statusIcon = statusIconForStatus(statusClass);
         const timeAgo = formatTimeAgo(status.updated_at || status.created_at);
         return `
-          <div class="ci-status-item ${statusClass}">
+          <div class="ci-status-item ${statusClass}" data-target-url="${escapeHtml(status.target_url || '')}">
             <span class="ci-status-icon">${statusIcon}</span>
             <span class="ci-status-context">${escapeHtml(status.context || 'Unknown')}</span>
             <span class="ci-status-description">${escapeHtml(status.description || '')}</span>

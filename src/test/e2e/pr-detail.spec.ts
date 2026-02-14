@@ -135,8 +135,8 @@ test.describe('PR Detail Webview', () => {
   test('displays CI statuses', async ({ page }) => {
     const data = createMockPRData();
     data.statuses = [
-      { status: 'success', context: 'CI/build', description: 'Build passed' },
-      { status: 'failure', context: 'CI/test', description: 'Tests failed' },
+      { status: 'success', context: 'CI/build', description: 'Build passed', target_url: 'https://forgejo.example.com/owner/repo/actions/runs/1' },
+      { status: 'failure', context: 'CI/test', description: 'Tests failed', target_url: 'https://forgejo.example.com/owner/repo/actions/runs/2' },
     ];
     await harness.sendPRUpdate(data);
 
@@ -145,6 +145,20 @@ test.describe('PR Detail Webview', () => {
     await expect(ciSection.locator('.ci-status-item')).toHaveCount(2);
     await expect(ciSection.locator('.ci-status-context').first()).toHaveText('CI/build');
     await expect(ciSection.locator('.ci-status-context').last()).toHaveText('CI/test');
+  });
+
+  test('clicking CI status sends openCIStatus message', async ({ page }) => {
+    const data = createMockPRData();
+    data.statuses = [
+      { status: 'success', context: 'CI/build', description: 'Build passed', target_url: 'https://forgejo.example.com/owner/repo/actions/runs/1' },
+    ];
+    await harness.sendPRUpdate(data);
+
+    await page.locator('.ci-status-item').first().click();
+    const messages = await getPostedMessages(page);
+    const ciMessage = messages.find(m => m.type === 'openCIStatus');
+    expect(ciMessage).toBeDefined();
+    expect(ciMessage!.url).toBe('https://forgejo.example.com/owner/repo/actions/runs/1');
   });
 
   test('hides CI section when no statuses', async ({ page }) => {
