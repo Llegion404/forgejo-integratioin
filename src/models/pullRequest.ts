@@ -87,3 +87,38 @@ export interface CommitStatus {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * A review on a pull request
+ */
+export interface PullRequestReview {
+  id: number;
+  state: string;
+  body: string;
+  user: {
+    login: string;
+    avatar_url: string;
+  };
+  submitted_at: string;
+  html_url: string;
+}
+
+/**
+ * A commit within a pull request
+ */
+export interface PullRequestCommit {
+  sha: string;
+  commit: {
+    message: string;
+    author: {
+      name: string;
+      email: string;
+      date: string;
+    };
+  };
+  author: {
+    login: string;
+    avatar_url: string;
+  };
+  html_url: string;
+}

@@ -158,7 +158,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.updatePullRequestBody('owner', 'repo', 42, 'body'))
         .rejects
-        .toThrow(expect.objectContaining({ message: expect.stringContaining('string error') }));
+        .toThrow(expect.objectContaining({ message: expect.stringContaining('Network error') }));
     });
   });
 
@@ -220,7 +220,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.updateIssueBody('owner', 'repo', 10, 'body'))
         .rejects
-        .toThrow(expect.objectContaining({ message: expect.stringContaining('string error') }));
+        .toThrow(expect.objectContaining({ message: expect.stringContaining('Network error') }));
     });
 
     test('should work without token', async () => {
