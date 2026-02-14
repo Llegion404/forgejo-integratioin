@@ -202,6 +202,10 @@
         "command": "forgejo.createPullRequest",
         "title": "Forgejo: Create Pull Request",
         "icon": "$(git-pull-request-create)"
+      },
+      {
+        "command": "forgejo.submitInlineComment",
+        "title": "Submit Comment"
       }
     ],
     "menus": {
@@ -302,6 +306,12 @@
           "command": "forgejo.viewActionLogs",
           "when": "viewItem == workflowRun || viewItem == workflowJob || viewItem == workflowStep",
           "group": "navigation@3"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "forgejo.submitInlineComment",
+          "group": "inline"
         }
       ]
     },

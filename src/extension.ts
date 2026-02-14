@@ -9,6 +9,7 @@ import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetai
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
 import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
 import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
+import { ForgejoCommentController } from './providers/prCommentController';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
 import { IssueListItem } from './models/issue';
 import { setInstanceUrl, setAuthToken } from './utils/config';
@@ -77,6 +78,17 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(PR_DIFF_SCHEME, prDiffProvider),
     prDiffProvider
+  );
+
+  // Create comment controller for inline PR comments
+  const commentController = new ForgejoCommentController();
+  context.subscriptions.push(commentController);
+
+  // Register submit inline comment command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.submitInlineComment', async (reply: vscode.CommentReply) => {
+      await commentController.handleCreateComment(reply);
+    })
   );
 
   // Create virtual document provider for PR details
@@ -467,6 +479,9 @@ export async function activate(context: vscode.ExtensionContext) {
           // Handle deleted files (no "after" version)
           if (file.status === 'removed') {
             const beforeUri = createPRFileUri(owner, repo, baseRef, file.filename);
+            commentController.registerPRContext(beforeUri, {
+              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
+            });
             const doc = await vscode.workspace.openTextDocument(beforeUri);
             await vscode.window.showTextDocument(doc, { preview: true });
             const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
@@ -479,6 +494,9 @@ export async function activate(context: vscode.ExtensionContext) {
           // Handle added files (no "before" version)
           if (file.status === 'added') {
             const afterUri = createPRFileUri(owner, repo, headRef, file.filename);
+            commentController.registerPRContext(afterUri, {
+              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
+            });
             const doc = await vscode.workspace.openTextDocument(afterUri);
             await vscode.window.showTextDocument(doc, { preview: true });
             const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
@@ -494,6 +512,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
           const beforeUri = createPRFileUri(owner, repo, baseRef, beforePath);
           const afterUri = createPRFileUri(owner, repo, headRef, afterPath);
+
+          // Register PR context for both sides of the diff
+          commentController.registerPRContext(beforeUri, {
+            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforePath
+          });
+          commentController.registerPRContext(afterUri, {
+            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: afterPath
+          });
 
           const title = `PR #${pr.number}: ${file.filename}`;
 

@@ -1,6 +1,7 @@
 import { PullRequest, PullRequestListItem, PullRequestFile, FileContentsResponse, CommitStatus, PullRequestReview, PullRequestCommit } from '../models/pullRequest';
 import { Issue, IssueListItem, IssueComment, TimelineEvent } from '../models/issue';
 import { ActionTasksResponse, WorkflowRun, WorkflowJobsResponse } from '../models/action';
+import { ReviewComment, PullReview, CreatePullReviewOptions } from '../models/comment';
 import { logDebug, logInfo, logError } from '../utils/logger';
 
 export class ForgejoClient {
@@ -483,6 +484,64 @@ export class ForgejoClient {
         throw new Error(`Validation error: ${bodyMatch ? bodyMatch[1] : error.message}`);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Get comments for a specific pull request review
+   */
+  async getReviewComments(owner: string, repo: string, prNumber: number, reviewId: number): Promise<ReviewComment[]> {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${prNumber}/reviews/${reviewId}/comments`;
+    return this.request<ReviewComment[]>(endpoint);
+  }
+
+  /**
+   * Create a review with inline comments on a pull request
+   */
+  async createReviewWithComments(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    options: CreatePullReviewOptions
+  ): Promise<PullReview> {
+    const url = `${this.instanceUrl}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${prNumber}/reviews`;
+
+    const headers: Record<string, string> = {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `token ${this.token}`;
+    }
+
+    logDebug('Creating review with comments:', { owner, repo, prNumber, event: options.event });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(options),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => 'Unable to read response body');
+        logError('Create review with comments failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorBody
+        });
+        throw new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
+      }
+
+      const review = await response.json() as PullReview;
+      logInfo('Review with comments created successfully:', { owner, repo, prNumber });
+      return review;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Failed to create review with comments: ${String(error)}`);
     }
   }
 
