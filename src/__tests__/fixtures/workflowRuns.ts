@@ -1,4 +1,4 @@
-import { ActionTasksResponse, WorkflowRun, WorkflowJobsResponse, WorkflowRunListItem } from '../../models/action';
+import { ActionTasksResponse, WorkflowRun, WorkflowJobsResponse, WorkflowRunListItem, WorkflowJob } from '../../models/action';
 
 export const mockWorkflowRunSuccess: WorkflowRunListItem = {
   id: 123,
@@ -86,18 +86,19 @@ export const mockWorkflowRunDetails: WorkflowRun = {
   run_started_at: '2024-01-15T10:00:05Z'
 };
 
-export const mockWorkflowJobSuccess = {
+export const mockWorkflowJobSuccess: WorkflowJob = {
   id: 201,
   run_id: 123,
   name: 'build',
-  status: 'success' as const,  // Forgejo uses status directly
+  status: 'success',
   conclusion: null,
   started_at: '2024-01-15T10:00:10Z',
   completed_at: '2024-01-15T10:04:00Z',
+  html_url: 'https://git.example.com/owner/repo/actions/runs/42/jobs/0',
   steps: [
     {
       name: 'Checkout',
-      status: 'success' as const,
+      status: 'success',
       conclusion: null,
       number: 1,
       started_at: '2024-01-15T10:00:10Z',
@@ -105,7 +106,7 @@ export const mockWorkflowJobSuccess = {
     },
     {
       name: 'Build',
-      status: 'success' as const,
+      status: 'success',
       conclusion: null,
       number: 2,
       started_at: '2024-01-15T10:00:15Z',
@@ -113,7 +114,7 @@ export const mockWorkflowJobSuccess = {
     },
     {
       name: 'Test',
-      status: 'success' as const,
+      status: 'success',
       conclusion: null,
       number: 3,
       started_at: '2024-01-15T10:03:00Z',
@@ -122,28 +123,46 @@ export const mockWorkflowJobSuccess = {
   ]
 };
 
-export const mockWorkflowJobFailed = {
+export const mockWorkflowJobFailed: WorkflowJob = {
   id: 202,
   run_id: 124,
   name: 'build',
-  status: 'failure' as const,  // Forgejo uses status directly
+  status: 'failure',
   conclusion: null,
   started_at: '2024-01-15T11:00:10Z',
   completed_at: '2024-01-15T11:03:00Z',
+  html_url: 'https://git.example.com/owner/repo/actions/runs/43/jobs/0',
   steps: [
     {
       name: 'Checkout',
-      status: 'success' as const,
+      status: 'success',
       conclusion: null,
       number: 1
     },
     {
       name: 'Build',
-      status: 'failure' as const,
+      status: 'failure',
       conclusion: null,
       number: 2
     }
   ]
+};
+
+export const mockWorkflowJobNoSteps: WorkflowJob = {
+  id: 203,
+  run_id: 123,
+  name: 'deploy',
+  status: 'success',
+  conclusion: null,
+  started_at: '2024-01-15T10:05:00Z',
+  completed_at: '2024-01-15T10:06:00Z',
+  html_url: 'https://git.example.com/owner/repo/actions/runs/42/jobs/1',
+  steps: []
+};
+
+export const mockMultiJobResponse: WorkflowJobsResponse = {
+  total_count: 2,
+  jobs: [mockWorkflowJobSuccess, mockWorkflowJobNoSteps]
 };
 
 export const mockWorkflowJobsResponse: WorkflowJobsResponse = {
@@ -155,6 +174,56 @@ export const mockEmptyWorkflowJobsResponse: WorkflowJobsResponse = {
   total_count: 0,
   jobs: []
 };
+
+// Second job task in the same run as mockWorkflowRunSuccess (for multi-job testing)
+export const mockWorkflowRunSuccessJob2: WorkflowRunListItem = {
+  id: 127,
+  name: 'deploy',
+  run_number: 42,
+  status: 'success',
+  conclusion: null,
+  workflow_id: 'ci.yml',
+  head_branch: 'main',
+  head_sha: 'abc123def456',
+  event: 'push',
+  created_at: '2024-01-15T10:05:00Z',
+  updated_at: '2024-01-15T10:06:00Z',
+  url: 'https://git.example.com/owner/repo/actions/runs/42',
+  display_title: 'Add new feature'
+};
+
+// Scraped step fixtures (from Forgejo web page scraping)
+export const mockScrapedStepCheckout = {
+  summary: 'Checkout',
+  duration: '5s',
+  status: 'success'
+};
+
+export const mockScrapedStepBuild = {
+  summary: 'Build',
+  duration: '2m 45s',
+  status: 'success'
+};
+
+export const mockScrapedStepTest = {
+  summary: 'Test',
+  duration: '1m 0s',
+  status: 'success'
+};
+
+export const mockScrapedStepFailed = {
+  summary: 'Build',
+  duration: '30s',
+  status: 'failure'
+};
+
+export const mockScrapedStepRunning = {
+  summary: 'Deploy',
+  duration: '',
+  status: 'running'
+};
+
+export const mockScrapedSteps = [mockScrapedStepCheckout, mockScrapedStepBuild, mockScrapedStepTest];
 
 export const mockWorkflowLogs = `2024-01-15T10:00:10Z Starting job: build
 2024-01-15T10:00:10Z Checkout repository...

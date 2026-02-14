@@ -185,6 +185,11 @@
         "icon": "$(output)"
       },
       {
+        "command": "forgejo.viewStepLogs",
+        "title": "View Step Logs",
+        "icon": "$(output)"
+      },
+      {
         "command": "forgejo.showActionDetails",
         "title": "View Action Details",
         "icon": "$(info)"
@@ -280,22 +285,22 @@
         },
         {
           "command": "forgejo.showActionDetails",
-          "when": "viewItem == workflowRun",
+          "when": "viewItem == workflowRun || viewItem == workflowJob",
           "group": "navigation@0"
         },
         {
           "command": "forgejo.openActionInBrowser",
-          "when": "viewItem == workflowRun",
+          "when": "viewItem == workflowRun || viewItem == workflowJob || viewItem == workflowStep",
           "group": "navigation@1"
         },
         {
           "command": "forgejo.rerunAction",
-          "when": "viewItem == workflowRun",
+          "when": "viewItem == workflowRun || viewItem == workflowJob",
           "group": "navigation@2"
         },
         {
           "command": "forgejo.viewActionLogs",
-          "when": "viewItem == workflowRun || viewItem == workflowJob",
+          "when": "viewItem == workflowRun || viewItem == workflowJob || viewItem == workflowStep",
           "group": "navigation@3"
         }
       ]
