@@ -8,13 +8,13 @@ export interface Issue {
     login: string;
     avatar_url: string;
   };
-  labels: Array<{
+  labels: {
     name: string;
     color: string;
-  }>;
-  assignees: Array<{
+  }[];
+  assignees: {
     login: string;
-  }>;
+  }[];
   created_at: string;
   updated_at: string;
   closed_at: string | null;

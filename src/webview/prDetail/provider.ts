@@ -71,18 +71,20 @@ export class PRDetailWebviewProvider {
   public async showPRDetails(owner: string, repo: string, number: number): Promise<void> {
     logInfo('Showing PR details in webview:', { owner, repo, number });
 
-    const panelKey = `${owner}/${repo}/${number}`;
+    const panelKey = `${owner}/${repo}/${String(number)}`;
 
     if (this._panels.has(panelKey)) {
-      const state = this._panels.get(panelKey)!;
-      state.panel.reveal(vscode.ViewColumn.One);
-      await this._loadPRData(panelKey);
+      const state = this._panels.get(panelKey);
+      if (state) {
+        state.panel.reveal(vscode.ViewColumn.One);
+        await this._loadPRData(panelKey);
+      }
       return;
     }
 
     const panel = vscode.window.createWebviewPanel(
       PRDetailWebviewProvider.viewType,
-      `PR #${number}: ${owner}/${repo}`,
+      `PR #${String(number)}: ${owner}/${repo}`,
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -104,8 +106,8 @@ export class PRDetailWebviewProvider {
     panel.webview.html = this._getHtmlForWebview(panel.webview);
 
     panel.webview.onDidReceiveMessage(
-      async (message: WebviewMessage) => {
-        await this._handleMessage(message, panelKey);
+      (message: unknown) => {
+        void this._handleMessage(message as WebviewMessage, panelKey);
       },
       undefined,
       []
@@ -116,7 +118,7 @@ export class PRDetailWebviewProvider {
       this._panels.delete(panelKey);
     }, undefined, []);
 
-    this._fetchPRData(panelKey);
+    void this._fetchPRData(panelKey);
   }
 
   private async _fetchPRData(panelKey: string): Promise<void> {
@@ -137,14 +139,14 @@ export class PRDetailWebviewProvider {
 
       const [activities, allStatuses] = await Promise.all([
         this._fetchActivities(client, owner, repo, number),
-        prDetails.head?.sha ? client.getCommitStatuses(owner, repo, prDetails.head.sha) : Promise.resolve([])
+        prDetails.head.sha ? client.getCommitStatuses(owner, repo, prDetails.head.sha) : Promise.resolve([])
       ]);
 
       // Deduplicate statuses by context, keeping only the latest per context.
       // The API returns all historical statuses (pending + final) for a SHA.
       const latestByContext = new Map<string, typeof allStatuses[0]>();
       for (const status of allStatuses) {
-        const key = status.context || '';
+        const key = status.context;
         const existing = latestByContext.get(key);
         if (!existing || new Date(status.created_at) > new Date(existing.created_at)) {
           latestByContext.set(key, status);
@@ -158,14 +160,14 @@ export class PRDetailWebviewProvider {
 
       if (state.isReady) {
         logInfo('Webview is ready, sending data...');
-        await this._sendDataToPanel(panelKey);
+        this._sendDataToPanel(panelKey);
       } else {
         logInfo('Webview not ready yet, data will be sent when ready');
       }
     } catch (error) {
       logError('Failed to fetch PR data:', error);
       if (state.isReady) {
-        panel.webview.postMessage({
+        void panel.webview.postMessage({
           type: 'error',
           message: error instanceof Error ? error.message : 'Failed to load PR details'
         });
@@ -173,19 +175,19 @@ export class PRDetailWebviewProvider {
     }
   }
 
-  private async _sendDataToPanel(panelKey: string): Promise<void> {
+  private _sendDataToPanel(panelKey: string): void {
     const state = this._panels.get(panelKey);
-    if (!state || !state.pendingData) {
+    if (!state?.pendingData) {
       logInfo('_sendDataToPanel: no state or pendingData');
       return;
     }
 
     const { panel } = state;
     logInfo('Posting messages to webview:', { prTitle: state.pendingData.pr.title });
-    panel.webview.postMessage({ type: 'theme', theme: this._getThemeName(vscode.window.activeColorTheme.kind) });
-    panel.webview.postMessage({ type: 'loading', show: true });
-    panel.webview.postMessage({ type: 'update', data: state.pendingData });
-    panel.webview.postMessage({ type: 'loading', show: false });
+    void panel.webview.postMessage({ type: 'theme', theme: this._getThemeName(vscode.window.activeColorTheme.kind) });
+    void panel.webview.postMessage({ type: 'loading', show: true });
+    void panel.webview.postMessage({ type: 'update', data: state.pendingData });
+    void panel.webview.postMessage({ type: 'loading', show: false });
     logInfo('All messages posted to webview');
   }
 
@@ -197,23 +199,23 @@ export class PRDetailWebviewProvider {
     const activities: PRActivity[] = [];
     try {
       const comments = await client.getIssueComments(owner, repo, number);
-      activities.push(...comments.map((c: any) => ({ ...c, type: 'comment' as const })));
+      activities.push(...(comments as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
     } catch (e) { logDebug('Could not fetch comments:', e); }
     try {
       const reviews = await client.getPullRequestReviews(owner, repo, number);
-      activities.push(...reviews.map((r: any) => ({ ...r, type: 'review' as const })));
+      activities.push(...(reviews as PRActivity[]).map((r) => ({ ...r, type: 'review' as const })));
     } catch (e) { logDebug('Could not fetch reviews:', e); }
     try {
       const commits = await client.getPullRequestCommits(owner, repo, number);
-      activities.push(...commits.map((c: any) => ({ ...c, type: 'commit' as const })));
+      activities.push(...(commits as PRActivity[]).map((c) => ({ ...c, type: 'commit' as const })));
     } catch (e) { logDebug('Could not fetch commits:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);
-      activities.push(...timeline.map((t: any) => ({ ...t, event: t.type, type: 'timeline' as const })));
+      activities.push(...(timeline as (PRActivity & { type: string })[]).map((t) => ({ ...t, event: t.type, type: 'timeline' as const })));
     } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
-      const dateA = new Date(a.created_at || a.submitted_at || a.committed_at || 0);
-      const dateB = new Date(b.created_at || b.submitted_at || b.committed_at || 0);
+      const dateA = new Date(a.created_at ?? a.submitted_at ?? a.committed_at ?? 0);
+      const dateB = new Date(b.created_at ?? b.submitted_at ?? b.committed_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
   }
@@ -231,25 +233,27 @@ export class PRDetailWebviewProvider {
         state.isReady = true;
         if (state.pendingData) {
           logInfo('Sending pending data to webview...');
-          await this._sendDataToPanel(panelKey);
+          this._sendDataToPanel(panelKey);
         } else {
           logInfo('No pending data yet, showing loading state');
-          panel.webview.postMessage({ type: 'loading', show: true });
+          void panel.webview.postMessage({ type: 'loading', show: true });
         }
         break;
       case 'checkout': await this._checkoutBranch(owner, repo, number); break;
       case 'refresh': await this._fetchPRData(panelKey); break;
       case 'merge': await this._mergePR(owner, repo, number, message.strategy, message.message, panelKey); break;
-      case 'revert': await this._revertCommit(message.commitSha); break;
+      case 'revert': this._revertCommit(message.commitSha); break;
       case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey); break;
       case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey); break;
       case 'openInBrowser': await this._openInBrowser(owner, repo, number); break;
       case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey); break;
       case 'openCIStatus':
         if (message.url) {
-          vscode.env.openExternal(vscode.Uri.parse(message.url));
+          void vscode.env.openExternal(vscode.Uri.parse(message.url));
         }
         break;
+      case 'viewCommit': break;
+      case 'viewFile': break;
     }
   }
 
@@ -263,9 +267,9 @@ export class PRDetailWebviewProvider {
       terminal.sendText(`git fetch origin ${refs.head}:${refs.head}`);
       terminal.sendText(`git checkout ${refs.head}`);
       terminal.show();
-      vscode.window.showInformationMessage(`Checked out branch: ${refs.head}`);
+      void vscode.window.showInformationMessage(`Checked out branch: ${refs.head}`);
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to checkout: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to checkout: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -275,21 +279,21 @@ export class PRDetailWebviewProvider {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.mergePullRequest(owner, repo, number, strategy as any, false);
-      vscode.window.showInformationMessage('Pull request merged successfully');
+      await client.mergePullRequest(owner, repo, number, strategy as 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only', false);
+      void vscode.window.showInformationMessage('Pull request merged successfully');
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'merge', success: true });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'merge', success: true });
       }
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to merge: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to merge: ${error instanceof Error ? error.message : 'Unknown error'}`);
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'merge', success: false });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'merge', success: false });
       }
     }
   }
 
-  private async _revertCommit(commitSha: string): Promise<void> {
+  private _revertCommit(commitSha: string): void {
     const terminal = vscode.window.createTerminal('Forgejo Revert');
     terminal.sendText(`git revert ${commitSha}`);
     terminal.show();
@@ -302,15 +306,15 @@ export class PRDetailWebviewProvider {
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.createComment(owner, repo, number, body);
-      vscode.window.showInformationMessage('Comment added');
+      void vscode.window.showInformationMessage('Comment added');
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addComment', success: true });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addComment', success: true });
       }
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to add comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to add comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addComment', success: false });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addComment', success: false });
       }
     }
   }
@@ -322,15 +326,15 @@ export class PRDetailWebviewProvider {
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.createReview(owner, repo, number, reviewState, body);
-      vscode.window.showInformationMessage(`Review ${reviewState.toLowerCase().replace(/_/g, ' ')}`);
+      void vscode.window.showInformationMessage(`Review ${reviewState.toLowerCase().replace(/_/g, ' ')}`);
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addReview', success: true });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addReview', success: true });
       }
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to add review: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to add review: ${error instanceof Error ? error.message : 'Unknown error'}`);
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addReview', success: false });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'addReview', success: false });
       }
     }
   }
@@ -344,17 +348,17 @@ export class PRDetailWebviewProvider {
       const updatedPR = await client.updatePullRequestBody(owner, repo, number, body);
       logInfo('PR body updated:', { owner, repo, number });
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'bodyUpdated', body: updatedPR.body || '' });
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: true });
+        void panelState.panel.webview.postMessage({ type: 'bodyUpdated', body: updatedPR.body });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: true });
       }
       if (panelState?.pendingData) {
-        panelState.pendingData.pr.body = updatedPR.body || '';
+        panelState.pendingData.pr.body = updatedPR.body;
       }
     } catch (error) {
       logError('Failed to update PR body:', error);
-      vscode.window.showErrorMessage(`Failed to update description: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to update description: ${error instanceof Error ? error.message : 'Unknown error'}`);
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: false });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: false });
       }
     }
   }
@@ -363,10 +367,10 @@ export class PRDetailWebviewProvider {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
-      const url = `${config.instanceUrl}/${owner}/${repo}/pulls/${number}`;
-      vscode.env.openExternal(vscode.Uri.parse(url));
+      const url = `${config.instanceUrl}/${owner}/${repo}/pulls/${String(number)}`;
+      void vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to open: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to open: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -392,7 +396,7 @@ export class PRDetailWebviewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} https:;">
   <title>PR Details</title>
-  <link rel="stylesheet" href="${styleUri}">
+  <link rel="stylesheet" href="${styleUri.toString()}">
 </head>
 <body>
   <div id="loading" class="loading">
@@ -413,7 +417,7 @@ export class PRDetailWebviewProvider {
         <span id="pr-number"></span>
         <button id="copy-url-btn" class="icon-btn" title="Copy URL">📋</button>
       </div>
-      
+
       <div class="pr-meta">
         <span id="pr-status-badge" class="status-badge"></span>
         <span class="pr-author">
@@ -503,7 +507,7 @@ export class PRDetailWebviewProvider {
     </div>
   </div>
 
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
   }

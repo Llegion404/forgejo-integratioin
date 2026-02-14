@@ -42,7 +42,7 @@ describe('config', () => {
 
         it('should return unauthenticated config from git remote when no instances configured', async () => {
             mockConfig([]);
-            (detectGitRemote as jest.Mock).mockResolvedValue({
+            (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://codeberg.org',
                 owner: 'owner',
                 repo: 'repo'
@@ -59,7 +59,7 @@ describe('config', () => {
 
         it('should return null if no instances and no git remote', async () => {
             mockConfig([]);
-            (detectGitRemote as jest.Mock).mockResolvedValue(null);
+            (detectGitRemote as jest.Mock).mockReturnValue(null);
 
             const config = await getForgejoConfig();
             expect(config).toBeNull();
@@ -67,7 +67,7 @@ describe('config', () => {
 
         it('should return matched instance from git remote', async () => {
             mockConfig(mockInstances);
-            (detectGitRemote as jest.Mock).mockResolvedValue({
+            (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://git.company.com',
                 owner: 'myorg',
                 repo: 'myrepo'
@@ -87,7 +87,7 @@ describe('config', () => {
 
         it('should fallback to default instance if no match found', async () => {
             mockConfig(mockInstances);
-            (detectGitRemote as jest.Mock).mockResolvedValue({
+            (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://github.com', // Not in instances
                 owner: 'owner',
                 repo: 'repo'
@@ -112,7 +112,7 @@ describe('config', () => {
             ];
             mockConfig(noDefaultInstances);
             
-            (detectGitRemote as jest.Mock).mockResolvedValue({
+            (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://github.com',
                 owner: 'owner',
                 repo: 'repo'
@@ -132,7 +132,7 @@ describe('config', () => {
 
         it('should return null if git remote detection fails', async () => {
             mockConfig(mockInstances);
-            (detectGitRemote as jest.Mock).mockResolvedValue(null);
+            (detectGitRemote as jest.Mock).mockReturnValue(null);
 
             const config = await getForgejoConfig();
 
@@ -141,7 +141,7 @@ describe('config', () => {
 
         it('should handle git remote with different path structure', async () => {
             mockConfig(mockInstances);
-            (detectGitRemote as jest.Mock).mockResolvedValue({
+            (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://codeberg.org',
                 owner: 'owner',
                 repo: 'repo'

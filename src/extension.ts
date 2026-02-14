@@ -46,10 +46,9 @@ export async function activate(context: vscode.ExtensionContext) {
   }
 
   // Set initial context and check for first-time setup
-  (async () => {
+  void (async () => {
     const instances = await updateNoInstanceContext();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const isTest = process.env.NODE_ENV === 'test' || typeof (global as any).it === 'function';
+    const isTest = process.env.NODE_ENV === 'test' || typeof (global as Record<string, unknown>).it === 'function';
 
     if (instances.length === 0 && !isTest) {
       // viewsWelcome content now provides the primary onboarding UX
@@ -137,14 +136,14 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('forgejo.refreshPullRequests', () => {
       prTreeProvider.refresh();
-      vscode.window.showInformationMessage('Pull Requests refreshed');
+      void vscode.window.showInformationMessage('Pull Requests refreshed');
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('forgejo.refreshIssues', () => {
       issueTreeProvider.refresh();
-      vscode.window.showInformationMessage('Issues refreshed');
+      void vscode.window.showInformationMessage('Issues refreshed');
     })
   );
 
@@ -154,12 +153,12 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         const config = await getForgejoConfig();
         if (!config) {
-          vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
+          void vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
           return;
         }
 
         if (!config.token) {
-          vscode.window.showErrorMessage('A Forgejo token is required to create issues. Please configure your token first.');
+          void vscode.window.showErrorMessage('A Forgejo token is required to create issues. Please configure your token first.');
           return;
         }
 
@@ -168,7 +167,7 @@ export async function activate(context: vscode.ExtensionContext) {
           prompt: 'Enter issue title',
           placeHolder: 'Issue title',
           validateInput: (value) => {
-            if (!value || !value.trim()) {
+            if (!value.trim()) {
               return 'Title is required';
             }
             return null;
@@ -191,7 +190,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Create the issue
         const client = new ForgejoClient(config.instanceUrl, config.token);
-        const issue = await client.createIssue(config.owner, config.repo, title.trim(), body?.trim() || undefined);
+        const issue = await client.createIssue(config.owner, config.repo, title.trim(), body.trim() || undefined);
 
         logInfo(`Issue #${issue.number} created: ${issue.title}`);
         const action = await vscode.window.showInformationMessage(
@@ -200,14 +199,14 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         if (action === 'Open in Browser') {
-          vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
+          void vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
         }
 
         // Refresh the issues tree to show the new issue
         issueTreeProvider.refresh();
       } catch (error) {
         logError('Error creating issue:', error);
-        vscode.window.showErrorMessage(
+        void vscode.window.showErrorMessage(
           `Failed to create issue: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
       }
@@ -220,18 +219,18 @@ export async function activate(context: vscode.ExtensionContext) {
       try {
         const config = await getForgejoConfig();
         if (!config) {
-          vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
+          void vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
           return;
         }
 
         if (!config.token) {
-          vscode.window.showErrorMessage('A Forgejo token is required to create pull requests. Please configure your token first.');
+          void vscode.window.showErrorMessage('A Forgejo token is required to create pull requests. Please configure your token first.');
           return;
         }
 
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         if (!workspaceRoot) {
-          vscode.window.showErrorMessage('No workspace folder open.');
+          void vscode.window.showErrorMessage('No workspace folder open.');
           return;
         }
 
@@ -243,7 +242,7 @@ export async function activate(context: vscode.ExtensionContext) {
             encoding: 'utf-8'
           }).trim();
         } catch {
-          vscode.window.showErrorMessage('Could not determine the current git branch.');
+          void vscode.window.showErrorMessage('Could not determine the current git branch.');
           return;
         }
 
@@ -272,7 +271,7 @@ export async function activate(context: vscode.ExtensionContext) {
           placeHolder: 'Pull request title',
           value: defaultTitle,
           validateInput: (value) => {
-            if (!value || !value.trim()) {
+            if (!value.trim()) {
               return 'Title is required';
             }
             return null;
@@ -312,7 +311,7 @@ export async function activate(context: vscode.ExtensionContext) {
           title.trim(),
           currentBranch,
           baseBranch.trim(),
-          body?.trim() || undefined
+          body.trim() || undefined
         );
 
         logInfo(`PR #${pr.number} created: ${pr.title}`);
@@ -322,14 +321,14 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         if (action === 'Open in Browser') {
-          vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
+          void vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
         }
 
         // Refresh the PR tree to show the new pull request
         prTreeProvider.refresh();
       } catch (error) {
         logError('Error creating pull request:', error);
-        vscode.window.showErrorMessage(
+        void vscode.window.showErrorMessage(
           `Failed to create pull request: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
       }
@@ -339,7 +338,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('forgejo.refreshActions', () => {
       actionsTreeProvider.refresh();
-      vscode.window.showInformationMessage('Actions refreshed');
+      void vscode.window.showInformationMessage('Actions refreshed');
     })
   );
 
@@ -364,7 +363,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
       if (url) {
         await setInstanceUrl(url);
-        vscode.window.showInformationMessage(`Forgejo instance URL set to: ${url}`);
+        void vscode.window.showInformationMessage(`Forgejo instance URL set to: ${url}`);
         // Refresh all views
         prTreeProvider.refresh();
         issueTreeProvider.refresh();
@@ -389,7 +388,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
       if (token) {
         await setAuthToken(token);
-        vscode.window.showInformationMessage('Forgejo authentication token saved');
+        void vscode.window.showInformationMessage('Forgejo authentication token saved');
         // Refresh all views
         prTreeProvider.refresh();
         issueTreeProvider.refresh();
@@ -402,10 +401,10 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('forgejo.selectRemote', async () => {
       try {
-        const remotes = await detectAllGitRemotes();
+        const remotes = detectAllGitRemotes();
 
         if (remotes.size === 0) {
-          vscode.window.showInformationMessage('No git remotes found in the current workspace.');
+          void vscode.window.showInformationMessage('No git remotes found in the current workspace.');
           return;
         }
 
@@ -429,7 +428,7 @@ export async function activate(context: vscode.ExtensionContext) {
         await config.update('preferredRemote', selected.remoteName, vscode.ConfigurationTarget.Workspace);
 
         logInfo(`Selected git remote: ${selected.remoteName}`);
-        vscode.window.showInformationMessage(`Forgejo remote set to: ${selected.label}`);
+        void vscode.window.showInformationMessage(`Forgejo remote set to: ${selected.label}`);
 
         // Refresh all tree providers
         prTreeProvider.refresh();
@@ -437,7 +436,7 @@ export async function activate(context: vscode.ExtensionContext) {
         actionsTreeProvider.refresh();
       } catch (error) {
         logError('Error selecting git remote:', error);
-        vscode.window.showErrorMessage(
+        void vscode.window.showErrorMessage(
           `Failed to select git remote: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
       }
@@ -448,7 +447,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('forgejo.openPrInBrowser', (url: string) => {
       if (url) {
-        vscode.env.openExternal(vscode.Uri.parse(url));
+        void vscode.env.openExternal(vscode.Uri.parse(url));
       }
     })
   );
@@ -456,7 +455,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('forgejo.openIssueInBrowser', (url: string) => {
       if (url) {
-        vscode.env.openExternal(vscode.Uri.parse(url));
+        void vscode.env.openExternal(vscode.Uri.parse(url));
       }
     })
   );
@@ -486,7 +485,7 @@ export async function activate(context: vscode.ExtensionContext) {
             await vscode.window.showTextDocument(doc, { preview: true });
             const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
             if (showNotifications) {
-              vscode.window.showInformationMessage(`File ${file.filename} was deleted in PR #${pr.number}`);
+              void vscode.window.showInformationMessage(`File ${file.filename} was deleted in PR #${pr.number}`);
             }
             return;
           }
@@ -501,13 +500,13 @@ export async function activate(context: vscode.ExtensionContext) {
             await vscode.window.showTextDocument(doc, { preview: true });
             const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
             if (showNotifications) {
-              vscode.window.showInformationMessage(`File ${file.filename} was added in PR #${pr.number}`);
+              void vscode.window.showInformationMessage(`File ${file.filename} was added in PR #${pr.number}`);
             }
             return;
           }
 
           // For modified/renamed files, show diff
-          const beforePath = file.previous_filename || file.filename;
+          const beforePath = file.previous_filename ?? file.filename;
           const afterPath = file.filename;
 
           const beforeUri = createPRFileUri(owner, repo, baseRef, beforePath);
@@ -535,7 +534,7 @@ export async function activate(context: vscode.ExtensionContext) {
           console.log('[Forgejo] Diff opened successfully');
         } catch (error) {
           console.error('[Forgejo] Error opening diff:', error);
-          vscode.window.showErrorMessage(
+          void vscode.window.showErrorMessage(
             `Failed to open diff: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
@@ -549,7 +548,7 @@ export async function activate(context: vscode.ExtensionContext) {
       'forgejo.openPrInBrowserFromContext',
       (prItem: unknown) => {
         if (prItem && typeof prItem === 'object' && 'htmlUrl' in prItem && typeof prItem.htmlUrl === 'string') {
-          vscode.env.openExternal(vscode.Uri.parse(prItem.htmlUrl));
+          void vscode.env.openExternal(vscode.Uri.parse(prItem.htmlUrl));
         }
       }
     )
@@ -561,7 +560,7 @@ export async function activate(context: vscode.ExtensionContext) {
       'forgejo.openPrFileInBrowser',
       (fileItem: unknown) => {
         if (fileItem && typeof fileItem === 'object' && 'file' in fileItem && fileItem.file && typeof fileItem.file === 'object' && 'blob_url' in fileItem.file && typeof fileItem.file.blob_url === 'string') {
-          vscode.env.openExternal(vscode.Uri.parse(fileItem.file.blob_url));
+          void vscode.env.openExternal(vscode.Uri.parse(fileItem.file.blob_url));
         }
       }
     )
@@ -577,7 +576,7 @@ export async function activate(context: vscode.ExtensionContext) {
           await prDetailWebviewProvider.showPRDetails(owner, repo, pr.number);
         } catch (error) {
           console.error('[Forgejo] Error opening PR details:', error);
-          vscode.window.showErrorMessage(
+          void vscode.window.showErrorMessage(
             `Failed to open PR details: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
@@ -593,11 +592,11 @@ export async function activate(context: vscode.ExtensionContext) {
         try {
           // Show merge method picker
           const mergeOptions = [
-            { label: 'Create merge commit', value: 'merge' },
-            { label: 'Squash and merge', value: 'squash' },
-            { label: 'Rebase and merge', value: 'rebase' },
-            { label: 'Rebase then merge', value: 'rebase-merge' },
-            { label: 'Fast-forward only', value: 'fast-forward-only' }
+            { label: 'Create merge commit', value: 'merge' as const },
+            { label: 'Squash and merge', value: 'squash' as const },
+            { label: 'Rebase and merge', value: 'rebase' as const },
+            { label: 'Rebase then merge', value: 'rebase-merge' as const },
+            { label: 'Fast-forward only', value: 'fast-forward-only' as const }
           ];
 
           const selected = await vscode.window.showQuickPick(mergeOptions, {
@@ -622,18 +621,18 @@ export async function activate(context: vscode.ExtensionContext) {
           // Execute merge
           const config = await getForgejoConfig();
           if (!config) {
-            vscode.window.showErrorMessage('Forgejo configuration not found');
+            void vscode.window.showErrorMessage('Forgejo configuration not found');
             return;
           }
 
           const client = new ForgejoClient(config.instanceUrl, config.token);
-          await client.mergePullRequest(owner, repo, pr.number, selected.value as any);
+          await client.mergePullRequest(owner, repo, pr.number, selected.value);
 
-          vscode.window.showInformationMessage(`PR #${pr.number} merged successfully!`);
+          void vscode.window.showInformationMessage(`PR #${pr.number} merged successfully!`);
           prTreeProvider.refresh();
         } catch (error) {
           console.error('[Forgejo] Error merging PR:', error);
-          vscode.window.showErrorMessage(
+          void vscode.window.showErrorMessage(
             `Failed to merge PR: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
@@ -661,18 +660,18 @@ export async function activate(context: vscode.ExtensionContext) {
           // Execute close
           const config = await getForgejoConfig();
           if (!config) {
-            vscode.window.showErrorMessage('Forgejo configuration not found');
+            void vscode.window.showErrorMessage('Forgejo configuration not found');
             return;
           }
 
           const client = new ForgejoClient(config.instanceUrl, config.token);
           await client.closePullRequest(owner, repo, pr.number);
 
-          vscode.window.showInformationMessage(`PR #${pr.number} closed successfully!`);
+          void vscode.window.showInformationMessage(`PR #${pr.number} closed successfully!`);
           prTreeProvider.refresh();
         } catch (error) {
           console.error('[Forgejo] Error closing PR:', error);
-          vscode.window.showErrorMessage(
+          void vscode.window.showErrorMessage(
             `Failed to close PR: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
@@ -687,19 +686,19 @@ export async function activate(context: vscode.ExtensionContext) {
       (item: WorkflowRunTreeItem | JobTreeItem | StepTreeItem) => {
         if (item instanceof WorkflowRunTreeItem) {
           const run = item.jobs[0];
-          if (run?.url) {
-            vscode.env.openExternal(vscode.Uri.parse(run.url));
+          if (run.url) {
+            void vscode.env.openExternal(vscode.Uri.parse(run.url));
           }
         } else if (item instanceof JobTreeItem) {
           if (item.job.url) {
-            vscode.env.openExternal(vscode.Uri.parse(item.job.url));
+            void vscode.env.openExternal(vscode.Uri.parse(item.job.url));
           }
         } else if (item instanceof StepTreeItem) {
           // Steps don't have their own URL; open the parent job page
-          getForgejoConfig().then(config => {
+          void getForgejoConfig().then(config => {
             if (config) {
               const url = `${config.instanceUrl}/${item.owner}/${item.repo}/actions/runs/${item.runNumber}/jobs/${item.jobIndex}`;
-              vscode.env.openExternal(vscode.Uri.parse(url));
+              void vscode.env.openExternal(vscode.Uri.parse(url));
             }
           });
         }
@@ -712,7 +711,7 @@ export async function activate(context: vscode.ExtensionContext) {
       'forgejo.openActionInBrowserDirect',
       (url: string) => {
         if (url) {
-          vscode.env.openExternal(vscode.Uri.parse(url));
+          void vscode.env.openExternal(vscode.Uri.parse(url));
         }
       }
     )
@@ -724,9 +723,6 @@ export async function activate(context: vscode.ExtensionContext) {
       async (item: WorkflowRunTreeItem | JobTreeItem) => {
         // Get the run data from either a run item or a job item
         const run = item instanceof WorkflowRunTreeItem ? item.jobs[0] : item.job;
-        if (!run) {
-          return;
-        }
 
         try {
           const confirm = await vscode.window.showWarningMessage(
@@ -741,18 +737,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
           const config = await getForgejoConfig();
           if (!config) {
-            vscode.window.showErrorMessage('Forgejo configuration not found');
+            void vscode.window.showErrorMessage('Forgejo configuration not found');
             return;
           }
 
           const client = new ForgejoClient(config.instanceUrl, config.token);
           await client.rerunWorkflow(item.owner, item.repo, run.id);
 
-          vscode.window.showInformationMessage('Workflow re-run triggered!');
+          void vscode.window.showInformationMessage('Workflow re-run triggered!');
           actionsTreeProvider.refresh();
         } catch (error) {
           console.error('[Forgejo] Error re-running workflow:', error);
-          vscode.window.showErrorMessage(
+          void vscode.window.showErrorMessage(
             `Failed to re-run workflow: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
@@ -770,7 +766,7 @@ export async function activate(context: vscode.ExtensionContext) {
           await actionDetailWebviewProvider.showActionDetails(owner, repo, run);
         } catch (error) {
           console.error('[Forgejo] Error opening Action details:', error);
-          vscode.window.showErrorMessage(
+          void vscode.window.showErrorMessage(
             `Failed to open Action details: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
@@ -785,11 +781,11 @@ export async function activate(context: vscode.ExtensionContext) {
         try {
           const config = await getForgejoConfig();
           if (!config) {
-            vscode.window.showErrorMessage('Forgejo configuration not found');
+            void vscode.window.showErrorMessage('Forgejo configuration not found');
             return;
           }
 
-          vscode.window.withProgress(
+          void vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
               title: `Fetching logs for ${job.name}...`,
@@ -798,8 +794,8 @@ export async function activate(context: vscode.ExtensionContext) {
             async () => {
               const client = new ForgejoClient(config.instanceUrl, config.token);
               // Extract job index from html_url (e.g., .../jobs/0)
-              const urlParts = job.html_url?.split('/') || [];
-              const jobIndex = parseInt(urlParts[urlParts.length - 1] || '0', 10) || 0;
+              const urlParts = job.html_url?.split('/') ?? [];
+              const jobIndex = parseInt(urlParts[urlParts.length - 1] ?? '0', 10) || 0;
 
               const logs = await client.getWorkflowLogs(owner, repo, run.run_number, jobIndex);
 
@@ -813,7 +809,7 @@ export async function activate(context: vscode.ExtensionContext) {
           );
         } catch (error) {
           console.error('[Forgejo] Error fetching logs:', error);
-          vscode.window.showErrorMessage(
+          void vscode.window.showErrorMessage(
             `Failed to fetch logs: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
@@ -829,7 +825,7 @@ export async function activate(context: vscode.ExtensionContext) {
         try {
           const config = await getForgejoConfig();
           if (!config) {
-            vscode.window.showErrorMessage('Forgejo configuration not found');
+            void vscode.window.showErrorMessage('Forgejo configuration not found');
             return;
           }
 
@@ -854,7 +850,7 @@ export async function activate(context: vscode.ExtensionContext) {
           );
         } catch (error) {
           console.error('[Forgejo] Error fetching step logs:', error);
-          vscode.window.showErrorMessage(
+          void vscode.window.showErrorMessage(
             `Failed to fetch logs: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
@@ -886,7 +882,7 @@ export async function activate(context: vscode.ExtensionContext) {
           await issueDetailWebviewProvider.showIssueDetails(owner, repo, issue.number);
         } catch (error) {
           console.error('[Forgejo] Error opening Issue details:', error);
-          vscode.window.showErrorMessage(
+          void vscode.window.showErrorMessage(
             `Failed to open Issue details: ${error instanceof Error ? error.message : 'Unknown error'}`
           );
         }
@@ -900,7 +896,7 @@ export async function activate(context: vscode.ExtensionContext) {
       'forgejo.openIssueInBrowserFromContext',
       (issueItem: unknown) => {
         if (issueItem && typeof issueItem === 'object' && 'htmlUrl' in issueItem && typeof issueItem.htmlUrl === 'string') {
-          vscode.env.openExternal(vscode.Uri.parse(issueItem.htmlUrl));
+          void vscode.env.openExternal(vscode.Uri.parse(issueItem.htmlUrl));
         }
       }
     )

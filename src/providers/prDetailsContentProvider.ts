@@ -13,7 +13,7 @@ export const PR_DETAILS_SCHEME = 'forgejo-pr-details';
  * Provides virtual document content for PR details overview
  */
 export class PRDetailsContentProvider implements vscode.TextDocumentContentProvider {
-  private cache: Map<string, { content: string; timestamp: number }> = new Map();
+  private cache = new Map<string, { content: string; timestamp: number }>();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
@@ -25,7 +25,7 @@ export class PRDetailsContentProvider implements vscode.TextDocumentContentProvi
   }
 
   dispose(): void {
-    this.disposables.forEach(d => d.dispose());
+    for (const d of this.disposables) { d.dispose(); }
     this.disposables = [];
     this.cache.clear();
   }
@@ -68,7 +68,7 @@ export class PRDetailsContentProvider implements vscode.TextDocumentContentProvi
       const prDetails = await client.getPullRequestDetails(owner, repo, pullNumber);
 
       // Fetch CI status using the PR's head SHA
-      const commitStatuses = await this.fetchCommitStatuses(client, owner, repo, prDetails.head?.sha);
+      const commitStatuses = await this.fetchCommitStatuses(client, owner, repo, prDetails.head.sha);
 
       const content = this.formatPRDetails(prDetails, commitStatuses);
 
@@ -125,7 +125,7 @@ export class PRDetailsContentProvider implements vscode.TextDocumentContentProvi
 
     // Description section
     markdown += '## Description\n\n';
-    if (pr.body && pr.body.trim()) {
+    if (pr.body.trim()) {
       markdown += pr.body;
     } else {
       markdown += '*No description provided*';
@@ -147,7 +147,7 @@ export class PRDetailsContentProvider implements vscode.TextDocumentContentProvi
     }
 
     // Labels section
-    if (pr.labels && pr.labels.length > 0) {
+    if (pr.labels.length > 0) {
       markdown += '## Labels\n\n';
       for (const label of pr.labels) {
         markdown += `• **${label.name}**\n`;

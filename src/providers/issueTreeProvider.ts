@@ -49,7 +49,7 @@ class IssueGroupItem extends vscode.TreeItem {
 class IssueMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
-    public readonly isError: boolean = false
+    public readonly isError = false
   ) {
     super(message, vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(isError ? 'error' : 'info');
@@ -65,8 +65,8 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
 
   private issues: IssueListItem[] = [];
   private error: string | null = null;
-  private owner: string = '';
-  private repo: string = '';
+  private owner = '';
+  private repo = '';
 
   constructor() {
     this.refresh();

@@ -26,7 +26,7 @@ export async function manageInstances(): Promise<void> {
 
 		// Filter out invalid instances (defensive programming)
 		const validInstances = instances.filter(i => {
-			if (!i || !i.id || !i.name || !i.instanceUrl) {
+			if (!i.id || !i.name || !i.instanceUrl) {
 				console.warn('[Forgejo] Found invalid instance, skipping:', i);
 				return false;
 			}
@@ -84,7 +84,7 @@ export async function manageInstances(): Promise<void> {
 		}
 	} catch (error) {
 		console.error('[Forgejo] Error in instance manager:', error);
-		vscode.window.showErrorMessage(
+		void vscode.window.showErrorMessage(
 			`Failed to manage instances: ${error instanceof Error ? error.message : 'Unknown error'}`
 		);
 	}
@@ -100,12 +100,12 @@ async function showInstanceActions(instanceId: string): Promise<void> {
 		const allInstances = await getAllInstances();
 		console.error('[Forgejo] Available instances:', allInstances.map(i => ({ id: i.id, name: i.name })));
 
-		vscode.window.showErrorMessage(
+		void vscode.window.showErrorMessage(
 			`Instance ${instanceId} not found. Your settings may be corrupted. Try removing and re-adding the instance.`,
 			'Open Settings'
 		).then(action => {
 			if (action === 'Open Settings') {
-				vscode.commands.executeCommand('workbench.action.openSettings', 'forgejo.instances');
+				void vscode.commands.executeCommand('workbench.action.openSettings', 'forgejo.instances');
 			}
 		});
 		return;
@@ -204,11 +204,11 @@ async function handleTestConnection(instanceId: string): Promise<void> {
 	);
 
 	if (success) {
-		vscode.window.showInformationMessage(
+		void vscode.window.showInformationMessage(
 			`✓ Successfully connected to ${instance.name}`
 		);
 	} else {
-		vscode.window.showErrorMessage(
+		void vscode.window.showErrorMessage(
 			`✗ Failed to connect to ${instance.name}. Check your token and instance URL.`
 		);
 	}
@@ -224,7 +224,7 @@ async function handleSetDefault(instanceId: string): Promise<void> {
 	}
 
 	await setDefaultInstance(instanceId);
-	vscode.window.showInformationMessage(
+	void vscode.window.showInformationMessage(
 		`$(star) ${instance.name} is now the default instance`
 	);
 	console.log(`[Forgejo] Set default instance: ${instance.name}`);
@@ -286,7 +286,7 @@ async function handleEditToken(instanceId: string): Promise<void> {
 	instance.lastConnectionTest = tempInstance.lastConnectionTest;
 	await updateInstance(instance);
 
-	vscode.window.showInformationMessage(
+	void vscode.window.showInformationMessage(
 		`✓ Token updated for ${instance.name}`
 	);
 	console.log(`[Forgejo] Updated token for: ${instance.name}`);
@@ -313,7 +313,7 @@ async function handleRemoveInstance(instanceId: string): Promise<void> {
 	}
 
 	await removeInstance(instanceId);
-	vscode.window.showInformationMessage(
+	void vscode.window.showInformationMessage(
 		`$(trash) Removed instance: ${instance.name}`
 	);
 	console.log(`[Forgejo] Removed instance: ${instance.name}`);

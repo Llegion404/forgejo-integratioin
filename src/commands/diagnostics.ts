@@ -28,9 +28,9 @@ export async function showDiagnostics(): Promise<void> {
 		'',
 		'## Raw Settings:',
 		`- forgejo.instances: ${JSON.stringify(instances, null, 2)}`,
-		`- forgejo.instanceUrl: ${legacyUrl || '(not set)'}`,
+		`- forgejo.instanceUrl: ${legacyUrl ?? '(not set)'}`,
 		`- forgejo.token: ${legacyToken ? '***' : '(not set)'}`,
-		`- forgejo.autoDetectFromRemote: ${autoDetect}`,
+		`- forgejo.autoDetectFromRemote: ${String(autoDetect)}`,
 		'',
 		'## Validated Instances:',
 		`- Count: ${validInstances.length}`,
@@ -41,7 +41,7 @@ export async function showDiagnostics(): Promise<void> {
 			`  - Name: ${inst.name}`,
 			`  - URL: ${inst.instanceUrl}`,
 			`  - Token: ${inst.token ? '(set)' : '(empty)'}`,
-			`  - Default: ${inst.isDefault || false}`,
+			`  - Default: ${String(inst.isDefault ?? false)}`,
 			`  - Last Test: ${inst.lastConnectionTest ?
 				`${inst.lastConnectionTest.success ? '✓' : '✗'} (${new Date(inst.lastConnectionTest.timestamp).toLocaleString()})` :
 				'Never'}`
@@ -52,14 +52,14 @@ export async function showDiagnostics(): Promise<void> {
 			`- Instance URL: ${activeConfig.instanceUrl}`,
 			`- Owner: ${activeConfig.owner}`,
 			`- Repo: ${activeConfig.repo}`,
-			`- Instance ID: ${activeConfig.instanceId || '(not set)'}`,
-			`- Match Confidence: ${activeConfig.matchConfidence || '(not set)'}`,
+			`- Instance ID: ${activeConfig.instanceId ?? '(not set)'}`,
+			`- Match Confidence: ${activeConfig.matchConfidence ?? '(not set)'}`,
 			`- Has Token: ${activeConfig.token ? 'Yes' : 'No'}`
 		].join('\n') : '  (No active configuration - no git remote found)',
 		'',
 		'## Workspace:',
-		`- Folders: ${vscode.workspace.workspaceFolders?.length || 0}`,
-		...vscode.workspace.workspaceFolders?.map(f => `  - ${f.uri.fsPath}`) || [],
+		`- Folders: ${vscode.workspace.workspaceFolders?.length ?? 0}`,
+		...(vscode.workspace.workspaceFolders?.map(f => `  - ${f.uri.fsPath}`) ?? []),
 		'',
 		'=== End Diagnostics ===',
 	].join('\n');
@@ -74,7 +74,7 @@ export async function showDiagnostics(): Promise<void> {
 	outputChannel.show();
 
 	// Also show notification
-	vscode.window.showInformationMessage(
+	void vscode.window.showInformationMessage(
 		`Diagnostics logged. Found ${validInstances.length} instance(s).`,
 		'View Output',
 		'Copy to Clipboard'
@@ -82,8 +82,8 @@ export async function showDiagnostics(): Promise<void> {
 		if (action === 'View Output') {
 			outputChannel.show();
 		} else if (action === 'Copy to Clipboard') {
-			vscode.env.clipboard.writeText(report);
-			vscode.window.showInformationMessage('Diagnostics copied to clipboard');
+			void vscode.env.clipboard.writeText(report);
+			void vscode.window.showInformationMessage('Diagnostics copied to clipboard');
 		}
 	});
 }

@@ -45,18 +45,20 @@ export class ActionDetailWebviewProvider {
     const runId = run.id;
     logInfo('Showing action details in webview:', { owner, repo, runId });
 
-    const panelKey = `${owner}/${repo}/${runId}`;
+    const panelKey = `${owner}/${repo}/${String(runId)}`;
 
     if (this._panels.has(panelKey)) {
-      const state = this._panels.get(panelKey)!;
-      state.panel.reveal(vscode.ViewColumn.One);
-      await this._loadActionData(panelKey);
+      const state = this._panels.get(panelKey);
+      if (state) {
+        state.panel.reveal(vscode.ViewColumn.One);
+        await this._loadActionData(panelKey);
+      }
       return;
     }
 
     const panel = vscode.window.createWebviewPanel(
       ActionDetailWebviewProvider.viewType,
-      `Action #${runId}: ${owner}/${repo}`,
+      `Action #${String(runId)}: ${owner}/${repo}`,
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -80,8 +82,8 @@ export class ActionDetailWebviewProvider {
     panel.webview.html = this._getHtmlForWebview(panel.webview);
 
     panel.webview.onDidReceiveMessage(
-      async (message: WebviewMessage) => {
-        await this._handleMessage(message, panelKey);
+      (message: unknown) => {
+        void this._handleMessage(message as WebviewMessage, panelKey);
       },
       undefined,
       []
@@ -92,7 +94,7 @@ export class ActionDetailWebviewProvider {
       this._panels.delete(panelKey);
     }, undefined, []);
 
-    this._fetchActionData(panelKey);
+    void this._fetchActionData(panelKey);
   }
 
   private async _fetchActionData(panelKey: string): Promise<void> {
@@ -135,7 +137,7 @@ export class ActionDetailWebviewProvider {
 
       if (state.isReady) {
         logInfo('Webview is ready, sending data...');
-        await this._sendDataToPanel(panelKey);
+        this._sendDataToPanel(panelKey);
       } else {
         logInfo('Webview not ready yet, data will be sent when ready');
       }
@@ -143,7 +145,7 @@ export class ActionDetailWebviewProvider {
       logError('Failed to fetch action data:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to load action details';
       if (state.isReady) {
-        panel.webview.postMessage({
+        void panel.webview.postMessage({
           type: 'error',
           message: errorMessage
         });
@@ -154,19 +156,19 @@ export class ActionDetailWebviewProvider {
     }
   }
 
-  private async _sendDataToPanel(panelKey: string): Promise<void> {
+  private _sendDataToPanel(panelKey: string): void {
     const state = this._panels.get(panelKey);
-    if (!state || !state.pendingData) {
+    if (!state?.pendingData) {
       logInfo('_sendDataToPanel: no state or pendingData');
       return;
     }
 
     const { panel } = state;
     logInfo('Posting messages to webview:', { runName: state.pendingData.run.name });
-    panel.webview.postMessage({ type: 'theme', theme: this._getThemeName(vscode.window.activeColorTheme.kind) });
-    panel.webview.postMessage({ type: 'loading', show: true });
-    panel.webview.postMessage({ type: 'update', data: state.pendingData });
-    panel.webview.postMessage({ type: 'loading', show: false });
+    void panel.webview.postMessage({ type: 'theme', theme: this._getThemeName(vscode.window.activeColorTheme.kind) });
+    void panel.webview.postMessage({ type: 'loading', show: true });
+    void panel.webview.postMessage({ type: 'update', data: state.pendingData });
+    void panel.webview.postMessage({ type: 'loading', show: false });
     logInfo('All messages posted to webview');
   }
 
@@ -187,14 +189,14 @@ export class ActionDetailWebviewProvider {
         state.isReady = true;
         if (state.pendingError) {
           logInfo('Showing pending error to webview...');
-          panel.webview.postMessage({ type: 'error', message: state.pendingError });
+          void panel.webview.postMessage({ type: 'error', message: state.pendingError });
           state.pendingError = null;
         } else if (state.pendingData) {
           logInfo('Sending pending data to webview...');
-          await this._sendDataToPanel(panelKey);
+          this._sendDataToPanel(panelKey);
         } else {
           logInfo('No pending data yet, showing loading state');
-          panel.webview.postMessage({ type: 'loading', show: true });
+          void panel.webview.postMessage({ type: 'loading', show: true });
         }
         break;
       case 'refresh':
@@ -218,10 +220,10 @@ export class ActionDetailWebviewProvider {
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.rerunWorkflow(owner, repo, runId);
-      vscode.window.showInformationMessage('Workflow re-run triggered successfully');
+      void vscode.window.showInformationMessage('Workflow re-run triggered successfully');
       await this._fetchActionData(panelKey);
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to re-run workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to re-run workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -231,25 +233,25 @@ export class ActionDetailWebviewProvider {
       if (!config) throw new Error('No config');
 
       // Get run_number from stored run data (web UI uses run_number, not internal id)
-      const panelKey = `${owner}/${repo}/${runId}`;
+      const panelKey = `${owner}/${repo}/${String(runId)}`;
       const state = this._panels.get(panelKey);
-      const runNumber = state?.run?.run_number ?? runId;
+      const runNumber = state?.run.run_number ?? runId;
 
-      const url = `${config.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}`;
-      vscode.env.openExternal(vscode.Uri.parse(url));
+      const url = `${config.instanceUrl}/${owner}/${repo}/actions/runs/${String(runNumber)}`;
+      void vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to open: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to open: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   private async _viewLogs(owner: string, repo: string, runId: number, jobIndex: number): Promise<void> {
     // Get the run data to access run_number (sequential index, not internal id)
-    const panelKey = `${owner}/${repo}/${runId}`;
+    const panelKey = `${owner}/${repo}/${String(runId)}`;
     const state = this._panels.get(panelKey);
     const run = state?.pendingData?.run;
 
     if (!run) {
-      vscode.window.showErrorMessage('Run data not available');
+      void vscode.window.showErrorMessage('Run data not available');
       return;
     }
 
@@ -273,7 +275,7 @@ export class ActionDetailWebviewProvider {
         await vscode.window.showTextDocument(doc, { preview: true });
       });
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to view logs: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to view logs: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -299,7 +301,7 @@ export class ActionDetailWebviewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https:;">
   <title>Action Details</title>
-  <link rel="stylesheet" href="${styleUri}">
+  <link rel="stylesheet" href="${styleUri.toString()}">
 </head>
 <body>
   <div id="loading" class="loading">
@@ -366,7 +368,7 @@ export class ActionDetailWebviewProvider {
     </section>
   </div>
 
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
   }
