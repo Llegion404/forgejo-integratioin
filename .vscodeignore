@@ -57,6 +57,7 @@ node_modules/**
 # AI/Agent files
 .beads/**
 .claude/**
+.worktree/**
 .worktrees/**
 research/**
 __mocks__/**

@@ -52,7 +52,7 @@ export interface PullRequestListItem {
  */
 export interface PullRequestFile {
   filename: string;
-  status: 'added' | 'modified' | 'removed' | 'renamed';
+  status: 'added' | 'modified' | 'changed' | 'removed' | 'renamed';
   additions: number;
   deletions: number;
   changes: number;
