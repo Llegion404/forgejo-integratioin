@@ -197,6 +197,30 @@ npm run test:unit     # Unit tests only (fast)
 npm run lint          # Check code style
 ```
 
+## Changelog
+
+### v0.3.0
+
+#### Features
+- **Inline PR commenting** via Comment Controller API (#58)
+- **Clickable CI statuses** — open target URL from PR detail view (#54)
+- **3-level Actions tree view** — Run → Job → Step hierarchy (#52)
+
+#### Fixes
+- Show descriptive event text in issue detail timeline (#56)
+- Show correct icons for files with `changed` status (#60)
+- Deduplicate CI statuses by context in PR detail view (#53)
+- Show commit title instead of "Run #N" in Actions tree
+
+#### Chores
+- Upgrade ESLint to strict-type-checked + stylistic rules (#59)
+- Extract `requestWithBody` helper and add proper return types (#57)
+- Add `.worktree/` to `.vscodeignore`
+
+### v0.2.0
+
+- Initial release with PR and Issue browsing, file diffs, multi-instance support, and auto-detection from git remotes.
+
 ## Acknowledgments
 
 - [Forgejo](https://forgejo.org) - The self-hosted Git service this extension supports
