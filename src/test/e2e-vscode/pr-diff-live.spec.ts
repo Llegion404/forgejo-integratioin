@@ -54,44 +54,64 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
   test('should open a real PR file diff and display content', async ({ harness, evaluateInVSCode }) => {
     // Use the Forgejo API to find a merged PR with files
     const prInfo = await evaluateInVSCode(async (_vscode, args: { url: string; token: string }) => {
-      // Fetch a recent PR that has files from the test instance
-      const resp = await fetch(`${args.url}/api/v1/repos/testuser/test-repo/pulls?state=all&limit=5`, {
-        headers: { 'Authorization': `token ${args.token}` },
-      });
-      const prs = await resp.json() as Array<{
-        number: number; title: string; state: string; merged: boolean;
-        head: { ref: string }; base: { ref: string };
-      }>;
+      try {
+        // Fetch a recent PR that has files from the test instance
+        const resp = await fetch(`${args.url}/api/v1/repos/testuser/test-repo/pulls?state=all&limit=5`, {
+          headers: { 'Authorization': `token ${args.token}` },
+        });
 
-      // Pick any PR (test repo should have at least one)
-      const pr = prs[0];
-      if (!pr) { return null; }
+        if (!resp.ok) {
+          console.log('PR list fetch failed:', resp.status, await resp.text());
+          return null;
+        }
 
-      // Fetch the PR's files
-      const filesResp = await fetch(
-        `${args.url}/api/v1/repos/testuser/test-repo/pulls/${pr.number}/files`,
-        { headers: { 'Authorization': `token ${args.token}` } }
-      );
-      const files = await filesResp.json() as Array<{
-        filename: string; status: string; additions: number; deletions: number; changes: number;
-      }>;
+        const prs = await resp.json();
+        if (!Array.isArray(prs)) {
+          console.log('PR response is not an array:', typeof prs, prs);
+          return null;
+        }
 
-      // Pick a file (test repo should have files)
-      const targetFile = files[0];
+        // Pick any PR (test repo should have at least one)
+        const pr = prs[0];
+        if (!pr) { return null; }
 
-      return {
-        number: pr.number,
-        title: pr.title,
-        headRef: pr.head.ref,
-        baseRef: pr.base.ref,
-        file: targetFile ? {
-          filename: targetFile.filename,
-          status: targetFile.status,
-          additions: targetFile.additions,
-          deletions: targetFile.deletions,
-          changes: targetFile.changes,
-        } : null,
-      };
+        // Fetch the PR's files
+        const filesResp = await fetch(
+          `${args.url}/api/v1/repos/testuser/test-repo/pulls/${pr.number}/files`,
+          { headers: { 'Authorization': `token ${args.token}` } }
+        );
+
+        if (!filesResp.ok) {
+          console.log('PR files fetch failed:', filesResp.status, await filesResp.text());
+          return null;
+        }
+
+        const files = await filesResp.json();
+        if (!Array.isArray(files)) {
+          console.log('Files response is not an array:', typeof files, files);
+          return null;
+        }
+
+        // Pick a file (test repo should have files)
+        const targetFile = files[0];
+
+        return {
+          number: pr.number,
+          title: pr.title,
+          headRef: pr.head.ref,
+          baseRef: pr.base.ref,
+          file: targetFile ? {
+            filename: targetFile.filename,
+            status: targetFile.status,
+            additions: targetFile.additions,
+            deletions: targetFile.deletions,
+            changes: targetFile.changes,
+          } : null,
+        };
+      } catch (e: any) {
+        console.log('Error fetching PR info:', e.message);
+        return null;
+      }
     }, { url: FORGEJO_URL, token: FORGEJO_TOKEN });
 
     console.log('PR info:', JSON.stringify(prInfo, null, 2));
@@ -205,28 +225,49 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
   test('PR diff tab has base64url-encoded ref in URI path', async ({ harness, evaluateInVSCode }) => {
     // Fetch a PR to get its refs
     const prInfo = await evaluateInVSCode(async (_vscode, args: { url: string; token: string }) => {
-      const resp = await fetch(`${args.url}/api/v1/repos/testuser/test-repo/pulls?state=all&limit=1`, {
-        headers: { 'Authorization': `token ${args.token}` },
-      });
-      const prs = await resp.json() as Array<{
-        number: number; title: string;
-        head: { ref: string }; base: { ref: string };
-      }>;
-      if (!prs.length) { return null; }
+      try {
+        const resp = await fetch(`${args.url}/api/v1/repos/testuser/test-repo/pulls?state=all&limit=1`, {
+          headers: { 'Authorization': `token ${args.token}` },
+        });
 
-      const filesResp = await fetch(
-        `${args.url}/api/v1/repos/testuser/test-repo/pulls/${prs[0].number}/files?limit=1`,
-        { headers: { 'Authorization': `token ${args.token}` } }
-      );
-      const files = await filesResp.json() as Array<{ filename: string; status: string }>;
+        if (!resp.ok) {
+          console.log('PR list fetch failed:', resp.status, await resp.text());
+          return null;
+        }
 
-      return {
-        number: prs[0].number,
-        title: prs[0].title,
-        headRef: prs[0].head.ref,
-        baseRef: prs[0].base.ref,
-        file: files[0],
-      };
+        const prs = await resp.json();
+        if (!Array.isArray(prs) || !prs.length) {
+          console.log('PR response is not an array or empty:', typeof prs, prs);
+          return null;
+        }
+
+        const filesResp = await fetch(
+          `${args.url}/api/v1/repos/testuser/test-repo/pulls/${prs[0].number}/files?limit=1`,
+          { headers: { 'Authorization': `token ${args.token}` } }
+        );
+
+        if (!filesResp.ok) {
+          console.log('Files fetch failed:', filesResp.status, await filesResp.text());
+          return null;
+        }
+
+        const files = await filesResp.json();
+        if (!Array.isArray(files)) {
+          console.log('Files response is not an array:', typeof files, files);
+          return null;
+        }
+
+        return {
+          number: prs[0].number,
+          title: prs[0].title,
+          headRef: prs[0].head.ref,
+          baseRef: prs[0].base.ref,
+          file: files[0],
+        };
+      } catch (e: any) {
+        console.log('Error fetching PR info:', e.message);
+        return null;
+      }
     }, { url: FORGEJO_URL, token: FORGEJO_TOKEN });
 
     expect(prInfo).not.toBeNull();
