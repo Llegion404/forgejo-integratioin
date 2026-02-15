@@ -53,7 +53,8 @@ export class ForgejoClient {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
-        headers: typeof response.headers.entries === 'function'
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        headers: response.headers && typeof response.headers.entries === 'function'
           ? Object.fromEntries(response.headers.entries())
           : 'not available'
       });
@@ -148,7 +149,9 @@ export class ForgejoClient {
         throw httpError;
       }
       // Some endpoints return no content (e.g. 204)
-      const contentType = response.headers.get('content-type') ?? '';
+      const contentType = typeof response.headers.get === 'function'
+        ? response.headers.get('content-type') ?? ''
+        : '';
       if (response.status === 204 || !contentType) {
         try {
           return await response.json() as T;
@@ -160,7 +163,7 @@ export class ForgejoClient {
     } catch (error) {
       const httpError = error as Error & {status?: number};
       if (httpError.status) throw error; // Re-throw HTTP errors with status
-      const message = httpError instanceof Error ? httpError.message : '';
+      const message = error instanceof Error ? error.message : String(error);
       logError(`Network error on ${method} ${url}: ${message}`);
       throw new Error(`Network error: Cannot reach ${url}. ${message}`);
     }
