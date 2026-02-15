@@ -1,42 +1,48 @@
 import { test, expect } from './fixtures/vscode-harness';
-import path from 'path';
 
 /**
  * Live Playwright tests for PR diff viewing.
  *
- * Uses the current repo's Forgejo remote (git.araj.me/maxking/forgejo-vscode)
+ * Uses a local test Forgejo instance (testuser/test-repo)
  * to test that PR diffs actually render file content and that URIs survive
  * tab serialization (base64url-encoded ref, no query params).
  *
- * Requires:
- *   FORGEJO_TEST_TOKEN env var — API token for the Forgejo instance
- *
- * The extension auto-detects the instance URL, owner, and repo from the
- * git remote, so no FORGEJO_TEST_URL or FORGEJO_LIVE_WORKSPACE is needed.
+ * Requires these env vars (set by CI or manually):
+ *   FORGEJO_TEST_URL       - Base URL of the Forgejo instance (e.g. http://forgejo:3000)
+ *   FORGEJO_TEST_TOKEN     - API token for the test user
+ *   FORGEJO_LIVE_WORKSPACE - Path to a git repo whose origin points at the test instance
  */
 
+const FORGEJO_URL = process.env.FORGEJO_TEST_URL || '';
 const FORGEJO_TOKEN = process.env.FORGEJO_TEST_TOKEN || '';
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+const WORKSPACE = process.env.FORGEJO_LIVE_WORKSPACE || '';
 
-const shouldRun = !!FORGEJO_TOKEN;
+const shouldRun = !!(WORKSPACE && FORGEJO_URL && FORGEJO_TOKEN);
 
 test.describe('PR Diff Viewer - Live Forgejo', () => {
-  test.skip(!shouldRun, 'Requires FORGEJO_TEST_TOKEN');
+  test.skip(!shouldRun, 'Requires FORGEJO_LIVE_WORKSPACE, FORGEJO_TEST_URL, FORGEJO_TEST_TOKEN');
 
-  // Use the project root so the extension auto-detects the git remote
-  test.use({ baseDir: PROJECT_ROOT });
+  // Use the pre-created test workspace
+  test.use({ baseDir: WORKSPACE || '/tmp' });
 
   test.setTimeout(60_000);
 
   test.beforeEach(async ({ harness, evaluateInVSCode }) => {
     await harness.waitForExtensionActivation();
 
-    // Configure token for the auto-detected instance
+    // Configure the local test Forgejo instance
+    const url = FORGEJO_URL;
     const token = FORGEJO_TOKEN;
-    await evaluateInVSCode(async (vscode, args: { token: string }) => {
+    await evaluateInVSCode(async (vscode, args: { url: string; token: string }) => {
       const config = vscode.workspace.getConfiguration('forgejo');
-      await config.update('token', args.token, vscode.ConfigurationTarget.Global);
-    }, { token });
+      await config.update('instances', [{
+        id: 'live-test',
+        name: 'Live Test',
+        instanceUrl: args.url,
+        token: args.token,
+        isDefault: true,
+      }], vscode.ConfigurationTarget.Global);
+    }, { url, token });
 
     // Refresh PRs so the extension fetches data
     await evaluateInVSCode(async (vscode) => {
@@ -47,9 +53,9 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
 
   test('should open a real PR file diff and display content', async ({ harness, evaluateInVSCode }) => {
     // Use the Forgejo API to find a merged PR with files
-    const prInfo = await evaluateInVSCode(async (_vscode, args: { token: string }) => {
-      // Fetch a recent PR that has files
-      const resp = await fetch('https://git.araj.me/api/v1/repos/maxking/forgejo-vscode/pulls?state=closed&limit=5', {
+    const prInfo = await evaluateInVSCode(async (_vscode, args: { url: string; token: string }) => {
+      // Fetch a recent PR that has files from the test instance
+      const resp = await fetch(`${args.url}/api/v1/repos/testuser/test-repo/pulls?state=all&limit=5`, {
         headers: { 'Authorization': `token ${args.token}` },
       });
       const prs = await resp.json() as Array<{
@@ -57,29 +63,27 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
         head: { ref: string }; base: { ref: string };
       }>;
 
-      // Pick a merged PR (most likely to have stable content)
-      const mergedPR = prs.find(p => p.merged) || prs[0];
-      if (!mergedPR) { return null; }
+      // Pick any PR (test repo should have at least one)
+      const pr = prs[0];
+      if (!pr) { return null; }
 
       // Fetch the PR's files
       const filesResp = await fetch(
-        `https://git.araj.me/api/v1/repos/maxking/forgejo-vscode/pulls/${mergedPR.number}/files`,
+        `${args.url}/api/v1/repos/testuser/test-repo/pulls/${pr.number}/files`,
         { headers: { 'Authorization': `token ${args.token}` } }
       );
       const files = await filesResp.json() as Array<{
         filename: string; status: string; additions: number; deletions: number; changes: number;
       }>;
 
-      // Pick a small added or modified file
-      const targetFile = files.find(f => f.status === 'added' && f.additions < 100)
-        || files.find(f => f.status === 'modified' && f.changes < 100)
-        || files[0];
+      // Pick a file (test repo should have files)
+      const targetFile = files[0];
 
       return {
-        number: mergedPR.number,
-        title: mergedPR.title,
-        headRef: mergedPR.head.ref,
-        baseRef: mergedPR.base.ref,
+        number: pr.number,
+        title: pr.title,
+        headRef: pr.head.ref,
+        baseRef: pr.base.ref,
         file: targetFile ? {
           filename: targetFile.filename,
           status: targetFile.status,
@@ -88,7 +92,7 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
           changes: targetFile.changes,
         } : null,
       };
-    }, { token: FORGEJO_TOKEN });
+    }, { url: FORGEJO_URL, token: FORGEJO_TOKEN });
 
     console.log('PR info:', JSON.stringify(prInfo, null, 2));
     expect(prInfo).not.toBeNull();
@@ -200,8 +204,8 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
 
   test('PR diff tab has base64url-encoded ref in URI path', async ({ harness, evaluateInVSCode }) => {
     // Fetch a PR to get its refs
-    const prInfo = await evaluateInVSCode(async (_vscode, args: { token: string }) => {
-      const resp = await fetch('https://git.araj.me/api/v1/repos/maxking/forgejo-vscode/pulls?state=closed&limit=1', {
+    const prInfo = await evaluateInVSCode(async (_vscode, args: { url: string; token: string }) => {
+      const resp = await fetch(`${args.url}/api/v1/repos/testuser/test-repo/pulls?state=all&limit=1`, {
         headers: { 'Authorization': `token ${args.token}` },
       });
       const prs = await resp.json() as Array<{
@@ -211,7 +215,7 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
       if (!prs.length) { return null; }
 
       const filesResp = await fetch(
-        `https://git.araj.me/api/v1/repos/maxking/forgejo-vscode/pulls/${prs[0].number}/files?limit=1`,
+        `${args.url}/api/v1/repos/testuser/test-repo/pulls/${prs[0].number}/files?limit=1`,
         { headers: { 'Authorization': `token ${args.token}` } }
       );
       const files = await filesResp.json() as Array<{ filename: string; status: string }>;
@@ -223,7 +227,7 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
         baseRef: prs[0].base.ref,
         file: files[0],
       };
-    }, { token: FORGEJO_TOKEN });
+    }, { url: FORGEJO_URL, token: FORGEJO_TOKEN });
 
     expect(prInfo).not.toBeNull();
 

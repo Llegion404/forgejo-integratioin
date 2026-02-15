@@ -1,5 +1,4 @@
 import { test, expect } from './fixtures/vscode-harness';
-import path from 'path';
 
 /**
  * Live e2e test that simulates a user clicking through the PR tree view
@@ -7,43 +6,47 @@ import path from 'path';
  *
  * Flow:
  *   1. Open the Forgejo sidebar
- *   2. Expand the "Merged" (or "Closed") group in the PR tree
+ *   2. Expand the "Open" group in the PR tree
  *   3. Click on a PR to expand it and load its files
  *   4. Click on a file to open the diff
  *   5. Verify the diff editor opens with real file content
  *   6. Verify the URI uses the new base64url format (no query params)
  *
- * Requires:
- *   FORGEJO_TEST_TOKEN env var — API token for git.araj.me
+ * Requires these env vars (set by CI or manually):
+ *   FORGEJO_TEST_URL       - Base URL of the Forgejo instance (e.g. http://forgejo:3000)
+ *   FORGEJO_TEST_TOKEN     - API token for the test user
+ *   FORGEJO_LIVE_WORKSPACE - Path to a git repo whose origin points at the test instance
  */
 
+const FORGEJO_URL = process.env.FORGEJO_TEST_URL || '';
 const FORGEJO_TOKEN = process.env.FORGEJO_TEST_TOKEN || '';
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+const WORKSPACE = process.env.FORGEJO_LIVE_WORKSPACE || '';
 
-const shouldRun = !!FORGEJO_TOKEN;
+const shouldRun = !!(WORKSPACE && FORGEJO_URL && FORGEJO_TOKEN);
 
 test.describe('PR Diff via Sidebar Click - Live Forgejo', () => {
-  test.skip(!shouldRun, 'Requires FORGEJO_TEST_TOKEN');
+  test.skip(!shouldRun, 'Requires FORGEJO_LIVE_WORKSPACE, FORGEJO_TEST_URL, FORGEJO_TEST_TOKEN');
 
-  test.use({ baseDir: PROJECT_ROOT });
+  test.use({ baseDir: WORKSPACE || '/tmp' });
 
   test.setTimeout(90_000);
 
   test.beforeEach(async ({ harness, evaluateInVSCode }) => {
     await harness.waitForExtensionActivation();
 
-    // Configure the Forgejo instance with auth token
+    // Configure the local test Forgejo instance
+    const url = FORGEJO_URL;
     const token = FORGEJO_TOKEN;
-    await evaluateInVSCode(async (vscode, args: { token: string }) => {
+    await evaluateInVSCode(async (vscode, args: { url: string; token: string }) => {
       const config = vscode.workspace.getConfiguration('forgejo');
       await config.update('instances', [{
-        id: 'test-forgejo',
-        name: 'Forgejo',
-        instanceUrl: 'https://git.araj.me',
+        id: 'live-test',
+        name: 'Live Test',
+        instanceUrl: args.url,
         token: args.token,
         isDefault: true,
       }], vscode.ConfigurationTarget.Global);
-    }, { token });
+    }, { url, token });
 
     // Refresh PRs
     await evaluateInVSCode(async (vscode) => {
