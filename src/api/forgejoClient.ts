@@ -149,7 +149,8 @@ export class ForgejoClient {
         throw httpError;
       }
       // Some endpoints return no content (e.g. 204)
-      const contentType = typeof response.headers.get === 'function'
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      const contentType = response.headers && typeof response.headers.get === 'function'
         ? response.headers.get('content-type') ?? ''
         : '';
       if (response.status === 204 || !contentType) {
