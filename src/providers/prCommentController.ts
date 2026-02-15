@@ -14,8 +14,8 @@ import { PR_DIFF_SCHEME } from './prDiffContentProvider';
  */
 export class ForgejoCommentController implements vscode.Disposable {
   private controller: vscode.CommentController;
-  private prContextMap: Map<string, PRContext> = new Map();
-  private threads: Map<string, vscode.CommentThread[]> = new Map();
+  private prContextMap = new Map<string, PRContext>();
+  private threads = new Map<string, vscode.CommentThread[]>();
   private disposables: vscode.Disposable[] = [];
 
   constructor() {
@@ -42,7 +42,7 @@ export class ForgejoCommentController implements vscode.Disposable {
     this.disposables.push(
       vscode.workspace.onDidOpenTextDocument((doc) => {
         if (doc.uri.scheme === PR_DIFF_SCHEME) {
-          this.loadCommentsForDocument(doc);
+          void this.loadCommentsForDocument(doc);
         }
       })
     );
@@ -164,7 +164,7 @@ export class ForgejoCommentController implements vscode.Disposable {
         if (line <= 0) {
           continue;
         }
-        const existing = commentsByLine.get(line) || [];
+        const existing = commentsByLine.get(line) ?? [];
         existing.push(comment);
         commentsByLine.set(line, existing);
       }
@@ -206,25 +206,25 @@ export class ForgejoCommentController implements vscode.Disposable {
     const ctx = this.prContextMap.get(uri.toString());
 
     if (!ctx) {
-      vscode.window.showErrorMessage('Cannot determine PR context for this file. Please re-open the diff from the Pull Requests view.');
+      void vscode.window.showErrorMessage('Cannot determine PR context for this file. Please re-open the diff from the Pull Requests view.');
       return;
     }
 
     const config = await getForgejoConfig();
     if (!config) {
-      vscode.window.showErrorMessage('Forgejo configuration not found.');
+      void vscode.window.showErrorMessage('Forgejo configuration not found.');
       return;
     }
 
     if (!config.token) {
-      vscode.window.showErrorMessage('A Forgejo token is required to create comments. Please configure your token first.');
+      void vscode.window.showErrorMessage('A Forgejo token is required to create comments. Please configure your token first.');
       return;
     }
 
     // VS Code lines are 0-indexed, Forgejo API is 1-indexed
     const range = reply.thread.range;
     if (!range) {
-      vscode.window.showErrorMessage('Cannot determine line position for this comment.');
+      void vscode.window.showErrorMessage('Cannot determine line position for this comment.');
       return;
     }
     const line = range.start.line + 1;
@@ -272,7 +272,7 @@ export class ForgejoCommentController implements vscode.Disposable {
       console.log(`[Forgejo] Created inline comment on ${ctx.filePath}:${line}`);
     } catch (error) {
       console.error('[Forgejo] Error creating inline comment:', error);
-      vscode.window.showErrorMessage(
+      void vscode.window.showErrorMessage(
         `Failed to create comment: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
@@ -286,7 +286,7 @@ export class ForgejoCommentController implements vscode.Disposable {
     this.threads.clear();
     this.prContextMap.clear();
 
-    this.disposables.forEach(d => d.dispose());
+    this.disposables.forEach(d => void d.dispose());
     this.disposables = [];
   }
 }
