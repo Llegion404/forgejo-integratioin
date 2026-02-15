@@ -70,10 +70,10 @@ jobs:
       run: |
         if [ "${{ steps.get_version.outputs.is_prerelease }}" = "true" ]; then
           echo "Publishing as pre-release..."
-          vsce publish --pre-release -p $VSCE_PAT
+          vsce publish --pre-release -p $VSCE_PAT --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master
         else
           echo "Publishing as stable release..."
-          vsce publish -p $VSCE_PAT
+          vsce publish -p $VSCE_PAT --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master
         fi
 
     - name: Upload VSIX artifact
