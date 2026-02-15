@@ -59,18 +59,20 @@ export class IssueDetailWebviewProvider {
   public async showIssueDetails(owner: string, repo: string, number: number): Promise<void> {
     logInfo('Showing Issue details in webview:', { owner, repo, number });
 
-    const panelKey = `${owner}/${repo}/issue/${number}`;
+    const panelKey = `${owner}/${repo}/issue/${String(number)}`;
 
     if (this._panels.has(panelKey)) {
-      const state = this._panels.get(panelKey)!;
-      state.panel.reveal(vscode.ViewColumn.One);
-      await this._loadIssueData(panelKey);
+      const state = this._panels.get(panelKey);
+      if (state) {
+        state.panel.reveal(vscode.ViewColumn.One);
+        await this._loadIssueData(panelKey);
+      }
       return;
     }
 
     const panel = vscode.window.createWebviewPanel(
       IssueDetailWebviewProvider.viewType,
-      `Issue #${number}: ${owner}/${repo}`,
+      `Issue #${String(number)}: ${owner}/${repo}`,
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -92,8 +94,8 @@ export class IssueDetailWebviewProvider {
     panel.webview.html = this._getHtmlForWebview(panel.webview);
 
     panel.webview.onDidReceiveMessage(
-      async (message: WebviewMessage) => {
-        await this._handleMessage(message, panelKey);
+      (message: unknown) => {
+        void this._handleMessage(message as WebviewMessage, panelKey);
       },
       undefined,
       []
@@ -104,7 +106,7 @@ export class IssueDetailWebviewProvider {
       this._panels.delete(panelKey);
     }, undefined, []);
 
-    this._fetchIssueData(panelKey);
+    void this._fetchIssueData(panelKey);
   }
 
   private async _fetchIssueData(panelKey: string): Promise<void> {
@@ -131,14 +133,14 @@ export class IssueDetailWebviewProvider {
 
       if (state.isReady) {
         logInfo('Webview is ready, sending data...');
-        await this._sendDataToPanel(panelKey);
+        this._sendDataToPanel(panelKey);
       } else {
         logInfo('Webview not ready yet, data will be sent when ready');
       }
     } catch (error) {
       logError('Failed to fetch Issue data:', error);
       if (state.isReady) {
-        panel.webview.postMessage({
+        void panel.webview.postMessage({
           type: 'error',
           message: error instanceof Error ? error.message : 'Failed to load Issue details'
         });
@@ -146,19 +148,19 @@ export class IssueDetailWebviewProvider {
     }
   }
 
-  private async _sendDataToPanel(panelKey: string): Promise<void> {
+  private _sendDataToPanel(panelKey: string): void {
     const state = this._panels.get(panelKey);
-    if (!state || !state.pendingData) {
+    if (!state?.pendingData) {
       logInfo('_sendDataToPanel: no state or pendingData');
       return;
     }
 
     const { panel } = state;
     logInfo('Posting messages to webview:', { issueTitle: state.pendingData.issue.title });
-    panel.webview.postMessage({ type: 'theme', theme: this._getThemeName(vscode.window.activeColorTheme.kind) });
-    panel.webview.postMessage({ type: 'loading', show: true });
-    panel.webview.postMessage({ type: 'update', data: state.pendingData });
-    panel.webview.postMessage({ type: 'loading', show: false });
+    void panel.webview.postMessage({ type: 'theme', theme: this._getThemeName(vscode.window.activeColorTheme.kind) });
+    void panel.webview.postMessage({ type: 'loading', show: true });
+    void panel.webview.postMessage({ type: 'update', data: state.pendingData });
+    void panel.webview.postMessage({ type: 'loading', show: false });
     logInfo('All messages posted to webview');
   }
 
@@ -170,15 +172,15 @@ export class IssueDetailWebviewProvider {
     const activities: IssueActivity[] = [];
     try {
       const comments = await client.getIssueComments(owner, repo, number);
-      activities.push(...comments.map((c: any) => ({ ...c, type: 'comment' as const })));
+      activities.push(...(comments as IssueActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
     } catch (e) { logDebug('Could not fetch comments:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);
-      activities.push(...timeline.map((t: any) => ({ ...t, type: 'timeline' as const })));
+      activities.push(...(timeline as IssueActivity[]).map((t) => ({ ...t, type: 'timeline' as const })));
     } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
-      const dateA = new Date(a.created_at || 0);
-      const dateB = new Date(b.created_at || 0);
+      const dateA = new Date(a.created_at ?? 0);
+      const dateB = new Date(b.created_at ?? 0);
       return dateB.getTime() - dateA.getTime();
     });
   }
@@ -196,10 +198,10 @@ export class IssueDetailWebviewProvider {
         state.isReady = true;
         if (state.pendingData) {
           logInfo('Sending pending data to webview...');
-          await this._sendDataToPanel(panelKey);
+          this._sendDataToPanel(panelKey);
         } else {
           logInfo('No pending data yet, showing loading state');
-          state.panel.webview.postMessage({ type: 'loading', show: true });
+          void state.panel.webview.postMessage({ type: 'loading', show: true });
         }
         break;
       case 'refresh': await this._fetchIssueData(panelKey); break;
@@ -217,10 +219,10 @@ export class IssueDetailWebviewProvider {
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.createComment(owner, repo, number, body);
-      vscode.window.showInformationMessage('Comment added');
+      void vscode.window.showInformationMessage('Comment added');
       if (panelKey) await this._fetchIssueData(panelKey);
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to add comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to add comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -230,10 +232,10 @@ export class IssueDetailWebviewProvider {
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.updateIssueState(owner, repo, number, 'closed');
-      vscode.window.showInformationMessage(`Issue #${number} closed`);
+      void vscode.window.showInformationMessage(`Issue #${String(number)} closed`);
       if (panelKey) await this._fetchIssueData(panelKey);
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to close issue: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to close issue: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -243,10 +245,10 @@ export class IssueDetailWebviewProvider {
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
       await client.updateIssueState(owner, repo, number, 'open');
-      vscode.window.showInformationMessage(`Issue #${number} reopened`);
+      void vscode.window.showInformationMessage(`Issue #${String(number)} reopened`);
       if (panelKey) await this._fetchIssueData(panelKey);
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to reopen issue: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to reopen issue: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -259,17 +261,17 @@ export class IssueDetailWebviewProvider {
       const updatedIssue = await client.updateIssueBody(owner, repo, number, body);
       logInfo('Issue body updated:', { owner, repo, number });
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'bodyUpdated', body: updatedIssue.body || '' });
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: true });
+        void panelState.panel.webview.postMessage({ type: 'bodyUpdated', body: updatedIssue.body });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: true });
       }
       if (panelState?.pendingData) {
-        panelState.pendingData.issue.body = updatedIssue.body || '';
+        panelState.pendingData.issue.body = updatedIssue.body;
       }
     } catch (error) {
       logError('Failed to update issue body:', error);
-      vscode.window.showErrorMessage(`Failed to update description: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to update description: ${error instanceof Error ? error.message : 'Unknown error'}`);
       if (panelState) {
-        panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: false });
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'updateBody', success: false });
       }
     }
   }
@@ -278,10 +280,10 @@ export class IssueDetailWebviewProvider {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
-      const url = `${config.instanceUrl}/${owner}/${repo}/issues/${number}`;
-      vscode.env.openExternal(vscode.Uri.parse(url));
+      const url = `${config.instanceUrl}/${owner}/${repo}/issues/${String(number)}`;
+      void vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to open: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to open: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -307,7 +309,7 @@ export class IssueDetailWebviewProvider {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https:;">
   <title>Issue Details</title>
-  <link rel="stylesheet" href="${styleUri}">
+  <link rel="stylesheet" href="${styleUri.toString()}">
 </head>
 <body>
   <div id="loading" class="loading">
@@ -381,7 +383,7 @@ export class IssueDetailWebviewProvider {
     </div>
   </div>
 
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
   }

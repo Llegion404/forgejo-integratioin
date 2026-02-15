@@ -146,7 +146,7 @@ export class StepTreeItem extends vscode.TreeItem {
 class ActionMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
-    public readonly isError: boolean = false
+    public readonly isError = false
   ) {
     super(message, vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(isError ? 'error' : 'info');
@@ -162,8 +162,8 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
 
   private workflowRuns: WorkflowRunListItem[] = [];
   private error: string | null = null;
-  private owner: string = '';
-  private repo: string = '';
+  private owner = '';
+  private repo = '';
 
   constructor() {
     this.refresh();
@@ -195,7 +195,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
         // Group jobs by run_number
         const runsByNumber = new Map<number, WorkflowRunListItem[]>();
         for (const job of this.workflowRuns) {
-          const existing = runsByNumber.get(job.run_number) || [];
+          const existing = runsByNumber.get(job.run_number) ?? [];
           existing.push(job);
           runsByNumber.set(job.run_number, existing);
         }
@@ -289,7 +289,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       const response = await client.getWorkflowRuns(config.owner, config.repo);
-      this.workflowRuns = response.workflow_runs || [];
+      this.workflowRuns = response.workflow_runs;
       this.error = null;
       console.log(`[Forgejo] Fetched ${this.workflowRuns.length} workflow runs`);
     } catch (error) {

@@ -55,7 +55,7 @@ class PRGroupItem extends vscode.TreeItem {
 class PRMessageItem extends vscode.TreeItem {
   constructor(
     public readonly message: string,
-    public readonly isError: boolean = false
+    public readonly isError = false
   ) {
     super(message, vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(isError ? 'error' : 'info');

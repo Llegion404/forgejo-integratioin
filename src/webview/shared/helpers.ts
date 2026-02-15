@@ -51,7 +51,7 @@ export function formatTimeAgo(dateString: string | null | undefined, now?: Date)
   if (!dateString) return '';
 
   const date = new Date(dateString);
-  const currentTime = now || new Date();
+  const currentTime = now ?? new Date();
   const diffMs = currentTime.getTime() - date.getTime();
   const diffSecs = Math.floor(diffMs / 1000);
   const diffMins = Math.floor(diffSecs / 60);

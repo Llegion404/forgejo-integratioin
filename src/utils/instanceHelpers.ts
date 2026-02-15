@@ -34,17 +34,19 @@ export function normalizeUrl(url: string): string {
 /**
  * Validates that an instance has all required fields
  */
-export function isValidInstance(instance: any): instance is ForgejoInstance {
+export function isValidInstance(instance: unknown): instance is ForgejoInstance {
+	if (!instance || typeof instance !== 'object') {
+		return false;
+	}
+	const obj = instance as Record<string, unknown>;
 	return (
-		instance &&
-		typeof instance === 'object' &&
-		typeof instance.id === 'string' &&
-		instance.id.trim() !== '' &&
-		typeof instance.name === 'string' &&
-		instance.name.trim() !== '' &&
-		typeof instance.instanceUrl === 'string' &&
-		instance.instanceUrl.trim() !== '' &&
-		typeof instance.token === 'string'
+		typeof obj.id === 'string' &&
+		obj.id.trim() !== '' &&
+		typeof obj.name === 'string' &&
+		obj.name.trim() !== '' &&
+		typeof obj.instanceUrl === 'string' &&
+		obj.instanceUrl.trim() !== '' &&
+		typeof obj.token === 'string'
 	);
 }
 
@@ -53,11 +55,11 @@ export function isValidInstance(instance: any): instance is ForgejoInstance {
  */
 export async function getAllInstances(): Promise<ForgejoInstance[]> {
 	const config = vscode.workspace.getConfiguration('forgejo');
-	const instances = config.get<any[]>('instances', []);
+	const instances = config.get<unknown[]>('instances', []);
 
 	// Filter and validate instances (synchronous validation)
 	const validInstances: ForgejoInstance[] = [];
-	const invalidInstances: any[] = [];
+	const invalidInstances: unknown[] = [];
 
 	for (const instance of instances) {
 		if (isValidInstance(instance)) {
@@ -99,7 +101,7 @@ export async function getDefaultOrFirstInstance(): Promise<ForgejoInstance | und
 	}
 
 	const defaultInstance = instances.find(i => i.isDefault);
-	return defaultInstance || instances[0];
+	return defaultInstance ?? instances[0];
 }
 
 /**
@@ -211,7 +213,7 @@ export async function setDefaultInstance(id: string): Promise<void> {
  * @param instance The instance to test
  * @param saveResult Whether to save the test result to config (default: true, set to false for temporary instances)
  */
-export async function testInstanceConnection(instance: ForgejoInstance, saveResult: boolean = true): Promise<boolean> {
+export async function testInstanceConnection(instance: ForgejoInstance, saveResult = true): Promise<boolean> {
 	logInfo('Testing connection to:', instance.instanceUrl);
 
 	try {
@@ -327,7 +329,7 @@ export function getDefaultInstanceName(instanceUrl: string): string {
 			'git.disroot.org': 'Disroot',
 		};
 
-		return knownInstances[hostname] || hostname;
+		return knownInstances[hostname] ?? hostname;
 	} catch {
 		return 'Default Instance';
 	}

@@ -11,11 +11,15 @@
   ],
   "extends": [
     "eslint:recommended",
-    "plugin:@typescript-eslint/recommended"
+    "plugin:@typescript-eslint/strict-type-checked",
+    "plugin:@typescript-eslint/stylistic-type-checked"
   ],
   "rules": {
-    "@typescript-eslint/no-explicit-any": "warn",
-    "@typescript-eslint/no-unused-vars": "warn"
+    "@typescript-eslint/no-explicit-any": "error",
+    "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/restrict-template-expressions": ["error", { "allowNumber": true }],
+    "@typescript-eslint/no-confusing-void-expression": ["error", { "ignoreArrowShorthand": true }],
+    "@typescript-eslint/no-invalid-void-type": "off"
   },
   "ignorePatterns": [
     "out",

@@ -23,7 +23,7 @@ export async function migrateToMultiInstance(): Promise<void> {
 			id: generateUUID(),
 			name: getDefaultInstanceName(legacyUrl),
 			instanceUrl: normalizeUrl(legacyUrl),
-			token: legacyToken || '',
+			token: legacyToken ?? '',
 			isDefault: true
 		};
 

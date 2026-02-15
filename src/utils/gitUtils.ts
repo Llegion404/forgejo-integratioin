@@ -11,7 +11,7 @@ export interface GitRemoteInfo {
  * Detect git repository and extract remote information
  * @param remoteName Optional remote name to use instead of 'origin'
  */
-export async function detectGitRemote(remoteName?: string): Promise<GitRemoteInfo | null> {
+export function detectGitRemote(remoteName?: string): GitRemoteInfo | null {
   const workspaceFolders = vscode.workspace.workspaceFolders;
 
   if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -20,7 +20,7 @@ export async function detectGitRemote(remoteName?: string): Promise<GitRemoteInf
   }
 
   const workspaceRoot = workspaceFolders[0].uri.fsPath;
-  const remote = remoteName || 'origin';
+  const remote = remoteName ?? 'origin';
   console.log('[Forgejo] Detecting git remote in:', workspaceRoot, 'using remote:', remote);
 
   try {
@@ -45,7 +45,7 @@ export async function detectGitRemote(remoteName?: string): Promise<GitRemoteInf
  * Detect all git remotes and extract their information
  * Returns a Map of remote name to GitRemoteInfo
  */
-export async function detectAllGitRemotes(): Promise<Map<string, GitRemoteInfo>> {
+export function detectAllGitRemotes(): Map<string, GitRemoteInfo> {
   const result = new Map<string, GitRemoteInfo>();
   const workspaceFolders = vscode.workspace.workspaceFolders;
 
@@ -148,7 +148,7 @@ export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
 /**
  * Check if current workspace has a git repository
  */
-export async function hasGitRepository(): Promise<boolean> {
+export function hasGitRepository(): boolean {
   const workspaceFolders = vscode.workspace.workspaceFolders;
 
   if (!workspaceFolders || workspaceFolders.length === 0) {

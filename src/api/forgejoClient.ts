@@ -8,7 +8,7 @@ export class ForgejoClient {
   private instanceUrl: string;
   private token: string;
 
-  constructor(instanceUrl: string, token: string = '') {
+  constructor(instanceUrl: string, token = '') {
     this.instanceUrl = instanceUrl;
     this.token = token;
   }
@@ -16,13 +16,13 @@ export class ForgejoClient {
   /**
    * Build common headers for API requests
    */
-  private buildHeaders(contentType: string = 'application/json'): Record<string, string> {
+  private buildHeaders(contentType = 'application/json'): Record<string, string> {
     const headers: Record<string, string> = {
       'Accept': 'application/json',
       'Content-Type': contentType
     };
     if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
+      headers.Authorization = `token ${this.token}`;
     }
     return headers;
   }
@@ -39,7 +39,7 @@ export class ForgejoClient {
       url,
       endpoint,
       hasToken: !!this.token,
-      tokenLength: this.token?.length || 0
+      tokenLength: this.token.length || 0
     });
 
     try {
@@ -53,6 +53,7 @@ export class ForgejoClient {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         headers: response.headers && typeof response.headers.entries === 'function'
           ? Object.fromEntries(response.headers.entries())
           : 'not available'
@@ -107,7 +108,7 @@ export class ForgejoClient {
    * Appends page=N&limit=L to the endpoint URL, continuing until a page
    * returns fewer items than the limit.
    */
-  private async requestAllPages<T>(endpoint: string, limit: number = 50): Promise<T[]> {
+  private async requestAllPages<T>(endpoint: string, limit = 50): Promise<T[]> {
     const allItems: T[] = [];
     let page = 1;
     let hasMore = true;
@@ -142,14 +143,17 @@ export class ForgejoClient {
       });
       if (!response.ok) {
         const errorBody = await response.text().catch(() => '');
-        const error = new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
-        (error as any).status = response.status;
-        (error as any).statusText = response.statusText;
-        throw error;
+        const httpError = new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`) as Error & {status?: number; statusText?: string};
+        httpError.status = response.status;
+        httpError.statusText = response.statusText;
+        throw httpError;
       }
       // Some endpoints return no content (e.g. 204)
-      const contentType = response.headers?.get?.('content-type') || '';
-      if (response.status === 204 || contentType === '') {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      const contentType = response.headers && typeof response.headers.get === 'function'
+        ? response.headers.get('content-type') ?? ''
+        : '';
+      if (response.status === 204 || !contentType) {
         try {
           return await response.json() as T;
         } catch {
@@ -157,10 +161,12 @@ export class ForgejoClient {
         }
       }
       return await response.json() as T;
-    } catch (error: any) {
-      if (error.status) throw error; // Re-throw HTTP errors with status
-      logError(`Network error on ${method} ${url}: ${error.message}`);
-      throw new Error(`Network error: Cannot reach ${url}. ${error.message || ''}`);
+    } catch (error) {
+      const httpError = error as Error & {status?: number};
+      if (httpError.status) throw error; // Re-throw HTTP errors with status
+      const message = error instanceof Error ? error.message : String(error);
+      logError(`Network error on ${method} ${url}: ${message}`);
+      throw new Error(`Network error: Cannot reach ${url}. ${message}`);
     }
   }
 
@@ -251,11 +257,11 @@ export class ForgejoClient {
     try {
       const endpoint = '/version';
       logDebug('Calling /version endpoint...');
-      const version = await this.request<any>(endpoint);
+      const version = await this.request<{version?: string}>(endpoint);
 
       logInfo('Connection test SUCCESS:', {
         instanceUrl: this.instanceUrl,
-        version: version?.version || 'unknown'
+        version: version.version ?? 'unknown'
       });
 
       return true;
@@ -312,7 +318,7 @@ export class ForgejoClient {
     repo: string,
     number: number,
     method: 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only' = 'merge',
-    deleteBranchAfterMerge: boolean = false
+    deleteBranchAfterMerge = false
   ): Promise<{ merged: boolean; message?: string }> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}/merge`;
     logDebug('Merging pull request:', { owner, repo, number, method });
@@ -324,10 +330,11 @@ export class ForgejoClient {
       });
       logInfo('Pull request merged successfully:', { owner, repo, number, method });
       return { merged: true };
-    } catch (error: any) {
-      if (error.status === 405) {
+    } catch (error) {
+      const httpError = error as Error & {status?: number};
+      if (httpError.status === 405) {
         throw new Error('Merge not allowed - PR may not be mergeable');
-      } else if (error.status === 409) {
+      } else if (httpError.status === 409) {
         throw new Error('Merge conflict - PR has conflicts that must be resolved');
       }
       throw error;
@@ -475,13 +482,14 @@ export class ForgejoClient {
       const pr = await this.requestWithBody<PullRequest>('POST', endpoint, payload);
       logInfo('Pull request created successfully:', { owner, repo, number: pr.number, title: pr.title });
       return pr;
-    } catch (error: any) {
-      if (error.status === 409) {
+    } catch (error) {
+      const httpError = error as Error & {status?: number; message?: string};
+      if (httpError.status === 409) {
         throw new Error('A pull request already exists for this branch');
-      } else if (error.status === 422) {
+      } else if (httpError.status === 422) {
         // Extract the error body from the message (format: "HTTP 422: ... - <body>")
-        const bodyMatch = error.message?.match(/ - (.+)$/);
-        throw new Error(`Validation error: ${bodyMatch ? bodyMatch[1] : error.message}`);
+        const bodyMatch = httpError.message.match(/ - (.+)$/);
+        throw new Error(`Validation error: ${bodyMatch ? bodyMatch[1] : httpError.message}`);
       }
       throw error;
     }
@@ -512,7 +520,7 @@ export class ForgejoClient {
     };
 
     if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
+      headers.Authorization = `token ${this.token}`;
     }
 
     logDebug('Creating review with comments:', { owner, repo, prNumber, event: options.event });
@@ -605,13 +613,13 @@ export class ForgejoClient {
    * @param runNumber - The run_number/index_in_repo, NOT the internal id
    * @param jobIndex - Usually 0 for single-job workflows
    */
-  async getWorkflowLogs(owner: string, repo: string, runNumber: number, jobIndex: number = 0): Promise<string> {
+  async getWorkflowLogs(owner: string, repo: string, runNumber: number, jobIndex = 0): Promise<string> {
     // Logs use web endpoint: /{owner}/{repo}/actions/runs/{run_number}/jobs/{job_index}/logs
     const url = `${this.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}/jobs/${jobIndex}/logs`;
 
     const headers: Record<string, string> = {};
     if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
+      headers.Authorization = `token ${this.token}`;
     }
 
     logDebug('Fetching workflow logs:', { owner, repo, runNumber, jobIndex, url });
@@ -649,12 +657,12 @@ export class ForgejoClient {
    * @param runNumber - The run_number (index_in_repo), NOT the internal id
    * @param jobIndex - Zero-based job index within the run
    */
-  async getJobSteps(owner: string, repo: string, runNumber: number, jobIndex: number = 0): Promise<{summary: string; duration: string; status: string}[]> {
+  async getJobSteps(owner: string, repo: string, runNumber: number, jobIndex = 0): Promise<{summary: string; duration: string; status: string}[]> {
     const url = `${this.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}/jobs/${jobIndex}`;
 
     const headers: Record<string, string> = {};
     if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
+      headers.Authorization = `token ${this.token}`;
     }
 
     logDebug('Fetching job steps from web page:', { owner, repo, runNumber, jobIndex, url });
@@ -677,17 +685,17 @@ export class ForgejoClient {
 
       // Decode HTML entities (&#34; → ")
       const jsonStr = match[1].replace(/&#34;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-      const data = JSON.parse(jsonStr);
+      const data = JSON.parse(jsonStr) as {state?: {currentJob?: {steps?: {summary?: string; duration?: string; status?: string}[]}}};
 
-      const steps = data?.state?.currentJob?.steps;
+      const steps = data.state?.currentJob?.steps;
       if (!Array.isArray(steps)) {
         return [];
       }
 
-      return steps.map((s: { summary?: string; duration?: string; status?: string }) => ({
-        summary: s.summary || 'Unknown step',
-        duration: s.duration || '',
-        status: s.status || 'unknown'
+      return steps.map((s) => ({
+        summary: s.summary ?? 'Unknown step',
+        duration: s.duration ?? '',
+        status: s.status ?? 'unknown'
       }));
     } catch (error) {
       logError('Failed to fetch job steps:', { error, url });

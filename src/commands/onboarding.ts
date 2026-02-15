@@ -49,7 +49,7 @@ export async function startOnboarding(): Promise<boolean> {
 	logInfo('Step 2: Opening browser for token creation:', tokenUrl);
 
 	// Show persistent message and open browser
-	vscode.window.showInformationMessage(
+	void vscode.window.showInformationMessage(
 		'Opening your browser to create a personal access token. ' +
 		'After creating the token, return to VS Code to paste it.',
 		'OK'
@@ -167,27 +167,27 @@ export async function startOnboarding(): Promise<boolean> {
 
 		// Show different message based on connection test result
 		if (!testResult) {
-			vscode.window.showWarningMessage(
+			void vscode.window.showWarningMessage(
 				`Instance "${instance.name}" saved, but connection test failed. You can edit the token later in "Manage Instances".`,
 				'Manage Instances',
 				'Show Output'
 			).then(action => {
 				if (action === 'Manage Instances') {
-					vscode.commands.executeCommand('forgejo.manageInstances');
+					void vscode.commands.executeCommand('forgejo.manageInstances');
 				} else if (action === 'Show Output') {
-					vscode.commands.executeCommand('forgejo.showOutput');
+					void vscode.commands.executeCommand('forgejo.showOutput');
 				}
 			});
 		} else {
-			vscode.window.showInformationMessage(
+			void vscode.window.showInformationMessage(
 				`Successfully added Forgejo instance: ${instance.name}`,
 				'View Instances',
 				'Show Output'
 			).then(action => {
 				if (action === 'View Instances') {
-					vscode.commands.executeCommand('forgejo.manageInstances');
+					void vscode.commands.executeCommand('forgejo.manageInstances');
 				} else if (action === 'Show Output') {
-					vscode.commands.executeCommand('forgejo.showOutput');
+					void vscode.commands.executeCommand('forgejo.showOutput');
 				}
 			});
 		}
@@ -196,12 +196,12 @@ export async function startOnboarding(): Promise<boolean> {
 		return true;
 	} catch (error) {
 		logError('Failed to save instance:', error);
-		vscode.window.showErrorMessage(
+		void vscode.window.showErrorMessage(
 			`Failed to save instance: ${error instanceof Error ? error.message : 'Unknown error'}. Check the Forgejo Output channel for details.`,
 			'Show Output'
 		).then(action => {
 			if (action === 'Show Output') {
-				vscode.commands.executeCommand('forgejo.showOutput');
+				void vscode.commands.executeCommand('forgejo.showOutput');
 			}
 		});
 		return false;

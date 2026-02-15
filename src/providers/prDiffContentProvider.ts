@@ -16,7 +16,7 @@ export const PR_DIFF_SCHEME = 'forgejo-pr';
  * Provides virtual document content for PR diffs
  */
 export class PRDiffContentProvider implements vscode.TextDocumentContentProvider {
-  private cache: Map<string, string> = new Map();
+  private cache = new Map<string, string>();
   private _onDidChange = new vscode.EventEmitter<vscode.Uri>();
   readonly onDidChange = this._onDidChange.event;
   private disposables: vscode.Disposable[] = [];
@@ -26,7 +26,7 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
   }
 
   dispose(): void {
-    this.disposables.forEach(d => d.dispose());
+    for (const d of this.disposables) { d.dispose(); }
     this.disposables = [];
     this.cache.clear();
   }

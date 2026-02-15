@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
  */
 class Logger {
 	private outputChannel: vscode.OutputChannel | null = null;
-	private isDebugEnabled: boolean = false;
+	private isDebugEnabled = false;
 
 	/**
 	 * Lazy initialization of the output channel
@@ -21,13 +21,13 @@ class Logger {
 			// Fallback if output channel creation failed (e.g. in tests)
 			if (!this.outputChannel) {
 				this.outputChannel = {
-					append: () => { },
-					appendLine: () => { },
-					replace: () => { },
-					clear: () => { },
-					show: () => { },
-					hide: () => { },
-					dispose: () => { },
+					append: () => { /* noop fallback */ },
+					appendLine: () => { /* noop fallback */ },
+					replace: () => { /* noop fallback */ },
+					clear: () => { /* noop fallback */ },
+					show: () => { /* noop fallback */ },
+					hide: () => { /* noop fallback */ },
+					dispose: () => { /* noop fallback */ },
 					name: 'Forgejo'
 				} as vscode.OutputChannel;
 			}
@@ -35,9 +35,7 @@ class Logger {
 			// Check if debug mode is enabled
 			try {
 				const config = vscode.workspace.getConfiguration('forgejo');
-				if (config) {
-					this.isDebugEnabled = config.get<boolean>('debug', false);
-				}
+				this.isDebugEnabled = config.get<boolean>('debug', false);
 			} catch (e) {
 				console.error('[Forgejo] Failed to get configuration:', e);
 			}
@@ -48,7 +46,7 @@ class Logger {
 	/**
 	 * Log an info message
 	 */
-	info(message: string, ...args: any[]): void {
+	info(message: string, ...args: unknown[]): void {
 		const formatted = this.format('INFO', message, args);
 		this.getOutputChannel().appendLine(formatted);
 	}
@@ -56,7 +54,7 @@ class Logger {
 	/**
 	 * Log a warning message
 	 */
-	warn(message: string, ...args: any[]): void {
+	warn(message: string, ...args: unknown[]): void {
 		const formatted = this.format('WARN', message, args);
 		this.getOutputChannel().appendLine(formatted);
 		// Also log to console for visibility
@@ -66,7 +64,7 @@ class Logger {
 	/**
 	 * Log an error message
 	 */
-	error(message: string, ...args: any[]): void {
+	error(message: string, ...args: unknown[]): void {
 		const formatted = this.format('ERROR', message, args);
 		this.getOutputChannel().appendLine(formatted);
 		// Also log to console for visibility
@@ -76,7 +74,7 @@ class Logger {
 	/**
 	 * Log a debug message (only if debug mode is enabled)
 	 */
-	debug(message: string, ...args: any[]): void {
+	debug(message: string, ...args: unknown[]): void {
 		if (!this.isDebugEnabled) {
 			return;
 		}
@@ -101,7 +99,7 @@ class Logger {
 	/**
 	 * Format a log message with timestamp and level
 	 */
-	private format(level: string, message: string, args: any[]): string {
+	private format(level: string, message: string, args: unknown[]): string {
 		const timestamp = new Date().toISOString();
 		const argsStr = args.length > 0 ? ' ' + args.map(arg =>
 			typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
@@ -126,19 +124,19 @@ export const logger = new Logger();
 /**
  * Convenience functions for logging
  */
-export function logInfo(message: string, ...args: any[]): void {
+export function logInfo(message: string, ...args: unknown[]): void {
 	logger.info(message, ...args);
 }
 
-export function logWarn(message: string, ...args: any[]): void {
+export function logWarn(message: string, ...args: unknown[]): void {
 	logger.warn(message, ...args);
 }
 
-export function logError(message: string, ...args: any[]): void {
+export function logError(message: string, ...args: unknown[]): void {
 	logger.error(message, ...args);
 }
 
-export function logDebug(message: string, ...args: any[]): void {
+export function logDebug(message: string, ...args: unknown[]): void {
 	logger.debug(message, ...args);
 }
 

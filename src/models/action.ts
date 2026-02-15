@@ -99,4 +99,4 @@ export type WorkflowEvent =
   | 'issues'
   | 'issue_comment'
   | 'watch'
-  | string; // Allow other events
+  | (string & NonNullable<unknown>); // Allow other events while preserving autocomplete

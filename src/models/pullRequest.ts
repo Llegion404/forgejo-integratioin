@@ -26,10 +26,10 @@ export interface PullRequest {
   merge_commit_sha: string | null;
   draft: boolean;
   comments: number;
-  labels: Array<{
+  labels: {
     name: string;
     color: string;
-  }>;
+  }[];
 }
 
 export interface PullRequestListItem {
