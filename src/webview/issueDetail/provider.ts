@@ -176,7 +176,7 @@ export class IssueDetailWebviewProvider {
     } catch (e) { logDebug('Could not fetch comments:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);
-      activities.push(...(timeline as IssueActivity[]).map((t) => ({ ...t, type: 'timeline' as const })));
+      activities.push(...(timeline as (IssueActivity & { type: string })[]).map((t) => ({ ...t, event: t.type, type: 'timeline' as const })));
     } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? 0);
