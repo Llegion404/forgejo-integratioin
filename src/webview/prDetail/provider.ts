@@ -207,7 +207,7 @@ export class PRDetailWebviewProvider {
     } catch (e) { logDebug('Could not fetch reviews:', e); }
     try {
       const commits = await client.getPullRequestCommits(owner, repo, number);
-      activities.push(...(commits as PRActivity[]).map((c) => ({ ...c, type: 'commit' as const })));
+      activities.push(...(commits as unknown as PRActivity[]).map((c) => ({ ...c, type: 'commit' as const })));
     } catch (e) { logDebug('Could not fetch commits:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);

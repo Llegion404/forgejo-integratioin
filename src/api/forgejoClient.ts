@@ -8,7 +8,7 @@ export class ForgejoClient {
   private instanceUrl: string;
   private token: string;
 
-  constructor(instanceUrl: string, token = '') {
+  constructor(instanceUrl: string, token: string = '') {
     this.instanceUrl = instanceUrl;
     this.token = token;
   }
@@ -39,7 +39,7 @@ export class ForgejoClient {
       url,
       endpoint,
       hasToken: !!this.token,
-      tokenLength: this.token.length
+      tokenLength: this.token?.length || 0
     });
 
     try {
@@ -53,8 +53,7 @@ export class ForgejoClient {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- headers may be absent in test mocks
-      headers: typeof response.headers?.entries === 'function'
+        headers: response.headers && typeof response.headers.entries === 'function'
           ? Object.fromEntries(response.headers.entries())
           : 'not available'
       });
@@ -108,7 +107,7 @@ export class ForgejoClient {
    * Appends page=N&limit=L to the endpoint URL, continuing until a page
    * returns fewer items than the limit.
    */
-  private async requestAllPages<T>(endpoint: string, limit = 50): Promise<T[]> {
+  private async requestAllPages<T>(endpoint: string, limit: number = 50): Promise<T[]> {
     const allItems: T[] = [];
     let page = 1;
     let hasMore = true;
@@ -252,11 +251,11 @@ export class ForgejoClient {
     try {
       const endpoint = '/version';
       logDebug('Calling /version endpoint...');
-      const version = await this.request<{ version?: string }>(endpoint);
+      const version = await this.request<any>(endpoint);
 
       logInfo('Connection test SUCCESS:', {
         instanceUrl: this.instanceUrl,
-        version: version.version ?? 'unknown'
+        version: version?.version || 'unknown'
       });
 
       return true;
@@ -313,45 +312,9 @@ export class ForgejoClient {
     repo: string,
     number: number,
     method: 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only' = 'merge',
-    deleteBranchAfterMerge = false
+    deleteBranchAfterMerge: boolean = false
   ): Promise<{ merged: boolean; message?: string }> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}/merge`;
-<<<<<<< HEAD
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const body = JSON.stringify({
-      Do: method,
-      delete_branch_after_merge: deleteBranchAfterMerge
-    });
-
-=======
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers.Authorization = `token ${this.token}`;
-    }
-
-    const body = JSON.stringify({
-      Do: method,
-      delete_branch_after_merge: deleteBranchAfterMerge
-    });
-
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     logDebug('Merging pull request:', { owner, repo, number, method });
 
     try {
@@ -376,40 +339,6 @@ export class ForgejoClient {
    */
   async closePullRequest(owner: string, repo: string, number: number): Promise<PullRequest> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}`;
-<<<<<<< HEAD
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const body = JSON.stringify({
-      state: 'closed'
-    });
-
-=======
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers.Authorization = `token ${this.token}`;
-    }
-
-    const body = JSON.stringify({
-      state: 'closed'
-    });
-
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     logDebug('Closing pull request:', { owner, repo, number });
     const pr = await this.requestWithBody<PullRequest>('PATCH', endpoint, { state: 'closed' });
     logInfo('Pull request closed successfully:', { owner, repo, number });
@@ -419,186 +348,44 @@ export class ForgejoClient {
   /**
    * Get issue comments
    */
-<<<<<<< HEAD
   async getIssueComments(owner: string, repo: string, number: number): Promise<IssueComment[]> {
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-  async getIssueComments(owner: string, repo: string, number: number): Promise<any[]> {
-=======
-  async getIssueComments(owner: string, repo: string, number: number): Promise<unknown[]> {
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     const endpoint = `/repos/${owner}/${repo}/issues/${number}/comments`;
-<<<<<<< HEAD
     return this.request<IssueComment[]>(endpoint);
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    return this.request<any[]>(endpoint);
-=======
-    return this.request<unknown[]>(endpoint);
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
   }
 
   /**
    * Get pull request reviews
    */
-<<<<<<< HEAD
   async getPullRequestReviews(owner: string, repo: string, number: number): Promise<PullRequestReview[]> {
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-  async getPullRequestReviews(owner: string, repo: string, number: number): Promise<any[]> {
-=======
-  async getPullRequestReviews(owner: string, repo: string, number: number): Promise<unknown[]> {
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}/reviews`;
-<<<<<<< HEAD
     return this.request<PullRequestReview[]>(endpoint);
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    return this.request<any[]>(endpoint);
-=======
-    return this.request<unknown[]>(endpoint);
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
   }
 
   /**
    * Get pull request commits
    */
-<<<<<<< HEAD
   async getPullRequestCommits(owner: string, repo: string, number: number): Promise<PullRequestCommit[]> {
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-  async getPullRequestCommits(owner: string, repo: string, number: number): Promise<any[]> {
-=======
-  async getPullRequestCommits(owner: string, repo: string, number: number): Promise<unknown[]> {
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}/commits`;
-<<<<<<< HEAD
     return this.request<PullRequestCommit[]>(endpoint);
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    return this.request<any[]>(endpoint);
-=======
-    return this.request<unknown[]>(endpoint);
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
   }
 
   /**
    * Get issue timeline events
    */
-<<<<<<< HEAD
   async getIssueTimeline(owner: string, repo: string, number: number): Promise<TimelineEvent[]> {
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-  async getIssueTimeline(owner: string, repo: string, number: number): Promise<any[]> {
-=======
-  async getIssueTimeline(owner: string, repo: string, number: number): Promise<unknown[]> {
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     const endpoint = `/repos/${owner}/${repo}/issues/${number}/timeline`;
-<<<<<<< HEAD
     return this.request<TimelineEvent[]>(endpoint);
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    return this.request<any[]>(endpoint);
-=======
-    return this.request<unknown[]>(endpoint);
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
   }
 
   /**
    * Create a comment on an issue or pull request
    */
-<<<<<<< HEAD
   async createComment(owner: string, repo: string, number: number, body: string): Promise<IssueComment> {
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-  async createComment(owner: string, repo: string, number: number, body: string): Promise<any> {
-=======
-  async createComment(owner: string, repo: string, number: number, body: string): Promise<unknown> {
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     const endpoint = `/repos/${owner}/${repo}/issues/${number}/comments`;
-<<<<<<< HEAD
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const bodyStr = JSON.stringify({ body });
-
-=======
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers.Authorization = `token ${this.token}`;
-    }
-
-    const bodyStr = JSON.stringify({ body });
-
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     logDebug('Creating comment:', { owner, repo, number });
-<<<<<<< HEAD
     const comment = await this.requestWithBody<IssueComment>('POST', endpoint, { body });
     logInfo('Comment created successfully:', { owner, repo, number });
     return comment;
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: bodyStr
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Create comment failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const comment = await response.json();
-      logInfo('Comment created successfully:', { owner, repo, number });
-      return comment;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to create comment: ${String(error)}`);
-    }
-=======
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: bodyStr
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Create comment failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const comment: unknown = await response.json();
-      logInfo('Comment created successfully:', { owner, repo, number });
-      return comment;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to create comment: ${String(error)}`);
-    }
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
   }
 
   /**
@@ -610,112 +397,12 @@ export class ForgejoClient {
     number: number,
     state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
     body: string
-<<<<<<< HEAD
   ): Promise<PullRequestReview> {
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-  ): Promise<any> {
-=======
-  ): Promise<unknown> {
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}/reviews`;
-<<<<<<< HEAD
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const bodyStr = JSON.stringify({
-      event: state,
-      body
-    });
-
-=======
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers.Authorization = `token ${this.token}`;
-    }
-
-    const bodyStr = JSON.stringify({
-      event: state,
-      body
-    });
-
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     logDebug('Creating review:', { owner, repo, number, state });
-<<<<<<< HEAD
     const review = await this.requestWithBody<PullRequestReview>('POST', endpoint, { event: state, body });
     logInfo('Review created successfully:', { owner, repo, number, state });
     return review;
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: bodyStr
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Create review failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const review = await response.json();
-      logInfo('Review created successfully:', { owner, repo, number, state });
-      return review;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to create review: ${String(error)}`);
-    }
-=======
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: bodyStr
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => 'Unable to read response body');
-        logError('Create review failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: errorBody
-        });
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const review: unknown = await response.json();
-      logInfo('Review created successfully:', { owner, repo, number, state });
-      return review;
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Failed to create review: ${String(error)}`);
-    }
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
   }
 
   /**
@@ -723,36 +410,6 @@ export class ForgejoClient {
    */
   async updateIssueState(owner: string, repo: string, number: number, state: 'open' | 'closed'): Promise<Issue> {
     const endpoint = `/repos/${owner}/${repo}/issues/${number}`;
-<<<<<<< HEAD
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-    const body = JSON.stringify({ state });
-
-=======
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers.Authorization = `token ${this.token}`;
-    }
-
-    const body = JSON.stringify({ state });
-
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     logDebug('Updating issue state:', { owner, repo, number, state });
     const issue = await this.requestWithBody<Issue>('PATCH', endpoint, { state });
     logInfo('Issue state updated successfully:', { owner, repo, number, state });
@@ -764,32 +421,6 @@ export class ForgejoClient {
    */
   async createIssue(owner: string, repo: string, title: string, body?: string): Promise<Issue> {
     const endpoint = `/repos/${owner}/${repo}/issues`;
-<<<<<<< HEAD
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-=======
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers.Authorization = `token ${this.token}`;
-    }
-
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     const payload: Record<string, string> = { title };
     if (body) {
       payload.body = body;
@@ -805,32 +436,6 @@ export class ForgejoClient {
    */
   async updatePullRequestBody(owner: string, repo: string, index: number, body: string): Promise<PullRequest> {
     const endpoint = `/repos/${owner}/${repo}/pulls/${index}`;
-<<<<<<< HEAD
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-=======
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers.Authorization = `token ${this.token}`;
-    }
-
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     logDebug('Updating pull request body:', { owner, repo, index });
     const pr = await this.requestWithBody<PullRequest>('PATCH', endpoint, { body });
     logInfo('Pull request body updated successfully:', { owner, repo, index });
@@ -842,32 +447,6 @@ export class ForgejoClient {
    */
   async updateIssueBody(owner: string, repo: string, index: number, body: string): Promise<Issue> {
     const endpoint = `/repos/${owner}/${repo}/issues/${index}`;
-<<<<<<< HEAD
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-=======
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers.Authorization = `token ${this.token}`;
-    }
-
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     logDebug('Updating issue body:', { owner, repo, index });
     const issue = await this.requestWithBody<Issue>('PATCH', endpoint, { body });
     logInfo('Issue body updated successfully:', { owner, repo, index });
@@ -933,7 +512,7 @@ export class ForgejoClient {
     };
 
     if (this.token) {
-      headers.Authorization = `token ${this.token}`;
+      headers['Authorization'] = `token ${this.token}`;
     }
 
     logDebug('Creating review with comments:', { owner, repo, prNumber, event: options.event });
@@ -1026,13 +605,13 @@ export class ForgejoClient {
    * @param runNumber - The run_number/index_in_repo, NOT the internal id
    * @param jobIndex - Usually 0 for single-job workflows
    */
-  async getWorkflowLogs(owner: string, repo: string, runNumber: number, jobIndex = 0): Promise<string> {
+  async getWorkflowLogs(owner: string, repo: string, runNumber: number, jobIndex: number = 0): Promise<string> {
     // Logs use web endpoint: /{owner}/{repo}/actions/runs/{run_number}/jobs/{job_index}/logs
     const url = `${this.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}/jobs/${jobIndex}/logs`;
 
     const headers: Record<string, string> = {};
     if (this.token) {
-      headers.Authorization = `token ${this.token}`;
+      headers['Authorization'] = `token ${this.token}`;
     }
 
     logDebug('Fetching workflow logs:', { owner, repo, runNumber, jobIndex, url });
@@ -1070,12 +649,12 @@ export class ForgejoClient {
    * @param runNumber - The run_number (index_in_repo), NOT the internal id
    * @param jobIndex - Zero-based job index within the run
    */
-  async getJobSteps(owner: string, repo: string, runNumber: number, jobIndex = 0): Promise<{summary: string; duration: string; status: string}[]> {
+  async getJobSteps(owner: string, repo: string, runNumber: number, jobIndex: number = 0): Promise<{summary: string; duration: string; status: string}[]> {
     const url = `${this.instanceUrl}/${owner}/${repo}/actions/runs/${runNumber}/jobs/${jobIndex}`;
 
     const headers: Record<string, string> = {};
     if (this.token) {
-      headers.Authorization = `token ${this.token}`;
+      headers['Authorization'] = `token ${this.token}`;
     }
 
     logDebug('Fetching job steps from web page:', { owner, repo, runNumber, jobIndex, url });
@@ -1098,21 +677,18 @@ export class ForgejoClient {
 
       // Decode HTML entities (&#34; → ")
       const jsonStr = match[1].replace(/&#34;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-      const data = JSON.parse(jsonStr) as { state?: { currentJob?: { steps?: unknown[] } } };
+      const data = JSON.parse(jsonStr);
 
-      const steps = data.state?.currentJob?.steps;
+      const steps = data?.state?.currentJob?.steps;
       if (!Array.isArray(steps)) {
         return [];
       }
 
-      return steps.map((s: unknown) => {
-        const step = s as Record<string, unknown>;
-        return {
-          summary: (typeof step.summary === 'string' ? step.summary : '') || 'Unknown step',
-          duration: typeof step.duration === 'string' ? step.duration : '',
-          status: typeof step.status === 'string' ? step.status : 'unknown'
-        };
-      });
+      return steps.map((s: { summary?: string; duration?: string; status?: string }) => ({
+        summary: s.summary || 'Unknown step',
+        duration: s.duration || '',
+        status: s.status || 'unknown'
+      }));
     } catch (error) {
       logError('Failed to fetch job steps:', { error, url });
       if (error instanceof Error) {
@@ -1127,32 +703,6 @@ export class ForgejoClient {
    */
   async rerunWorkflow(owner: string, repo: string, runId: number): Promise<void> {
     const endpoint = `/repos/${owner}/${repo}/actions/runs/${runId}/rerun`;
-<<<<<<< HEAD
-||||||| parent of f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers['Authorization'] = `token ${this.token}`;
-    }
-
-=======
-    const url = `${this.instanceUrl}/api/v1${endpoint}`;
-
-    const headers: Record<string, string> = {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    };
-
-    if (this.token) {
-      headers.Authorization = `token ${this.token}`;
-    }
-
->>>>>>> f1de3e9 (chore: upgrade ESLint to strict-type-checked + stylistic rules)
     logDebug('Re-running workflow:', { owner, repo, runId });
     await this.requestWithBody<void>('POST', endpoint);
     logInfo('Workflow re-run triggered successfully:', { owner, repo, runId });
