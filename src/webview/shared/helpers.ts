@@ -65,3 +65,137 @@ export function formatTimeAgo(dateString: string | null | undefined, now?: Date)
 
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+
+interface TimelineActivity {
+  event?: string;
+  label?: { name?: string };
+  old_title?: string;
+  new_title?: string;
+  assignee?: { login?: string };
+  removed_assignee?: boolean;
+  milestone?: { title?: string };
+}
+
+// Forgejo API event names shared between issue and PR timeline views
+const sharedForgejoEvents: Record<string, string> = {
+  comment: 'commented',
+  change_title: 'changed the title',
+  commit_ref: 'referenced this',
+  issue_ref: 'referenced this',
+  comment_ref: 'referenced this',
+  pull_ref: 'referenced this',
+  project: 'changed the project',
+  project_board: 'moved in project board',
+  added_deadline: 'added a deadline',
+  modified_deadline: 'modified the deadline',
+  removed_deadline: 'removed the deadline',
+  add_dependency: 'added a dependency',
+  remove_dependency: 'removed a dependency',
+  start_tracking: 'started time tracking',
+  stop_tracking: 'stopped time tracking',
+  add_time_manual: 'added tracked time',
+  cancel_tracking: 'cancelled time tracking',
+  delete_time_manual: 'removed tracked time',
+  change_issue_ref: 'changed the issue reference',
+  // GitHub-style shared events
+  renamed: 'changed the title',
+  commented: 'commented',
+  referenced: 'referenced this',
+};
+
+function buildEventMap(itemType: 'issue' | 'pull request'): Record<string, string> {
+  const typeSpecific: Record<string, string> = {};
+
+  // Close/reopen/lock/unlock/pin/unpin apply to both, but text varies
+  typeSpecific.close = `closed this ${itemType}`;
+  typeSpecific.reopen = `reopened this ${itemType}`;
+  typeSpecific.label = 'added/removed a label';
+  typeSpecific.milestone = 'changed the milestone';
+  typeSpecific.assignees = 'changed assignees';
+  typeSpecific.lock = `locked this ${itemType}`;
+  typeSpecific.unlock = `unlocked this ${itemType}`;
+  typeSpecific.pin = `pinned this ${itemType}`;
+  typeSpecific.unpin = `unpinned this ${itemType}`;
+  // GitHub-style
+  typeSpecific.closed = `closed this ${itemType}`;
+  typeSpecific.reopened = `reopened this ${itemType}`;
+  typeSpecific.labeled = 'added a label';
+  typeSpecific.unlabeled = 'removed a label';
+  typeSpecific.milestoned = 'added to a milestone';
+  typeSpecific.demilestoned = 'removed from a milestone';
+  typeSpecific.assigned = 'was assigned';
+  typeSpecific.unassigned = 'was unassigned';
+  typeSpecific.locked = `locked this ${itemType}`;
+  typeSpecific.unlocked = `unlocked this ${itemType}`;
+  typeSpecific.pinned = `pinned this ${itemType}`;
+  typeSpecific.unpinned = `unpinned this ${itemType}`;
+
+  if (itemType === 'pull request') {
+    typeSpecific.delete_branch = 'deleted the head branch';
+    typeSpecific.merge_pull = 'merged this pull request';
+    typeSpecific.review = 'submitted a review';
+    typeSpecific.review_request = 'requested a review';
+    typeSpecific.dismiss_review = 'dismissed a review';
+    typeSpecific.change_target_branch = 'changed the target branch';
+    typeSpecific.pull_push = 'pushed commits';
+    typeSpecific.code = 'commented on code';
+    typeSpecific.pull_scheduled_merge = 'scheduled auto-merge';
+    typeSpecific.pull_cancel_scheduled_merge = 'cancelled auto-merge';
+    // GitHub-style PR events
+    typeSpecific.merged = 'merged this pull request';
+    typeSpecific.reviewed = 'submitted a review';
+    typeSpecific.approved = 'approved this pull request';
+    typeSpecific.rejected = 'requested changes';
+    typeSpecific.head_ref_deleted = 'deleted the head branch';
+    typeSpecific.head_ref_restored = 'restored the head branch';
+    typeSpecific.marked_ready_for_review = 'marked as ready for review';
+    typeSpecific.converted_to_draft = 'converted to draft';
+  } else {
+    typeSpecific.transferred = 'transferred this issue';
+  }
+
+  // Build the reference text for shared events
+  const resolvedShared: Record<string, string> = {};
+  for (const [key, value] of Object.entries(sharedForgejoEvents)) {
+    resolvedShared[key] = value === 'referenced this' ? `referenced this ${itemType}` : value;
+  }
+
+  return { ...resolvedShared, ...typeSpecific };
+}
+
+function enrichEventText(activity: TimelineActivity, eventText: string): string {
+  if (activity.event === 'label' && activity.label) {
+    return 'changed label <strong>' + escapeHtml(activity.label.name ?? '') + '</strong>';
+  }
+  if (activity.event === 'change_title' && activity.old_title && activity.new_title) {
+    return 'changed title from <del>' + escapeHtml(activity.old_title) + '</del> to <strong>' + escapeHtml(activity.new_title) + '</strong>';
+  }
+  if (activity.event === 'assignees' && activity.assignee) {
+    return (activity.removed_assignee ? 'unassigned ' : 'assigned ') + '<strong>' + escapeHtml(activity.assignee.login ?? '') + '</strong>';
+  }
+  if (activity.event === 'milestone' && activity.milestone) {
+    return 'set milestone to <strong>' + escapeHtml(activity.milestone.title ?? '') + '</strong>';
+  }
+  return eventText;
+}
+
+const issueEventMap = buildEventMap('issue');
+const prEventMap = buildEventMap('pull request');
+
+/**
+ * Renders a human-readable description of a timeline event for issues.
+ */
+export function renderIssueTimelineEvent(activity: TimelineActivity): string {
+  if (!activity.event) return 'performed an action';
+  const eventText = issueEventMap[activity.event] ?? activity.event;
+  return enrichEventText(activity, eventText);
+}
+
+/**
+ * Renders a human-readable description of a timeline event for pull requests.
+ */
+export function renderPRTimelineEvent(activity: TimelineActivity): string {
+  if (!activity.event) return 'performed an action';
+  const eventText = prEventMap[activity.event] ?? activity.event;
+  return enrichEventText(activity, eventText);
+}
