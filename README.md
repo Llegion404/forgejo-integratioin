@@ -1,6 +1,6 @@
 # Forgejo VS Code Extension
 
-> Browse Forgejo Pull Requests and Issues directly within VS Code.
+> Browse Pull Requests, Issues, and Actions from Forgejo, Gitea, and Codeberg directly in VS Code.
 
 <!-- TODO: Add screenshot here -->
 <!-- ![Screenshot](docs/images/screenshot.png) -->
@@ -16,13 +16,34 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ## Features
 
-- **Pull Requests**: View, browse files, see diffs, merge, and close PRs
-- **Issues**: View issues with full details and comments
-- **Multi-Instance Support**: Connect to multiple Forgejo servers simultaneously
-- **Auto-Detection**: Automatically detects Forgejo instance from your git remote
-- **PR File Diffs**: View file changes directly in VS Code's diff editor
-- **Grouping**: PRs grouped by state (Open, Draft, Merged, Closed)
-- **Browser Integration**: Click to open PRs/Issues in your browser
+### Pull Requests
+- Browse PRs grouped by state (Open, Draft, Merged, Closed)
+- View file changes directly in VS Code's diff editor
+- Add inline review comments on PR diffs
+- Create new pull requests from within VS Code
+- Merge PRs with multiple strategies (merge, squash, rebase)
+- Close PRs directly from the sidebar
+- Rich detail view showing description, comments, CI status, and timeline
+
+### Issues
+- Browse issues with full details and comments
+- Create new issues from within VS Code
+- Rich detail view with comment history and timeline events
+
+### Actions / CI
+- Monitor CI/CD workflow runs in a 3-level tree view (Run → Job → Step)
+- View job logs directly in the editor
+- Re-run failed workflows
+- Clickable CI status links in PR detail views
+
+### Multi-Instance & Auto-Detection
+- Connect to multiple Forgejo servers simultaneously
+- Auto-detect instance from your git remote
+- Select preferred remote when multiple remotes exist
+- Built-in diagnostics to troubleshoot connection issues
+
+### Browser Integration
+- Open any PR, Issue, or Action in your browser with one click
 
 ### Supported Platforms
 
@@ -48,7 +69,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ### From VSIX File
 
-Download the `.vsix` file from the [Releases](https://github.com/maxking/forgejo-vscode/releases) page, then:
+Download the `.vsix` file from the [Releases](https://codeberg.org/maxking/forgejo-vscode/releases) page, then:
 
 ```bash
 code --install-extension forgejo-vscode-*.vsix
@@ -124,8 +145,17 @@ Right-click on a PR for options:
 ### Viewing Issues
 
 1. Expand the **Issues** section in the Forgejo view
-2. Click an issue to see details and comments
+2. Click an issue to see full details, comments, and timeline
 3. Right-click to open in browser
+4. Use the **+** button in the Issues title bar to create a new issue
+
+### Monitoring Actions / CI
+
+1. Expand the **Actions** section in the Forgejo view
+2. See workflow runs with their status (success, failure, running)
+3. Expand a run to see individual jobs and steps
+4. Click a step to view its logs in the editor
+5. Right-click a run or job to re-run the workflow
 
 ### Commands
 
@@ -135,8 +165,12 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 |---------|-------------|
 | Forgejo: Add Instance | Add a new Forgejo server |
 | Forgejo: Manage Instances | View and edit configured servers |
+| Forgejo: Create Pull Request | Create a new PR from the current branch |
+| Forgejo: Create Issue | Create a new issue |
 | Forgejo: Refresh Pull Requests | Reload PR list |
 | Forgejo: Refresh Issues | Reload Issue list |
+| Forgejo: Refresh Actions | Reload Actions list |
+| Forgejo: Select Git Remote | Choose which git remote to use |
 | Forgejo: Show Diagnostics | Debug connection issues |
 | Forgejo: Show Output Channel | View extension logs |
 
@@ -145,6 +179,7 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `forgejo.autoDetectFromRemote` | `true` | Auto-detect instance from git remote |
+| `forgejo.preferredRemote` | `""` | Preferred git remote name (default: auto-detect, falls back to origin) |
 | `forgejo.debug` | `false` | Enable debug logging |
 | `forgejo.showFileStatusNotifications` | `true` | Show notifications for added/deleted files |
 
@@ -182,7 +217,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ### Quick Development Setup
 
 ```bash
-git clone https://github.com/maxking/forgejo-vscode.git
+git clone https://codeberg.org/maxking/forgejo-vscode.git
 cd forgejo-vscode
 npm install
 npm run compile
@@ -198,6 +233,12 @@ npm run lint          # Check code style
 ```
 
 ## Changelog
+
+### v0.3.6
+
+- Migrate to `forgejo-ts` shared client library
+- Fix CJS module compatibility for `forgejo-ts`
+- Add Open VSX publishing support
 
 ### v0.3.0
 
