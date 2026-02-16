@@ -80,14 +80,19 @@ jobs:
       env:
         OVSX_PAT: ${{ secrets.OPEN_VSX_PAT }}
       run: |
-        VSIX_FILE=$(ls *.vsix)
+        # Open VSX uses publisher 'abhilashraj' - repackage with correct publisher
+        jq '.publisher = "abhilashraj"' package.json > package.tmp && mv package.tmp package.json
+        vsce package --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master
+        OVSX_VSIX=$(ls -t *.vsix | head -1)
         if [ "${{ steps.get_version.outputs.is_prerelease }}" = "true" ]; then
           echo "Publishing to Open VSX as pre-release..."
-          ovsx publish "$VSIX_FILE" --pre-release -p $OVSX_PAT
+          ovsx publish "$OVSX_VSIX" --pre-release -p $OVSX_PAT
         else
           echo "Publishing to Open VSX as stable release..."
-          ovsx publish "$VSIX_FILE" -p $OVSX_PAT
+          ovsx publish "$OVSX_VSIX" -p $OVSX_PAT
         fi
+        # Restore original publisher
+        git checkout package.json
 
     - name: Upload VSIX artifact
       uses: actions/upload-artifact@v3
