@@ -17,7 +17,7 @@ jobs:
     - name: Install xvfb and dependencies
       run: |
         apt-get update
-        apt-get install -y xvfb libgtk-3-0 libxss1 libasound2 libgbm1 libnspr4 libnss3
+        apt-get install -y xvfb libgtk-3-0 libxss1 libasound2 libgbm1 libnspr4 libnss3 jq
 
     - name: Install dependencies
       run: npm ci
@@ -103,17 +103,19 @@ jobs:
           PRERELEASE_FLAG="true"
         fi
 
+        # Build JSON payload safely using jq to handle special characters in TAG_MESSAGE
+        JSON_PAYLOAD=$(jq -n \
+          --arg tag "${GITHUB_REF#refs/tags/}" \
+          --arg name "v${{ steps.get_version.outputs.version }}" \
+          --arg body "$TAG_MESSAGE" \
+          --argjson prerelease "$PRERELEASE_FLAG" \
+          '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: $prerelease}')
+
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
           "${{ github.server_url }}/api/v1/repos/${{ github.repository }}/releases" \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Content-Type: application/json" \
-          -d "{
-            \"tag_name\": \"${GITHUB_REF#refs/tags/}\",
-            \"name\": \"v${{ steps.get_version.outputs.version }}\",
-            \"body\": \"$TAG_MESSAGE\",
-            \"draft\": false,
-            \"prerelease\": $PRERELEASE_FLAG
-          }")
+          -d "$JSON_PAYLOAD")
         HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
         if [ "$HTTP_CODE" -ne 201 ]; then
           echo "Failed to create Forgejo release: HTTP $HTTP_CODE"
