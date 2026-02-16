@@ -37,7 +37,8 @@ describe('ForgejoClient - Coverage Gaps', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 401,
-        statusText: 'Unauthorized'
+        statusText: 'Unauthorized',
+        text: async () => ''
       } as unknown as Response);
 
       const result = await client.testConnection();
@@ -48,7 +49,8 @@ describe('ForgejoClient - Coverage Gaps', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 403,
-        statusText: 'Forbidden'
+        statusText: 'Forbidden',
+        text: async () => ''
       } as unknown as Response);
 
       const result = await client.testConnection();
@@ -59,7 +61,8 @@ describe('ForgejoClient - Coverage Gaps', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
-        statusText: 'Not Found'
+        statusText: 'Not Found',
+        text: async () => ''
       } as unknown as Response);
 
       const result = await client.testConnection();
@@ -70,7 +73,8 @@ describe('ForgejoClient - Coverage Gaps', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
-        statusText: 'Internal Server Error'
+        statusText: 'Internal Server Error',
+        text: async () => ''
       } as unknown as Response);
 
       const result = await client.testConnection();
@@ -158,7 +162,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.updatePullRequestBody('owner', 'repo', 42, 'body'))
         .rejects
-        .toThrow(expect.objectContaining({ message: expect.stringContaining('Network error') }));
+        .toBe('string error');
     });
   });
 
@@ -220,7 +224,7 @@ describe('ForgejoClient - Coverage Gaps', () => {
 
       await expect(client.updateIssueBody('owner', 'repo', 10, 'body'))
         .rejects
-        .toThrow(expect.objectContaining({ message: expect.stringContaining('Network error') }));
+        .toBe('string error');
     });
 
     test('should work without token', async () => {

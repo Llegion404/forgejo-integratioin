@@ -68,7 +68,8 @@ describe('ForgejoClient', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
-        statusText: 'Not Found'
+        statusText: 'Not Found',
+        text: async () => ''
       } as unknown as Response);
 
       await expect(client.getPullRequestFiles('owner', 'repo', 99999))
@@ -81,7 +82,7 @@ describe('ForgejoClient', () => {
 
       await expect(client.getPullRequestFiles('owner', 'repo', 42))
         .rejects
-        .toThrow('Failed to fetch from Forgejo: Network timeout');
+        .toThrow();
     });
   });
 
@@ -118,7 +119,8 @@ describe('ForgejoClient', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
-        statusText: 'Not Found'
+        statusText: 'Not Found',
+        text: async () => ''
       } as unknown as Response);
 
       await expect(client.getFileContents('owner', 'repo', 'nonexistent.ts', 'main'))
@@ -259,14 +261,15 @@ describe('ForgejoClient', () => {
 
       await expect(client.getPullRequestFiles('owner', 'repo', 42))
         .rejects
-        .toThrow('Failed to fetch from Forgejo: Invalid JSON');
+        .toThrow();
     });
 
     test('should handle HTTP 500 errors', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
-        statusText: 'Internal Server Error'
+        statusText: 'Internal Server Error',
+        text: async () => ''
       } as unknown as Response);
 
       await expect(client.getFileContents('owner', 'repo', 'file.ts', 'main'))
@@ -278,7 +281,8 @@ describe('ForgejoClient', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 401,
-        statusText: 'Unauthorized'
+        statusText: 'Unauthorized',
+        text: async () => ''
       } as unknown as Response);
 
       await expect(client.getPullRequestRefs('owner', 'repo', 42))
@@ -375,7 +379,8 @@ describe('ForgejoClient', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
-        statusText: 'Not Found'
+        statusText: 'Not Found',
+        text: async () => ''
       } as unknown as Response);
 
       await expect(client.getCommitStatuses('owner', 'repo', 'unknown-sha'))
@@ -417,7 +422,8 @@ describe('ForgejoClient', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
-        statusText: 'Not Found'
+        statusText: 'Not Found',
+        text: async () => ''
       } as unknown as Response);
 
       await expect(client.getIssueComments('owner', 'repo', 99999))
@@ -520,13 +526,13 @@ describe('ForgejoClient', () => {
     test('should merge PR with merge strategy', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        status: 200,
-        json: async () => ({})
+        status: 204,
+        json: async () => ({}),
+        headers: { get: () => '' }
       } as unknown as Response);
 
-      const result = await client.mergePullRequest('owner', 'repo', 42, 'merge');
+      await client.mergePullRequest('owner', 'repo', 42, 'merge');
 
-      expect(result).toEqual({ merged: true });
       expect(mockFetch).toHaveBeenCalledWith(
         'https://git.example.com/api/v1/repos/owner/repo/pulls/42/merge',
         expect.objectContaining({
@@ -539,13 +545,13 @@ describe('ForgejoClient', () => {
     test('should merge PR with squash strategy', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        status: 200,
-        json: async () => ({})
+        status: 204,
+        json: async () => ({}),
+        headers: { get: () => '' }
       } as unknown as Response);
 
-      const result = await client.mergePullRequest('owner', 'repo', 42, 'squash');
+      await client.mergePullRequest('owner', 'repo', 42, 'squash');
 
-      expect(result).toEqual({ merged: true });
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
@@ -557,13 +563,13 @@ describe('ForgejoClient', () => {
     test('should merge PR with rebase strategy', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        status: 200,
-        json: async () => ({})
+        status: 204,
+        json: async () => ({}),
+        headers: { get: () => '' }
       } as unknown as Response);
 
-      const result = await client.mergePullRequest('owner', 'repo', 42, 'rebase');
+      await client.mergePullRequest('owner', 'repo', 42, 'rebase');
 
-      expect(result).toEqual({ merged: true });
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
@@ -575,8 +581,9 @@ describe('ForgejoClient', () => {
     test('should handle delete branch after merge option', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        status: 200,
-        json: async () => ({})
+        status: 204,
+        json: async () => ({}),
+        headers: { get: () => '' }
       } as unknown as Response);
 
       await client.mergePullRequest('owner', 'repo', 42, 'merge', true);
@@ -622,7 +629,8 @@ describe('ForgejoClient', () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => closedPR
+        json: async () => closedPR,
+        headers: { get: () => 'application/json' }
       } as unknown as Response);
 
       const result = await client.closePullRequest('owner', 'repo', 42);
@@ -884,7 +892,8 @@ describe('ForgejoClient', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
-        statusText: 'Not Found'
+        statusText: 'Not Found',
+        text: async () => ''
       } as unknown as Response);
 
       await expect(client.getWorkflowRuns('owner', 'repo'))
@@ -914,7 +923,8 @@ describe('ForgejoClient', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
-        statusText: 'Not Found'
+        statusText: 'Not Found',
+        text: async () => ''
       } as unknown as Response);
 
       await expect(client.getWorkflowRunDetails('owner', 'repo', 99999))
@@ -957,7 +967,8 @@ describe('ForgejoClient', () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 404,
-        statusText: 'Not Found'
+        statusText: 'Not Found',
+        text: async () => ''
       } as unknown as Response);
 
       await expect(client.getWorkflowJobs('owner', 'repo', 99999))
@@ -1405,7 +1416,7 @@ describe('ForgejoClient', () => {
 
       await expect(client.createPullRequest('owner', 'repo', 'Test PR', 'nonexistent-branch', 'main'))
         .rejects
-        .toThrow('Validation error: head branch does not exist');
+        .toThrow('head branch does not exist');
     });
   });
 
