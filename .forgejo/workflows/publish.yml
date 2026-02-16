@@ -81,7 +81,6 @@ jobs:
         OVSX_PAT: ${{ secrets.OPEN_VSX_PAT }}
       run: |
         # Open VSX uses publisher 'abhilashraj' - repackage with correct publisher
-        jq '.publisher = "abhilashraj"' package.json > package.tmp && mv package.tmp package.json
         vsce package --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master
         OVSX_VSIX=$(ls -t *.vsix | head -1)
         if [ "${{ steps.get_version.outputs.is_prerelease }}" = "true" ]; then
