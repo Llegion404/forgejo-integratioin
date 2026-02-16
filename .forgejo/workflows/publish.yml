@@ -31,8 +31,8 @@ jobs:
         npm run compile
         xvfb-run -a npm run test:integration
 
-    - name: Install vsce
-      run: npm install -g @vscode/vsce
+    - name: Install vsce and ovsx
+      run: npm install -g @vscode/vsce ovsx
 
     - name: Get version from tag
       id: get_version
@@ -74,6 +74,19 @@ jobs:
         else
           echo "Publishing as stable release..."
           vsce publish -p $VSCE_PAT --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master
+        fi
+
+    - name: Publish to Open VSX Registry
+      env:
+        OVSX_PAT: ${{ secrets.OPEN_VSX_PAT }}
+      run: |
+        VSIX_FILE=$(ls *.vsix)
+        if [ "${{ steps.get_version.outputs.is_prerelease }}" = "true" ]; then
+          echo "Publishing to Open VSX as pre-release..."
+          ovsx publish "$VSIX_FILE" --pre-release -p $OVSX_PAT
+        else
+          echo "Publishing to Open VSX as stable release..."
+          ovsx publish "$VSIX_FILE" -p $OVSX_PAT
         fi
 
     - name: Upload VSIX artifact
