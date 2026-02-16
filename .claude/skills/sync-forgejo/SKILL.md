@@ -3,7 +3,7 @@ name: sync-forgejo
 description: Bidirectionally sync issues between the local beads issue tracker and the Forgejo instance. Imports new Forgejo issues into beads, exports beads-only issues to Forgejo, and syncs status changes. Triggers on "/sync-forgejo" or mentions of "sync issues", "sync forgejo issues", "import forgejo issues", "export issues to forgejo".
 user-invocable: true
 allowed-tools:
-  - Bash(python3:.claude/skills/sync-forgejo/scripts/sync-forgejo.py:*)
+  - Bash(node:.claude/skills/sync-forgejo/scripts/dist/sync-forgejo.js:*)
   - Bash(bd:*)
 ---
 
@@ -35,10 +35,10 @@ One-time migration for existing issues that were manually imported with Forgejo 
 
 ## Requirements
 
-- **FORGEJO_TOKEN** environment variable: Required for creating/updating Forgejo issues (export). Optional for import-only from public repos.
+- **FORGEJO_TOKEN** environment variable or `~/.config/forgejo-claude/config.json`: Required for creating/updating Forgejo issues (export). Optional for import-only from public repos.
 - **Git remote**: The script auto-detects the Forgejo instance from `git remote get-url origin`.
 - **bd CLI**: Must be available in PATH.
-- **Python 3**: Uses stdlib only (no pip packages needed).
+- **Node.js 18+**: Bundled single file, no runtime dependencies.
 
 ## How It Works
 
