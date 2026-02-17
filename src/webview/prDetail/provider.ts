@@ -249,11 +249,51 @@ export class PRDetailWebviewProvider {
       case 'updateBody': await this._updateBody(owner, repo, number, message.body, panelKey); break;
       case 'openCIStatus':
         if (message.url) {
-          void vscode.env.openExternal(vscode.Uri.parse(message.url));
+          await this._openCIStatus(message.url, owner, repo);
         }
         break;
       case 'viewCommit': break;
       case 'viewFile': break;
+    }
+  }
+
+  private async _openCIStatus(url: string, owner: string, repo: string): Promise<void> {
+    // Check if this is a Forgejo Actions URL (e.g., /owner/repo/actions/runs/283/jobs/1)
+    // These URLs are relative paths from the Forgejo instance
+    const actionsMatch = url.match(/\/[^/]+\/[^/]+\/actions\/runs\/(\d+)(?:\/jobs\/(\d+))?/);
+    if (actionsMatch) {
+      const runNumber = parseInt(actionsMatch[1], 10);
+      try {
+        const config = await getForgejoConfig();
+        if (!config) throw new Error('No config');
+
+        // Fetch workflow runs and find the matching one by run_number
+        const client = new ForgejoClient(config.instanceUrl, config.token);
+        const response = await client.getWorkflowRuns(owner, repo);
+        const matchingRun = response.workflow_runs.find(r => r.run_number === runNumber);
+
+        if (matchingRun) {
+          // Deep-link to the action detail webview within the extension
+          await vscode.commands.executeCommand('forgejo.showActionDetails', matchingRun, owner, repo);
+          return;
+        }
+      } catch (error) {
+        logError('Failed to open CI status in extension:', error);
+      }
+    }
+
+    // Fallback: open in browser, fixing relative URLs
+    try {
+      let fullUrl = url;
+      if (url.startsWith('/')) {
+        const config = await getForgejoConfig();
+        if (config?.instanceUrl) {
+          fullUrl = `${config.instanceUrl}${url}`;
+        }
+      }
+      void vscode.env.openExternal(vscode.Uri.parse(fullUrl));
+    } catch (error) {
+      logError('Failed to open CI status URL:', error);
     }
   }
 
