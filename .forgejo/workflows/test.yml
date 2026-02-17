@@ -50,26 +50,28 @@ jobs:
     - name: Package and verify .vsix contents
       run: |
         npm run package
-        VSIX=$(ls -t *.vsix | head -1)
+        VSIX=$(ls -t *.vsix 2>/dev/null | head -1)
+        if [ -z "$VSIX" ]; then
+          echo "ERROR: No .vsix file found after packaging"
+          exit 1
+        fi
         echo "Checking .vsix: $VSIX"
         unzip -l "$VSIX" > /tmp/vsix-contents.txt
 
-        REQUIRED=(
-          "extension/out/extension.js"
-          "extension/node_modules/forgejo-ts/package.json"
-          "extension/node_modules/forgejo-ts/dist/index.js"
-          "extension/package.json"
-        )
+        check() {
+          if grep -q "$1" /tmp/vsix-contents.txt; then
+            echo "OK: $1"
+          else
+            echo "MISSING: $1"
+            return 1
+          fi
+        }
 
         FAILED=0
-        for path in "${REQUIRED[@]}"; do
-          if grep -q "$path" /tmp/vsix-contents.txt; then
-            echo "OK: $path"
-          else
-            echo "MISSING: $path"
-            FAILED=1
-          fi
-        done
+        check "extension/out/extension.js" || FAILED=1
+        check "extension/node_modules/forgejo-ts/package.json" || FAILED=1
+        check "extension/node_modules/forgejo-ts/dist/index.js" || FAILED=1
+        check "extension/package.json" || FAILED=1
 
         if [ "$FAILED" -ne 0 ]; then
           echo "--- Full .vsix contents ---"
