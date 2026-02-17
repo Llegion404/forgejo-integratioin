@@ -46,8 +46,9 @@ MAINTAINERS.md
 # Patches
 patches/**
 
-# Dependencies
-node_modules/**
+# Dependencies (vsce auto-includes production deps, exclude the rest)
+node_modules/.package-lock.json
+node_modules/.cache/**
 
 # Logs and temp files
 *.log
