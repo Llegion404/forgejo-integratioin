@@ -36,3 +36,46 @@ jobs:
       run: |
         npm run compile
         xvfb-run -a npm run test:integration
+
+  smoke-test-vsix:
+    runs-on: docker
+    container: node:20
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Package and verify .vsix contents
+      run: |
+        npm run package
+        VSIX=$(ls -t *.vsix 2>/dev/null | head -1)
+        if [ -z "$VSIX" ]; then
+          echo "ERROR: No .vsix file found after packaging"
+          exit 1
+        fi
+        echo "Checking .vsix: $VSIX"
+        unzip -l "$VSIX" > /tmp/vsix-contents.txt
+
+        check() {
+          if grep -q "$1" /tmp/vsix-contents.txt; then
+            echo "OK: $1"
+          else
+            echo "MISSING: $1"
+            return 1
+          fi
+        }
+
+        FAILED=0
+        check "extension/out/extension.js" || FAILED=1
+        check "extension/node_modules/forgejo-ts/package.json" || FAILED=1
+        check "extension/node_modules/forgejo-ts/dist/index.js" || FAILED=1
+        check "extension/package.json" || FAILED=1
+
+        if [ "$FAILED" -ne 0 ]; then
+          echo "--- Full .vsix contents ---"
+          cat /tmp/vsix-contents.txt
+          exit 1
+        fi
+        echo "All required files present in .vsix"
