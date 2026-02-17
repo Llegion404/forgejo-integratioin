@@ -1,7 +1,0 @@
-diff --git a/node_modules/forgejo-ts/dist/cjs/package.json b/node_modules/forgejo-ts/dist/cjs/package.json
-new file mode 100644
-index 0000000..b731bd6
---- /dev/null
-+++ b/node_modules/forgejo-ts/dist/cjs/package.json
-@@ -0,0 +1 @@
-+{"type": "commonjs"}
