@@ -10,7 +10,7 @@ jobs:
   live-test:
     strategy:
       matrix:
-        forgejo-version: ['11', '12']
+        forgejo-version: ['11', '12', '13']
 
     runs-on: docker
     container: node:20
