@@ -2,15 +2,23 @@
 
 > Browse Pull Requests, Issues, and Actions from Forgejo, Gitea, and Codeberg directly in VS Code.
 
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/maxking.forgejo-vscode?label=VS%20Code%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=maxking.forgejo-vscode)
+[![Open VSX](https://img.shields.io/open-vsx/v/maxking/forgejo-vscode?label=Open%20VSX)](https://open-vsx.org/extension/maxking/forgejo-vscode)
+
 <!-- TODO: Add screenshot here -->
 <!-- ![Screenshot](docs/images/screenshot.png) -->
 
+## Install
+
+**[Install from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=maxking.forgejo-vscode)** -- or search for "Forgejo Integration" in the Extensions panel (`Ctrl+Shift+X`).
+
+**[Install from Open VSX](https://open-vsx.org/extension/maxking/forgejo-vscode)** -- for VSCodium and other compatible editors.
+
 ## Quick Start
 
-1. **Install** the extension from the [VS Code Marketplace](#installation)
-2. **Open** a folder containing a Forgejo/Codeberg git repository
-3. **Click** the Forgejo icon in the Activity Bar (sidebar)
-4. **Done!** Your PRs and Issues appear automatically
+1. **Open** a folder containing a Forgejo, Codeberg, or Gitea git repository
+2. **Click** the Forgejo icon in the Activity Bar (sidebar)
+3. **Done!** Your PRs and Issues appear automatically
 
 For private repositories, [add a Personal Access Token](#setting-up-authentication).
 
@@ -31,7 +39,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - Rich detail view with comment history and timeline events
 
 ### Actions / CI
-- Monitor CI/CD workflow runs in a 3-level tree view (Run → Job → Step)
+- Monitor CI/CD workflow runs in a 3-level tree view (Run > Job > Step)
 - View job logs directly in the editor
 - Re-run failed workflows
 - Clickable CI status links in PR detail views
@@ -50,32 +58,6 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - [Codeberg](https://codeberg.org)
 - Self-hosted Forgejo instances
 - Gitea instances (compatible API)
-
-## Installation
-
-### From VS Code Marketplace
-
-1. Open VS Code
-2. Press `Ctrl+Shift+X` (Windows/Linux) or `Cmd+Shift+X` (Mac)
-3. Search for "Forgejo Integration"
-4. Click **Install**
-
-### From Open VSX (for VSCodium)
-
-1. Open VSCodium
-2. Go to Extensions
-3. Search for "Forgejo Integration"
-4. Click **Install**
-
-### From VSIX File
-
-Download the `.vsix` file from the [Releases](https://codeberg.org/maxking/forgejo-vscode/releases) page, then:
-
-```bash
-code --install-extension forgejo-vscode-*.vsix
-```
-
-Or in VS Code: Extensions view → `...` menu → "Install from VSIX..."
 
 ## Setting Up Authentication
 
@@ -205,62 +187,14 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 
 ### Git remote not detected
 
-The extension looks for the `origin` remote. Supported URL formats:
+The extension looks for the `origin` remote by default (configurable via `forgejo.preferredRemote`). Supported URL formats:
 - HTTPS: `https://codeberg.org/owner/repo.git`
 - SSH: `git@codeberg.org:owner/repo.git`
 - SSH protocol: `ssh://git@codeberg.org/owner/repo.git`
 
-## Contributing
+## Feedback & Issues
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-### Quick Development Setup
-
-```bash
-git clone https://codeberg.org/maxking/forgejo-vscode.git
-cd forgejo-vscode
-npm install
-npm run compile
-# Press F5 in VS Code to launch Extension Development Host
-```
-
-### Running Tests
-
-```bash
-npm test              # Run all tests
-npm run test:unit     # Unit tests only (fast)
-npm run lint          # Check code style
-```
-
-## Changelog
-
-### v0.3.6
-
-- Migrate to `forgejo-ts` shared client library
-- Fix CJS module compatibility for `forgejo-ts`
-- Add Open VSX publishing support
-
-### v0.3.0
-
-#### Features
-- **Inline PR commenting** via Comment Controller API (#58)
-- **Clickable CI statuses** — open target URL from PR detail view (#54)
-- **3-level Actions tree view** — Run → Job → Step hierarchy (#52)
-
-#### Fixes
-- Show descriptive event text in issue detail timeline (#56)
-- Show correct icons for files with `changed` status (#60)
-- Deduplicate CI statuses by context in PR detail view (#53)
-- Show commit title instead of "Run #N" in Actions tree
-
-#### Chores
-- Upgrade ESLint to strict-type-checked + stylistic rules (#59)
-- Extract `requestWithBody` helper and add proper return types (#57)
-- Add `.worktree/` to `.vscodeignore`
-
-### v0.2.0
-
-- Initial release with PR and Issue browsing, file diffs, multi-instance support, and auto-detection from git remotes.
+Found a bug or have a feature request? Please open an issue on the [Codeberg repository](https://codeberg.org/maxking/forgejo-vscode).
 
 ## Acknowledgments
 
