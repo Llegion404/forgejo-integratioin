@@ -15,6 +15,20 @@ export interface ScrapedStep {
 }
 
 /**
+ * Plain serializable arguments passed to the forgejo.viewStepLogs command.
+ * Using a plain object instead of StepTreeItem avoids circular JSON references
+ * (StepTreeItem.command.arguments[0] → StepTreeItem).
+ */
+export interface StepLogArgs {
+  stepSummary: string;
+  owner: string;
+  repo: string;
+  runNumber: number;
+  jobIndex: number;
+}
+
+
+/**
  * Get a status icon for a workflow status string.
  */
 function getStatusIcon(status: string): vscode.ThemeIcon {
@@ -131,11 +145,19 @@ export class StepTreeItem extends vscode.TreeItem {
 
     this.iconPath = getStatusIcon(step.status);
 
-    // Click to view step logs
+    // Click to view step logs — pass a plain serializable object to avoid
+    // circular JSON (StepTreeItem.command.arguments[0] → StepTreeItem).
+    const args: StepLogArgs = {
+      stepSummary: step.summary,
+      owner,
+      repo,
+      runNumber,
+      jobIndex
+    };
     this.command = {
       command: 'forgejo.viewStepLogs',
       title: 'View Step Logs',
-      arguments: [this]
+      arguments: [args]
     };
   }
 }
