@@ -212,6 +212,43 @@ describe('IssueTreeProvider', () => {
       provider.refresh();
       expect(listener).toHaveBeenCalled();
     });
+
+    test('should fetch fresh issues on next getChildren call after refresh', async () => {
+      // Initial state: 1 open issue
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.getIssues.mockResolvedValue([mockOpenIssue]);
+
+      const initialGroups = await provider.getChildren();
+      expect(initialGroups).toHaveLength(1);
+      expect((initialGroups[0] as vscode.TreeItem).label).toBe('Open');
+      expect((initialGroups[0] as vscode.TreeItem).description).toBe('1');
+
+      // New issue added (simulates server state after createIssue)
+      const mockNewIssue: IssueListItem = {
+        number: 11,
+        title: 'New issue after refresh',
+        state: 'open',
+        user: { login: 'carol' },
+        html_url: 'https://git.example.com/test-owner/test-repo/issues/11',
+        created_at: '2026-02-20T00:00:00Z',
+        comments: 0
+      };
+      mockClient.getIssues.mockResolvedValue([mockOpenIssue, mockNewIssue]);
+
+      // Trigger refresh (as createIssue command does immediately after API call)
+      provider.refresh();
+
+      // Next getChildren call should return fresh data with the new issue
+      const updatedGroups = await provider.getChildren();
+      expect(updatedGroups).toHaveLength(1);
+      expect((updatedGroups[0] as vscode.TreeItem).label).toBe('Open');
+      expect((updatedGroups[0] as vscode.TreeItem).description).toBe('2');
+
+      const issueItems = await provider.getChildren(updatedGroups[0]);
+      expect(issueItems).toHaveLength(2);
+      const labels = issueItems.map(item => (item as vscode.TreeItem).label as string);
+      expect(labels).toContain('#11: New issue after refresh');
+    });
   });
 
   describe('IssueTreeProvider - getTreeItem', () => {
