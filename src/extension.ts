@@ -193,6 +193,10 @@ export async function activate(context: vscode.ExtensionContext) {
         const issue = await client.createIssue(config.owner, config.repo, title.trim(), body.trim() || undefined);
 
         logInfo(`Issue #${issue.number} created: ${issue.title}`);
+
+        // Refresh immediately so the new issue appears regardless of notification interaction
+        issueTreeProvider.refresh();
+
         const action = await vscode.window.showInformationMessage(
           `Issue #${issue.number} created successfully!`,
           'Open in Browser'
@@ -201,9 +205,6 @@ export async function activate(context: vscode.ExtensionContext) {
         if (action === 'Open in Browser') {
           void vscode.env.openExternal(vscode.Uri.parse(issue.html_url));
         }
-
-        // Refresh the issues tree to show the new issue
-        issueTreeProvider.refresh();
       } catch (error) {
         logError('Error creating issue:', error);
         void vscode.window.showErrorMessage(
@@ -315,6 +316,10 @@ export async function activate(context: vscode.ExtensionContext) {
         );
 
         logInfo(`PR #${pr.number} created: ${pr.title}`);
+
+        // Refresh immediately so the new PR appears regardless of notification interaction
+        prTreeProvider.refresh();
+
         const action = await vscode.window.showInformationMessage(
           `PR #${pr.number} created successfully!`,
           'Open in Browser'
@@ -323,9 +328,6 @@ export async function activate(context: vscode.ExtensionContext) {
         if (action === 'Open in Browser') {
           void vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
         }
-
-        // Refresh the PR tree to show the new pull request
-        prTreeProvider.refresh();
       } catch (error) {
         logError('Error creating pull request:', error);
         void vscode.window.showErrorMessage(

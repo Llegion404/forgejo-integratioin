@@ -212,6 +212,73 @@ test.describe('PR Detail Webview', () => {
     await expect(page.locator('#activity-count')).toHaveText('(3 events)');
   });
 
+  test('renders comment body with bold markdown', async ({ page }) => {
+    const data = createMockPRData();
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'reviewer' },
+        body: '**LGTM!** Looks good.',
+      },
+    ];
+    await harness.sendPRUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    await expect(body.locator('strong')).toHaveText('LGTM!');
+  });
+
+  test('renders comment body with code block', async ({ page }) => {
+    const data = createMockPRData();
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'reviewer' },
+        body: 'Use `const x = 1` instead',
+      },
+    ];
+    await harness.sendPRUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    await expect(body.locator('code')).toHaveText('const x = 1');
+  });
+
+  test('renders review body with markdown', async ({ page }) => {
+    const data = createMockPRData();
+    data.activities = [
+      {
+        type: 'review',
+        id: 1,
+        user: { login: 'maintainer' },
+        state: 'APPROVED',
+        body: '**Approved!** Great work on the `tests`.',
+      },
+    ];
+    await harness.sendPRUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    await expect(body.locator('strong')).toHaveText('Approved!');
+    await expect(body.locator('code')).toHaveText('tests');
+  });
+
+  test('does not render HTML tags in comment body (XSS prevention)', async ({ page }) => {
+    const data = createMockPRData();
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'commenter' },
+        body: '<script>alert("xss")</script>',
+      },
+    ];
+    await harness.sendPRUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    await expect(body.locator('script')).toHaveCount(0);
+    await expect(body).toContainText('alert');
+  });
+
   test('shows comment input when clicking + Comment', async ({ page }) => {
     await harness.sendPRUpdate(createMockPRData());
 
