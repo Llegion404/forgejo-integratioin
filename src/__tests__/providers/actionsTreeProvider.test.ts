@@ -279,11 +279,26 @@ describe('ActionsTreeProvider', () => {
       expect(item.contextValue).toBe('workflowStep');
     });
 
-    test('should set command to forgejo.viewStepLogs', () => {
+    test('should set command to forgejo.viewStepLogs with plain serializable args', () => {
       const item = new StepTreeItem(mockScrapedStepCheckout, 0, 42, owner, repo);
       expect(item.command).toBeDefined();
       expect(item.command!.command).toBe('forgejo.viewStepLogs');
-      expect(item.command!.arguments).toEqual([item]);
+      const args = item.command!.arguments![0];
+      // Must be a plain object, not the tree item itself (circular reference guard)
+      expect(args).not.toBe(item);
+      expect(args).toEqual({
+        stepSummary: 'Checkout',
+        owner,
+        repo,
+        runNumber: 42,
+        jobIndex: 0
+      });
+    });
+
+    test('should not create circular JSON in command arguments', () => {
+      const item = new StepTreeItem(mockScrapedStepCheckout, 1, 55, owner, repo);
+      // JSON.stringify must not throw "Converting circular structure to JSON"
+      expect(() => JSON.stringify(item.command!.arguments)).not.toThrow();
     });
 
     test('should set correct icon for success', () => {

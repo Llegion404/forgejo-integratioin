@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { execSync } from 'child_process';
 import { PRTreeProvider } from './providers/prTreeProvider';
 import { IssueTreeProvider } from './providers/issueTreeProvider';
-import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem } from './providers/actionsTreeProvider';
+import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from './providers/actionsTreeProvider';
 import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
 import { WorkflowRunListItem, WorkflowJob } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
@@ -832,7 +832,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'forgejo.viewStepLogs',
-      async (stepItem: StepTreeItem) => {
+      async (args: StepLogArgs) => {
         try {
           const config = await getForgejoConfig();
           if (!config) {
@@ -843,13 +843,13 @@ export async function activate(context: vscode.ExtensionContext) {
           await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
-              title: `Fetching logs for ${stepItem.step.summary}...`,
+              title: `Fetching logs for ${args.stepSummary}...`,
               cancellable: false
             },
             async () => {
               const client = new ForgejoClient(config.instanceUrl, config.token);
               const logs = await client.getWorkflowLogs(
-                stepItem.owner, stepItem.repo, stepItem.runNumber, stepItem.jobIndex
+                args.owner, args.repo, args.runNumber, args.jobIndex
               );
 
               const doc = await vscode.workspace.openTextDocument({
