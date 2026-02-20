@@ -63,9 +63,9 @@ describe('ActionsTreeProvider', () => {
       expect(item.label).toBe('Add new feature (#42)');
     });
 
-    test('should show short SHA in description', () => {
+    test('should show branch and workflow file in description', () => {
       const item = new WorkflowRunTreeItem(42, [mockWorkflowRunSuccess], owner, repo);
-      expect(item.description).toBe('abc123d');
+      expect(item.description).toBe('main · ci.yml');
     });
 
     test('should set tooltip with workflow info', () => {
@@ -73,6 +73,7 @@ describe('ActionsTreeProvider', () => {
       expect(item.tooltip).toContain('Workflow: ci.yml');
       expect(item.tooltip).toContain('Branch: main');
       expect(item.tooltip).toContain('Commit: abc123def456');
+      expect(item.tooltip).toContain('Trigger: push');
       expect(item.tooltip).toContain('Add new feature');
       expect(item.tooltip).toContain('Jobs: 1');
     });
