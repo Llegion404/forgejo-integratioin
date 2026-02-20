@@ -211,7 +211,9 @@ export class PRDetailWebviewProvider {
     } catch (e) { logDebug('Could not fetch commits:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);
-      activities.push(...(timeline as (PRActivity & { type: string })[]).map((t) => ({ ...t, event: t.type, type: 'timeline' as const })));
+      // Filter out comment events to avoid duplicating entries already fetched via getIssueComments.
+      // Also, do not override `event` with `t.type` (which doesn't exist on TimelineEvent).
+      activities.push(...(timeline as PRActivity[]).filter((t) => t.event !== 'comment').map((t) => ({ ...t, type: 'timeline' as const })));
     } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? a.submitted_at ?? a.committed_at ?? 0);

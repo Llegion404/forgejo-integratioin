@@ -1,4 +1,4 @@
-import { escapeHtml, renderMarkdown, formatTimeAgo } from '../../webview/shared/helpers';
+import { escapeHtml, renderMarkdown, formatTimeAgo, renderIssueTimelineEvent, renderPRTimelineEvent } from '../../webview/shared/helpers';
 
 describe('Webview Helpers', () => {
   describe('escapeHtml', () => {
@@ -185,6 +185,70 @@ describe('Webview Helpers', () => {
     test('should handle singular day correctly', () => {
       const date = new Date('2024-01-14T12:00:00Z');
       expect(formatTimeAgo(date.toISOString(), now)).toBe('1 day ago');
+    });
+  });
+
+  describe('renderIssueTimelineEvent', () => {
+    test('should return "performed an action" when event is missing', () => {
+      expect(renderIssueTimelineEvent({})).toBe('performed an action');
+    });
+
+    test('should return "performed an action" when event is empty string', () => {
+      expect(renderIssueTimelineEvent({ event: '' })).toBe('performed an action');
+    });
+
+    test('should render close event', () => {
+      expect(renderIssueTimelineEvent({ event: 'close' })).toBe('closed this issue');
+    });
+
+    test('should render reopen event', () => {
+      expect(renderIssueTimelineEvent({ event: 'reopen' })).toBe('reopened this issue');
+    });
+
+    test('should render comment event as "commented"', () => {
+      expect(renderIssueTimelineEvent({ event: 'comment' })).toBe('commented');
+    });
+
+    test('should render label event with label name', () => {
+      const result = renderIssueTimelineEvent({ event: 'label', label: { name: 'bug' } });
+      expect(result).toContain('bug');
+      expect(result).toContain('changed label');
+    });
+
+    test('should render change_title event with old and new titles', () => {
+      const result = renderIssueTimelineEvent({ event: 'change_title', old_title: 'Old', new_title: 'New' });
+      expect(result).toContain('Old');
+      expect(result).toContain('New');
+    });
+
+    test('should fall back to event name for unknown events', () => {
+      expect(renderIssueTimelineEvent({ event: 'some_unknown_event' })).toBe('some_unknown_event');
+    });
+  });
+
+  describe('renderPRTimelineEvent', () => {
+    test('should return "performed an action" when event is missing', () => {
+      expect(renderPRTimelineEvent({})).toBe('performed an action');
+    });
+
+    test('should render merge_pull event', () => {
+      expect(renderPRTimelineEvent({ event: 'merge_pull' })).toBe('merged this pull request');
+    });
+
+    test('should render review event', () => {
+      expect(renderPRTimelineEvent({ event: 'review' })).toBe('submitted a review');
+    });
+
+    test('should render comment event as "commented"', () => {
+      expect(renderPRTimelineEvent({ event: 'comment' })).toBe('commented');
+    });
+
+    test('should render close event for pull requests', () => {
+      expect(renderPRTimelineEvent({ event: 'close' })).toBe('closed this pull request');
+    });
+
+    test('should fall back to event name for unknown events', () => {
+      expect(renderPRTimelineEvent({ event: 'some_unknown_event' })).toBe('some_unknown_event');
     });
   });
 });
