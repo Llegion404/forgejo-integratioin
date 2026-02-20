@@ -158,6 +158,106 @@ test.describe('Issue Detail Webview', () => {
     await expect(timeline.locator('.activity-action')).toHaveText('commented');
   });
 
+  test('renders comment body with bold markdown', async ({ page }) => {
+    const data = createMockIssueData();
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'commenter' },
+        body: '**bold text** and normal text',
+      },
+    ];
+    await harness.sendIssueUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    await expect(body.locator('strong')).toHaveText('bold text');
+  });
+
+  test('renders comment body with italic markdown', async ({ page }) => {
+    const data = createMockIssueData();
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'commenter' },
+        body: '*italic text*',
+      },
+    ];
+    await harness.sendIssueUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    await expect(body.locator('em')).toHaveText('italic text');
+  });
+
+  test('renders comment body with inline code', async ({ page }) => {
+    const data = createMockIssueData();
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'commenter' },
+        body: 'Use `npm install` to install',
+      },
+    ];
+    await harness.sendIssueUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    await expect(body.locator('code')).toHaveText('npm install');
+  });
+
+  test('renders comment body with a heading', async ({ page }) => {
+    const data = createMockIssueData();
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'commenter' },
+        body: '## Steps to Reproduce',
+      },
+    ];
+    await harness.sendIssueUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    await expect(body.locator('h2')).toHaveText('Steps to Reproduce');
+  });
+
+  test('renders comment body with a link', async ({ page }) => {
+    const data = createMockIssueData();
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'commenter' },
+        body: '[see docs](https://example.com)',
+      },
+    ];
+    await harness.sendIssueUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    await expect(body.locator('a')).toHaveText('see docs');
+    await expect(body.locator('a')).toHaveAttribute('href', 'https://example.com');
+  });
+
+  test('does not render HTML tags in comment body (XSS prevention)', async ({ page }) => {
+    const data = createMockIssueData();
+    data.activities = [
+      {
+        type: 'comment',
+        id: 1,
+        user: { login: 'commenter' },
+        body: '<script>alert("xss")</script>',
+      },
+    ];
+    await harness.sendIssueUpdate(data);
+
+    const body = page.locator('#activity-timeline .activity-body');
+    // Script tags should not be rendered as actual elements
+    await expect(body.locator('script')).toHaveCount(0);
+    // The escaped text should appear instead
+    await expect(body).toContainText('alert');
+  });
+
   test('displays activity count', async ({ page }) => {
     const data = createMockIssueData();
     data.activities = [
