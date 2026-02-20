@@ -3,6 +3,7 @@ import { execSync } from 'child_process';
 import { PRTreeProvider } from './providers/prTreeProvider';
 import { IssueTreeProvider } from './providers/issueTreeProvider';
 import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem } from './providers/actionsTreeProvider';
+import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
 import { WorkflowRunListItem, WorkflowJob } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
@@ -35,6 +36,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const prTreeProvider = new PRTreeProvider();
   const issueTreeProvider = new IssueTreeProvider();
   const actionsTreeProvider = new ActionsTreeProvider();
+  const releaseTreeProvider = new ReleaseTreeProvider();
 
   // Helper to update the context key for viewsWelcome
   async function updateNoInstanceContext() {
@@ -72,6 +74,11 @@ export async function activate(context: vscode.ExtensionContext) {
     showCollapseAll: true
   });
 
+  const releaseTreeView = vscode.window.createTreeView('forgejoReleases', {
+    treeDataProvider: releaseTreeProvider,
+    showCollapseAll: true
+  });
+
   // Create virtual document provider for PR diffs
   const prDiffProvider = new PRDiffContentProvider();
   context.subscriptions.push(
@@ -106,6 +113,7 @@ export async function activate(context: vscode.ExtensionContext) {
         prTreeProvider.refresh();
         issueTreeProvider.refresh();
         actionsTreeProvider.refresh();
+        releaseTreeProvider.refresh();
       }
     })
   );
@@ -117,6 +125,7 @@ export async function activate(context: vscode.ExtensionContext) {
       prTreeProvider.refresh();
       issueTreeProvider.refresh();
       actionsTreeProvider.refresh();
+      releaseTreeProvider.refresh();
     })
   );
 
@@ -903,6 +912,109 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     )
   );
+
+  // Register release commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.refreshReleases', () => {
+      releaseTreeProvider.refresh();
+      void vscode.window.showInformationMessage('Releases refreshed');
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.openReleaseInBrowser', (url: string) => {
+      if (url) {
+        void vscode.env.openExternal(vscode.Uri.parse(url));
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('forgejo.createRelease', async () => {
+      try {
+        const config = await getForgejoConfig();
+        if (!config) {
+          void vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
+          return;
+        }
+
+        const client = new ForgejoClient(config.instanceUrl, config.token);
+
+        // Fetch existing tags for quick pick
+        let tagItems: vscode.QuickPickItem[] = [];
+        try {
+          const tags = await client.listTags(config.owner, config.repo);
+          tagItems = tags.map(t => ({ label: t.name, description: t.commit.sha.substring(0, 7) }));
+        } catch {
+          logInfo('Could not fetch tags, allowing manual entry');
+        }
+
+        let tagName: string | undefined;
+        if (tagItems.length > 0) {
+          const picked = await vscode.window.showQuickPick(
+            [{ label: '$(add) Enter new tag name...', description: 'Type a new tag' }, ...tagItems],
+            { placeHolder: 'Select an existing tag or enter a new one', title: 'Create Release: Select Tag' }
+          );
+          if (!picked) return;
+          if (picked.label.includes('Enter new tag name')) {
+            tagName = await vscode.window.showInputBox({ prompt: 'Tag name', placeHolder: 'v1.0.0', title: 'Create Release: New Tag' });
+          } else {
+            tagName = picked.label;
+          }
+        } else {
+          tagName = await vscode.window.showInputBox({ prompt: 'Tag name', placeHolder: 'v1.0.0', title: 'Create Release: Tag' });
+        }
+        if (!tagName) return;
+
+        const releaseName = await vscode.window.showInputBox({
+          prompt: 'Release name (leave empty to use tag name)',
+          placeHolder: tagName,
+          title: 'Create Release: Name'
+        });
+        if (releaseName === undefined) return;
+
+        const releaseBody = await vscode.window.showInputBox({
+          prompt: 'Release notes (optional)',
+          placeHolder: 'Describe this release...',
+          title: 'Create Release: Notes'
+        });
+        if (releaseBody === undefined) return;
+
+        const releaseType = await vscode.window.showQuickPick(
+          [
+            { label: 'Release', description: 'Published release', value: 'release' },
+            { label: 'Pre-release', description: 'Mark as pre-release', value: 'prerelease' },
+            { label: 'Draft', description: 'Save as draft', value: 'draft' }
+          ],
+          { placeHolder: 'Release type', title: 'Create Release: Type' }
+        );
+        if (!releaseType) return;
+
+        const release = await client.createRelease(config.owner, config.repo, {
+          tag_name: tagName,
+          name: releaseName || tagName,
+          body: releaseBody || '',
+          draft: releaseType.value === 'draft',
+          prerelease: releaseType.value === 'prerelease'
+        });
+
+        releaseTreeProvider.refresh();
+        const openAction = await vscode.window.showInformationMessage(
+          `Release "${release.name || release.tag_name}" created successfully`,
+          'Open in Browser'
+        );
+        if (openAction === 'Open in Browser' && release.html_url) {
+          void vscode.env.openExternal(vscode.Uri.parse(release.html_url));
+        }
+      } catch (error) {
+        logError('Failed to create release:', error);
+        void vscode.window.showErrorMessage(`Failed to create release: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    })
+  );
+
+  // Add releases tree view to subscriptions
+  context.subscriptions.push(releaseTreeView);
 
   // Add logger to subscriptions for proper cleanup
   context.subscriptions.push(logger);

@@ -57,6 +57,10 @@
         {
           "id": "forgejoActions",
           "name": "Actions"
+        },
+        {
+          "id": "forgejoReleases",
+          "name": "Releases"
         }
       ]
     },
@@ -206,6 +210,21 @@
       {
         "command": "forgejo.submitInlineComment",
         "title": "Submit Comment"
+      },
+      {
+        "command": "forgejo.refreshReleases",
+        "title": "Forgejo: Refresh Releases",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.createRelease",
+        "title": "Forgejo: Create Release",
+        "icon": "$(add)"
+      },
+      {
+        "command": "forgejo.openReleaseInBrowser",
+        "title": "Open Release in Browser",
+        "icon": "$(link-external)"
       }
     ],
     "menus": {
@@ -248,6 +267,21 @@
         {
           "command": "forgejo.manageInstances",
           "when": "view == forgejoActions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.createRelease",
+          "when": "view == forgejoReleases",
+          "group": "navigation@0"
+        },
+        {
+          "command": "forgejo.refreshReleases",
+          "when": "view == forgejoReleases",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.manageInstances",
+          "when": "view == forgejoReleases",
           "group": "navigation@2"
         }
       ],
@@ -306,6 +340,11 @@
           "command": "forgejo.viewActionLogs",
           "when": "viewItem == workflowRun || viewItem == workflowJob || viewItem == workflowStep",
           "group": "navigation@3"
+        },
+        {
+          "command": "forgejo.openReleaseInBrowser",
+          "when": "viewItem == release || viewItem == releaseDraft || viewItem == releasePrerelease",
+          "group": "navigation@1"
         }
       ],
       "comments/commentThread/context": [
