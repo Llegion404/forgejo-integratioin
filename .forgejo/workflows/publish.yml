@@ -7,9 +7,13 @@ on:
       - '*.*.*'
 
 jobs:
-  publish:
+  test:
+    strategy:
+      matrix:
+        node-version: ['18', '20']
+
     runs-on: docker
-    container: node:20
+    container: node:${{ matrix.node-version }}
 
     steps:
     - uses: actions/checkout@v4
@@ -17,7 +21,7 @@ jobs:
     - name: Install xvfb and dependencies
       run: |
         apt-get update
-        apt-get install -y xvfb libgtk-3-0 libxss1 libasound2 libgbm1 libnspr4 libnss3 jq
+        apt-get install -y xvfb libgtk-3-0 libxss1 libasound2 libgbm1 libnspr4 libnss3
 
     - name: Install dependencies
       run: npm ci
@@ -25,11 +29,120 @@ jobs:
     - name: Lint
       run: npm run lint
 
-    - name: Run tests
+    - name: Run unit tests
+      run: npm run test:unit:coverage
+
+    - name: Run integration tests
       run: |
-        npm run test:unit:coverage
         npm run compile
         xvfb-run -a npm run test:integration
+
+  live-test:
+    strategy:
+      matrix:
+        forgejo-version: ['11', '12', '13']
+
+    runs-on: docker
+    container: node:20
+
+    services:
+      forgejo:
+        image: codeberg.org/forgejo/forgejo:${{ matrix.forgejo-version }}
+        env:
+          FORGEJO__security__INSTALL_LOCK: "true"
+          FORGEJO__server__ROOT_URL: "http://forgejo:3000"
+          FORGEJO__database__DB_TYPE: sqlite3
+          FORGEJO__service__DISABLE_REGISTRATION: "false"
+          FORGEJO__service__REQUIRE_SIGNIN_VIEW: "false"
+
+    env:
+      FORGEJO_TEST_URL: http://forgejo:3000
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt-get update && apt-get install -y jq curl xvfb libgtk-3-0 libxss1 libasound2 libgbm1 libnspr4 libnss3
+        npm ci
+
+    - name: Wait for Forgejo & setup test data
+      run: bash scripts/setup-forgejo-test.sh
+
+    - name: Run live integration tests
+      run: npm run test:live
+
+    - name: Create test workspace for Playwright
+      run: |
+        mkdir -p /tmp/forgejo-test-workspace
+        cd /tmp/forgejo-test-workspace
+        git init
+        git remote add origin http://forgejo:3000/testuser/test-repo.git
+
+    - name: Compile extension
+      run: npm run compile
+
+    - name: Run Playwright VS Code live tests
+      run: xvfb-run -a npm run test:e2e:live
+      env:
+        FORGEJO_LIVE_WORKSPACE: /tmp/forgejo-test-workspace
+
+  smoke-test-vsix:
+    runs-on: docker
+    container: node:20
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Package and verify .vsix contents
+      run: |
+        npm run package
+        VSIX=$(ls -t *.vsix 2>/dev/null | head -1)
+        if [ -z "$VSIX" ]; then
+          echo "ERROR: No .vsix file found after packaging"
+          exit 1
+        fi
+        echo "Checking .vsix: $VSIX"
+        unzip -l "$VSIX" > /tmp/vsix-contents.txt
+
+        check() {
+          if grep -q "$1" /tmp/vsix-contents.txt; then
+            echo "OK: $1"
+          else
+            echo "MISSING: $1"
+            return 1
+          fi
+        }
+
+        FAILED=0
+        check "extension/out/extension.js" || FAILED=1
+        check "extension/node_modules/forgejo-ts/package.json" || FAILED=1
+        check "extension/node_modules/forgejo-ts/dist/index.js" || FAILED=1
+        check "extension/package.json" || FAILED=1
+
+        if [ "$FAILED" -ne 0 ]; then
+          echo "--- Full .vsix contents ---"
+          cat /tmp/vsix-contents.txt
+          exit 1
+        fi
+        echo "All required files present in .vsix"
+
+  publish:
+    needs: [test, live-test, smoke-test-vsix]
+    runs-on: docker
+    container: node:20
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y jq
+        npm ci
 
     - name: Install vsce and ovsx
       run: npm install -g @vscode/vsce ovsx
