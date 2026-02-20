@@ -54,9 +54,9 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
 
     super(label, vscode.TreeItemCollapsibleState.Collapsed);
 
-    // Description shows short SHA
-    this.description = firstJob.head_sha.substring(0, 7);
-    this.tooltip = `Workflow: ${firstJob.workflow_id}\nBranch: ${firstJob.head_branch}\nCommit: ${firstJob.head_sha}\n${firstJob.display_title}\nJobs: ${jobs.length}`;
+    // Description shows branch and workflow file (more useful than a short SHA)
+    this.description = `${firstJob.head_branch} · ${firstJob.workflow_id}`;
+    this.tooltip = `Workflow: ${firstJob.workflow_id}\nBranch: ${firstJob.head_branch}\nCommit: ${firstJob.head_sha}\nTrigger: ${firstJob.event}\n${firstJob.display_title}\nJobs: ${jobs.length}`;
     this.contextValue = 'workflowRun';
 
     // Icon based on aggregate status
