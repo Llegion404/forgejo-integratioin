@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { execSync } from 'child_process';
 import { PRTreeProvider } from './providers/prTreeProvider';
 import { IssueTreeProvider } from './providers/issueTreeProvider';
 import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from './providers/actionsTreeProvider';
@@ -21,6 +20,7 @@ import { manageInstances } from './commands/instanceManager';
 import { showDiagnostics } from './commands/diagnostics';
 import { createIssueCommand } from './commands/createIssue';
 import { createReleaseCommand } from './commands/createRelease';
+import { createPullRequestCommand } from './commands/createPullRequest';
 import { logger, logInfo, logError } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
@@ -165,125 +165,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register create pull request command
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.createPullRequest', async () => {
-      try {
-        const config = await getForgejoConfig();
-        if (!config) {
-          void vscode.window.showErrorMessage('Forgejo configuration not found. Please configure an instance first.');
-          return;
-        }
-
-        if (!config.token) {
-          void vscode.window.showErrorMessage('A Forgejo token is required to create pull requests. Please configure your token first.');
-          return;
-        }
-
-        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (!workspaceRoot) {
-          void vscode.window.showErrorMessage('No workspace folder open.');
-          return;
-        }
-
-        // Get current branch name
-        let currentBranch: string;
-        try {
-          currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-            cwd: workspaceRoot,
-            encoding: 'utf-8'
-          }).trim();
-        } catch {
-          void vscode.window.showErrorMessage('Could not determine the current git branch.');
-          return;
-        }
-
-        // Get default branch
-        let defaultBranch = 'main';
-        try {
-          const symbolicRef = execSync('git symbolic-ref refs/remotes/origin/HEAD', {
-            cwd: workspaceRoot,
-            encoding: 'utf-8'
-          }).trim();
-          // Extract branch name from refs/remotes/origin/<branch>
-          defaultBranch = symbolicRef.replace('refs/remotes/origin/', '');
-        } catch {
-          // Fall back to 'main' if we can't detect it
-          defaultBranch = 'main';
-        }
-
-        // Clean up branch name for default title: replace - and _ with spaces, capitalize first letter
-        const defaultTitle = currentBranch
-          .replace(/[-_]/g, ' ')
-          .replace(/^\w/, (c) => c.toUpperCase());
-
-        // Prompt for PR title
-        const title = await vscode.window.showInputBox({
-          prompt: 'Enter pull request title',
-          placeHolder: 'Pull request title',
-          value: defaultTitle,
-          validateInput: (value) => {
-            if (!value.trim()) {
-              return 'Title is required';
-            }
-            return null;
-          }
-        });
-
-        if (!title) {
-          return; // User cancelled
-        }
-
-        // Prompt for PR body (optional)
-        const body = await vscode.window.showInputBox({
-          prompt: 'Enter pull request description (optional)',
-          placeHolder: 'Brief description (you can edit the full description later)'
-        });
-
-        if (body === undefined) {
-          return; // User cancelled (pressing Escape)
-        }
-
-        // Prompt for base branch
-        const baseBranch = await vscode.window.showInputBox({
-          prompt: 'Enter the base branch to merge into',
-          placeHolder: defaultBranch,
-          value: defaultBranch
-        });
-
-        if (!baseBranch) {
-          return; // User cancelled
-        }
-
-        // Create the pull request
-        const client = new ForgejoClient(config.instanceUrl, config.token);
-        const pr = await client.createPullRequest(
-          config.owner,
-          config.repo,
-          title.trim(),
-          currentBranch,
-          baseBranch.trim(),
-          body.trim() || undefined
-        );
-
-        logInfo(`PR #${pr.number} created: ${pr.title}`);
-
-        // Refresh immediately so the new PR appears regardless of notification interaction
-        prTreeProvider.refresh();
-
-        const action = await vscode.window.showInformationMessage(
-          `PR #${pr.number} created successfully!`,
-          'Open in Browser'
-        );
-
-        if (action === 'Open in Browser') {
-          void vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
-        }
-      } catch (error) {
-        logError('Error creating pull request:', error);
-        void vscode.window.showErrorMessage(
-          `Failed to create pull request: ${error instanceof Error ? error.message : 'Unknown error'}`
-        );
-      }
-    })
+    vscode.commands.registerCommand('forgejo.createPullRequest', () =>
+      createPullRequestCommand(prTreeProvider)
+    )
   );
 
   context.subscriptions.push(
