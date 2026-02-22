@@ -69,30 +69,48 @@ test.describe('Pull Request List - Live Forgejo', () => {
     return labels;
   }
 
+  /**
+   * Poll until at least one tree row label matches the pattern.
+   * Returns all labels once a match is found, or throws on timeout.
+   */
+  async function waitForTreeRowsMatching(
+    workbox: import('@playwright/test').Page,
+    pattern: RegExp,
+    timeout = 30_000,
+  ): Promise<string[]> {
+    const start = Date.now();
+    let labels: string[] = [];
+    while (Date.now() - start < timeout) {
+      labels = await getTreeRowLabels(workbox);
+      if (labels.some(l => pattern.test(l))) {
+        return labels;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    return labels;
+  }
+
   test('should display pull request groups', async ({ harness, workbox }) => {
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
+    // Poll until PR group rows appear
+    const prGroupPattern = /^(Open|Merged|Closed|Draft)\s*\d+$/;
+    const labels = await waitForTreeRowsMatching(workbox, prGroupPattern);
 
     await harness.captureScreenshot('pr-list-live');
-
-    const labels = await getTreeRowLabels(workbox);
     console.log('PR tree items:', labels);
 
     // The setup script creates one open PR, so we should see at least an "Open" group
-    const prGroupPattern = /^(Open|Merged|Closed|Draft)\d+$/;
     const foundGroups = labels.filter(label => prGroupPattern.test(label));
     expect(foundGroups.length).toBeGreaterThan(0);
     console.log('PR groups found:', foundGroups);
   });
 
   test('should display the test PR entry', async ({ harness, workbox }) => {
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
-
-    const labels = await getTreeRowLabels(workbox);
+    // Poll until PR entries appear
+    const prEntryPattern = /#\d+:/;
+    const labels = await waitForTreeRowsMatching(workbox, prEntryPattern);
 
     // The setup script creates a PR titled "Test PR"
-    const prEntries = labels.filter(label => /#\d+:/.test(label));
+    const prEntries = labels.filter(label => prEntryPattern.test(label));
     expect(prEntries.length).toBeGreaterThan(0);
 
     const testPR = prEntries.find(label => label.includes('Test PR'));

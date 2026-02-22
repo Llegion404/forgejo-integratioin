@@ -54,25 +54,43 @@ test.describe('Pull Request List', () => {
     return labels;
   }
 
+  /**
+   * Poll until at least one tree row label matches the pattern.
+   * Returns all labels once a match is found, or throws on timeout.
+   */
+  async function waitForTreeRowsMatching(
+    workbox: import('@playwright/test').Page,
+    pattern: RegExp,
+    timeout = 30_000,
+  ): Promise<string[]> {
+    const start = Date.now();
+    let labels: string[] = [];
+    while (Date.now() - start < timeout) {
+      labels = await getTreeRowLabels(workbox);
+      if (labels.some(l => pattern.test(l))) {
+        return labels;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    return labels;
+  }
+
   test('should display pull request groups with counts', async ({ harness, workbox }) => {
-    // Wait for tree rows to appear
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
+    // Poll until PR group rows appear
+    // Group labels include the count suffix, e.g. "Open4" or "Merged 26"
+    const prGroupPattern = /^(Open|Merged|Closed|Draft)\s*\d+$/;
+    const labels = await waitForTreeRowsMatching(workbox, prGroupPattern);
 
     await harness.captureScreenshot('pr-list');
-
-    const labels = await getTreeRowLabels(workbox);
     console.log('PR tree items:', labels);
 
     // The tree should show at least one PR state group (Open, Merged, Closed, Draft)
-    // Group labels include the count suffix, e.g. "Open4" or "Merged26"
-    const prGroupPattern = /^(Open|Merged|Closed|Draft)\d+$/;
     const foundGroups = labels.filter(label => prGroupPattern.test(label));
     expect(foundGroups.length).toBeGreaterThan(0);
 
     // Each group should report at least 1 PR
     for (const group of foundGroups) {
-      const count = parseInt(group.replace(/^(Open|Merged|Closed|Draft)/, ''), 10);
+      const count = parseInt(group.replace(/^(Open|Merged|Closed|Draft)\s*/, ''), 10);
       expect(count).toBeGreaterThan(0);
     }
 
