@@ -23,6 +23,7 @@ import { createPullRequestCommand } from './commands/createPullRequest';
 import { createReleaseCommand } from './commands/createRelease';
 import { mergePrCommand } from './commands/mergePr';
 import { selectRemoteCommand } from './commands/selectRemote';
+import { closePrCommand } from './commands/closePr';
 import { logger, logInfo } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
@@ -390,36 +391,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'forgejo.closePr',
       async (pr: PullRequestListItem, owner: string, repo: string) => {
-        try {
-          // Confirm close
-          const confirm = await vscode.window.showWarningMessage(
-            `Are you sure you want to close PR #${pr.number}: "${pr.title}"?`,
-            { modal: true },
-            'Close PR'
-          );
-
-          if (confirm !== 'Close PR') {
-            return;
-          }
-
-          // Execute close
-          const config = await getForgejoConfig();
-          if (!config) {
-            void vscode.window.showErrorMessage('Forgejo configuration not found');
-            return;
-          }
-
-          const client = new ForgejoClient(config.instanceUrl, config.token);
-          await client.closePullRequest(owner, repo, pr.number);
-
-          void vscode.window.showInformationMessage(`PR #${pr.number} closed successfully!`);
-          prTreeProvider.refresh();
-        } catch (error) {
-          console.error('[Forgejo] Error closing PR:', error);
-          void vscode.window.showErrorMessage(
-            `Failed to close PR: ${error instanceof Error ? error.message : 'Unknown error'}`
-          );
-        }
+        await closePrCommand(pr, owner, repo, prTreeProvider);
       }
     )
   );
