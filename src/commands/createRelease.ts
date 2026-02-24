@@ -16,6 +16,11 @@ export async function createReleaseCommand(releaseTreeProvider: ReleaseTreeProvi
 			return;
 		}
 
+		if (!config.token) {
+			void vscode.window.showErrorMessage('A Forgejo token is required to create releases. Please configure your token first.');
+			return;
+		}
+
 		const client = new ForgejoClient(config.instanceUrl, config.token);
 
 		// Fetch existing tags for quick pick
