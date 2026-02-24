@@ -12,7 +12,7 @@ import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
 import { ForgejoCommentController } from './providers/prCommentController';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
 import { IssueListItem } from './models/issue';
-import { setInstanceUrl, setAuthToken } from './utils/config';
+import { configureInstanceUrlCommand, setAuthTokenCommand } from './commands/legacyConfig';
 import { migrateToMultiInstance } from './utils/migration';
 import { getAllInstances } from './utils/instanceHelpers';
 import { startOnboarding } from './commands/onboarding';
@@ -179,57 +179,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register configuration commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.configureInstanceUrl', async () => {
-      const url = await vscode.window.showInputBox({
-        prompt: 'Enter Forgejo instance URL',
-        placeHolder: 'https://codeberg.org',
-        validateInput: (value) => {
-          if (!value) {
-            return 'URL is required';
-          }
-          try {
-            new URL(value);
-            return null;
-          } catch {
-            return 'Invalid URL format';
-          }
-        }
-      });
-
-      if (url) {
-        await setInstanceUrl(url);
-        void vscode.window.showInformationMessage(`Forgejo instance URL set to: ${url}`);
-        // Refresh all views
-        prTreeProvider.refresh();
-        issueTreeProvider.refresh();
-        actionsTreeProvider.refresh();
-      }
-    })
+    vscode.commands.registerCommand('forgejo.configureInstanceUrl', () =>
+      configureInstanceUrlCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider)
+    )
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.setAuthToken', async () => {
-      const token = await vscode.window.showInputBox({
-        prompt: 'Enter your Forgejo personal access token',
-        placeHolder: 'token_xxxxxxxxxxxxxx',
-        password: true,
-        validateInput: (value) => {
-          if (!value) {
-            return 'Token is required';
-          }
-          return null;
-        }
-      });
-
-      if (token) {
-        await setAuthToken(token);
-        void vscode.window.showInformationMessage('Forgejo authentication token saved');
-        // Refresh all views
-        prTreeProvider.refresh();
-        issueTreeProvider.refresh();
-        actionsTreeProvider.refresh();
-      }
-    })
+    vscode.commands.registerCommand('forgejo.setAuthToken', () =>
+      setAuthTokenCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider)
+    )
   );
 
   // Register select remote command
