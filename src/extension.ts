@@ -21,6 +21,7 @@ import { showDiagnostics } from './commands/diagnostics';
 import { createIssueCommand } from './commands/createIssue';
 import { createPullRequestCommand } from './commands/createPullRequest';
 import { createReleaseCommand } from './commands/createRelease';
+import { mergePrCommand } from './commands/mergePr';
 import { logger, logInfo, logError } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
@@ -421,55 +422,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'forgejo.mergePr',
-      async (pr: PullRequestListItem, owner: string, repo: string) => {
-        try {
-          // Show merge method picker
-          const mergeOptions = [
-            { label: 'Create merge commit', value: 'merge' as const },
-            { label: 'Squash and merge', value: 'squash' as const },
-            { label: 'Rebase and merge', value: 'rebase' as const },
-            { label: 'Rebase then merge', value: 'rebase-merge' as const },
-            { label: 'Fast-forward only', value: 'fast-forward-only' as const }
-          ];
-
-          const selected = await vscode.window.showQuickPick(mergeOptions, {
-            placeHolder: 'Select merge method'
-          });
-
-          if (!selected) {
-            return; // User cancelled
-          }
-
-          // Confirm merge
-          const confirm = await vscode.window.showWarningMessage(
-            `Are you sure you want to merge PR #${pr.number}: "${pr.title}"?`,
-            { modal: true },
-            'Merge'
-          );
-
-          if (confirm !== 'Merge') {
-            return;
-          }
-
-          // Execute merge
-          const config = await getForgejoConfig();
-          if (!config) {
-            void vscode.window.showErrorMessage('Forgejo configuration not found');
-            return;
-          }
-
-          const client = new ForgejoClient(config.instanceUrl, config.token);
-          await client.mergePullRequest(owner, repo, pr.number, selected.value);
-
-          void vscode.window.showInformationMessage(`PR #${pr.number} merged successfully!`);
-          prTreeProvider.refresh();
-        } catch (error) {
-          console.error('[Forgejo] Error merging PR:', error);
-          void vscode.window.showErrorMessage(
-            `Failed to merge PR: ${error instanceof Error ? error.message : 'Unknown error'}`
-          );
-        }
-      }
+      (pr: PullRequestListItem, owner: string, repo: string) => mergePrCommand(pr, owner, repo, prTreeProvider)
     )
   );
 
