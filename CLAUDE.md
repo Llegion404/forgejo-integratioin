@@ -243,6 +243,7 @@ vsce package  # Creates forgejo-vscode-X.Y.Z.vsix
 2. Token has correct permissions (repo scope)
 3. Instance URL is correct and accessible
 
+
 ## API Reference
 
 ### Forgejo API v1 Endpoints Used
@@ -386,6 +387,11 @@ start coverage/lcov-report/index.html  # Windows
 - Store token in VS Code SecretStorage
 - Support for custom Forgejo instances with self-signed certificates
 
+## Git Push and PR Workflow
+
+- **Use the `forgejo` skill** for creating PRs and pushing code. SSH on port 22 is unavailable; the Forgejo skill uses HTTPS API and handles authentication automatically.
+- To push a branch: `git push https://git.araj.me/maxking/forgejo-vscode.git <branch>`
+
 ## Troubleshooting Tips for Agents
 
 1. **Always check console logs first** - Most issues are visible in logs
@@ -404,6 +410,6 @@ start coverage/lcov-report/index.html  # Windows
 
 ---
 
-**Last Updated:** 2026-01-26
-**Agent that last modified:** Claude Sonnet 4.5
-**Testing Infrastructure:** Comprehensive dual-track testing (Jest + Mocha) with 88 total tests (58 unit + 30 integration) and 100% coverage for PR viewing feature
+**Last Updated:** 2026-02-24
+**Agent that last modified:** Claude Opus 4.6
+**Testing Infrastructure:** Comprehensive dual-track testing (Jest + Mocha) with 534+ unit tests and 30+ integration tests

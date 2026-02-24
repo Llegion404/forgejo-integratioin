@@ -144,11 +144,15 @@ export class PRDetailWebviewProvider {
 
       // Deduplicate statuses by context, keeping only the latest per context.
       // The API returns all historical statuses (pending + final) for a SHA.
+      // Each status update creates a new record with a new created_at timestamp.
       const latestByContext = new Map<string, typeof allStatuses[0]>();
       for (const status of allStatuses) {
         const key = status.context;
+        const statusDate = new Date(status.created_at).getTime();
+        if (isNaN(statusDate)) continue;
         const existing = latestByContext.get(key);
-        if (!existing || new Date(status.created_at) > new Date(existing.created_at)) {
+        const existingDate = existing ? new Date(existing.created_at).getTime() : -Infinity;
+        if (statusDate > existingDate) {
           latestByContext.set(key, status);
         }
       }
