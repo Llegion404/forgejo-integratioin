@@ -349,6 +349,44 @@ describe('PRDetailsContentProvider', () => {
       // Should NOT contain any "Waiting to run" entries (all were superseded)
       expect(content).not.toContain('Waiting to run');
     });
+
+    test('should handle unsorted input and still keep the latest status', () => {
+      // Shuffle: put pending entries first, then final entries (reversed from API order)
+      const unsorted = [
+        ...mockDuplicateStatuses.slice(6),  // pending entries first
+        ...mockDuplicateStatuses.slice(0, 6) // final entries second
+      ];
+      const result = PRDetailsContentProvider.deduplicateStatuses(unsorted);
+
+      expect(result).toHaveLength(6);
+      // All final statuses should win over pending regardless of input order
+      const pendingStatuses = result.filter(s => s.status === 'pending');
+      expect(pendingStatuses).toHaveLength(0);
+    });
+
+    test('should keep first entry when statuses have identical timestamps', () => {
+      const statuses = [
+        { ...mockDuplicateStatuses[0], id: 100, status: 'success' as const, context: 'ci/build', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+        { ...mockDuplicateStatuses[0], id: 101, status: 'failure' as const, context: 'ci/build', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+      ];
+      const result = PRDetailsContentProvider.deduplicateStatuses(statuses);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].context).toBe('ci/build');
+      // First entry wins when timestamps are equal (> not >=)
+      expect(result[0].id).toBe(100);
+    });
+
+    test('should skip statuses with invalid created_at dates', () => {
+      const statuses = [
+        { ...mockDuplicateStatuses[0], context: 'ci/valid', created_at: '2026-01-01T00:00:00Z' },
+        { ...mockDuplicateStatuses[0], context: 'ci/invalid', created_at: 'not-a-date' },
+      ];
+      const result = PRDetailsContentProvider.deduplicateStatuses(statuses);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].context).toBe('ci/valid');
+    });
   });
 
   describe('dispose', () => {

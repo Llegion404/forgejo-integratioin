@@ -113,13 +113,18 @@ export class PRDetailsContentProvider implements vscode.TextDocumentContentProvi
    * Deduplicate commit statuses by context, keeping only the latest entry per context.
    * The Forgejo /statuses/ API returns all historical status updates for a SHA,
    * so each CI job can appear multiple times as it transitions through states.
+   * Each status update creates a new record with a new `created_at` timestamp,
+   * so we compare by `created_at` to find the most recent per context.
    */
   static deduplicateStatuses(statuses: CommitStatus[]): CommitStatus[] {
     const latestByContext = new Map<string, CommitStatus>();
     for (const status of statuses) {
       const key = status.context;
+      const statusDate = new Date(status.created_at).getTime();
+      if (isNaN(statusDate)) continue; // Skip entries with invalid dates
       const existing = latestByContext.get(key);
-      if (!existing || new Date(status.created_at) > new Date(existing.created_at)) {
+      const existingDate = existing ? new Date(existing.created_at).getTime() : -Infinity;
+      if (statusDate > existingDate) {
         latestByContext.set(key, status);
       }
     }
