@@ -22,10 +22,10 @@ import { createIssueCommand } from './commands/createIssue';
 import { createPullRequestCommand } from './commands/createPullRequest';
 import { createReleaseCommand } from './commands/createRelease';
 import { mergePrCommand } from './commands/mergePr';
-import { logger, logInfo, logError } from './utils/logger';
+import { selectRemoteCommand } from './commands/selectRemote';
+import { logger, logInfo } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
-import { detectAllGitRemotes } from './utils/gitUtils';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -233,48 +233,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register select remote command
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.selectRemote', async () => {
-      try {
-        const remotes = detectAllGitRemotes();
-
-        if (remotes.size === 0) {
-          void vscode.window.showInformationMessage('No git remotes found in the current workspace.');
-          return;
-        }
-
-        // Build quick pick items with remote name and URL
-        const items = Array.from(remotes.entries()).map(([name, info]) => ({
-          label: name,
-          description: `${info.instanceUrl}/${info.owner}/${info.repo}`,
-          remoteName: name
-        }));
-
-        const selected = await vscode.window.showQuickPick(items, {
-          placeHolder: 'Select a git remote to use for Forgejo'
-        });
-
-        if (!selected) {
-          return; // User cancelled
-        }
-
-        // Save the selected remote to configuration
-        const config = vscode.workspace.getConfiguration('forgejo');
-        await config.update('preferredRemote', selected.remoteName, vscode.ConfigurationTarget.Workspace);
-
-        logInfo(`Selected git remote: ${selected.remoteName}`);
-        void vscode.window.showInformationMessage(`Forgejo remote set to: ${selected.label}`);
-
-        // Refresh all tree providers
-        prTreeProvider.refresh();
-        issueTreeProvider.refresh();
-        actionsTreeProvider.refresh();
-      } catch (error) {
-        logError('Error selecting git remote:', error);
-        void vscode.window.showErrorMessage(
-          `Failed to select git remote: ${error instanceof Error ? error.message : 'Unknown error'}`
-        );
-      }
-    })
+    vscode.commands.registerCommand('forgejo.selectRemote', () => selectRemoteCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider))
   );
 
   // Register open in browser commands
