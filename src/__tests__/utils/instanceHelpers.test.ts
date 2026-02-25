@@ -374,6 +374,12 @@ describe('instanceHelpers', () => {
 			expect(result?.confidence).toBe('exact');
 		});
 
+		it('should NOT match when same hostname but different port', () => {
+			// localhost:3000 is configured, but remote points to localhost:3001
+			const result = findBestInstanceMatch(instances, 'http://localhost:3001');
+			expect(result).toBeNull();
+		});
+
 		it('should prefer exact match over domain match', () => {
 			const testInstances: ForgejoInstance[] = [
 				{

@@ -16,6 +16,11 @@ jest.mock('../../api/forgejoClient', () => ({
 
 import { ForgejoCommentController } from '../../providers/prCommentController';
 import { PRContext } from '../../models/comment';
+import { getForgejoConfig } from '../../utils/config';
+import { ForgejoClient } from '../../api/forgejoClient';
+
+const mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
+const MockForgejoClient = ForgejoClient as jest.MockedClass<typeof ForgejoClient>;
 
 describe('ForgejoCommentController', () => {
   let controller: ForgejoCommentController;
@@ -207,6 +212,121 @@ describe('ForgejoCommentController', () => {
 
       // Should not throw after dispose
       expect(() => controller.dispose()).not.toThrow();
+    });
+  });
+
+  describe('handleCreateComment edge cases', () => {
+    it('shows error when PR context is not found for the URI', async () => {
+      const uri = vscode.Uri.parse('forgejo-pr:/owner/repo/bWFpbg/src/file.ts');
+      // URI is NOT registered — no context in prContextMap
+
+      const mockReply = {
+        thread: {
+          uri,
+          range: new vscode.Range(0, 0, 0, 0),
+          comments: [],
+        },
+        text: 'My comment',
+      } as unknown as vscode.CommentReply;
+
+      await controller.handleCreateComment(mockReply);
+
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        'Cannot determine PR context for this file. Please re-open the diff from the Pull Requests view.'
+      );
+    });
+
+    it('shows auth error when token is missing', async () => {
+      const uri = vscode.Uri.parse('forgejo-pr:/owner/repo/bWFpbg/src/file.ts');
+      const ctx: PRContext = {
+        owner: 'owner',
+        repo: 'repo',
+        prNumber: 42,
+        baseRef: 'main',
+        headRef: 'feature',
+        filePath: 'src/file.ts',
+      };
+      controller.registerPRContext(uri, ctx);
+
+      mockGetForgejoConfig.mockResolvedValueOnce({
+        instanceUrl: 'https://git.example.com',
+        owner: 'owner',
+        repo: 'repo',
+        token: undefined,
+      } as any);
+
+      const mockReply = {
+        thread: {
+          uri,
+          range: new vscode.Range(5, 0, 5, 0),
+          comments: [],
+        },
+        text: 'My comment',
+      } as unknown as vscode.CommentReply;
+
+      await controller.handleCreateComment(mockReply);
+
+      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+        'A Forgejo token is required to create comments. Please configure your token first.'
+      );
+      // No API call should have been made
+      expect(MockForgejoClient).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('loadCommentsForDocument edge cases', () => {
+    const ctx: PRContext = {
+      owner: 'owner',
+      repo: 'repo',
+      prNumber: 42,
+      baseRef: 'main',
+      headRef: 'feature',
+      filePath: 'src/file.ts',
+    };
+
+    it('returns gracefully without creating threads when getForgejoConfig returns null', async () => {
+      const uri = vscode.Uri.parse('forgejo-pr:/owner/repo/bWFpbg/src/file.ts');
+      controller.registerPRContext(uri, ctx);
+      mockGetForgejoConfig.mockResolvedValueOnce(null);
+
+      const mockDoc = { uri } as vscode.TextDocument;
+      await controller.loadCommentsForDocument(mockDoc);
+
+      expect(MockForgejoClient).not.toHaveBeenCalled();
+      // createCommentThread should not have been called
+      const mockController = (vscode.comments.createCommentController as jest.Mock).mock.results[0].value;
+      expect(mockController.createCommentThread).not.toHaveBeenCalled();
+    });
+
+    it('creates no threads when all comments have line <= 0', async () => {
+      const uri = vscode.Uri.parse('forgejo-pr:/owner/repo/bWFpbg/src/file.ts');
+      controller.registerPRContext(uri, ctx);
+
+      mockGetForgejoConfig.mockResolvedValueOnce({
+        instanceUrl: 'https://git.example.com',
+        owner: 'owner',
+        repo: 'repo',
+        token: 'test-token',
+      } as any);
+
+      // Set up ForgejoClient to return reviews with comments that all have line <= 0
+      MockForgejoClient.mockImplementationOnce(() => ({
+        getPullRequestReviews: jest.fn().mockResolvedValue([
+          { id: 1, comments_count: 2 },
+        ]),
+        getReviewComments: jest.fn().mockResolvedValue([
+          { path: 'src/file.ts', line: 0, body: 'comment 1', user: { login: 'user1' } },
+          { path: 'src/file.ts', line: -1, body: 'comment 2', user: { login: 'user2' } },
+        ]),
+        createReviewWithComments: jest.fn(),
+      } as any));
+
+      const mockDoc = { uri } as vscode.TextDocument;
+      await controller.loadCommentsForDocument(mockDoc);
+
+      // All comments have line <= 0, so none should produce threads
+      const mockController = (vscode.comments.createCommentController as jest.Mock).mock.results[0].value;
+      expect(mockController.createCommentThread).not.toHaveBeenCalled();
     });
   });
 });

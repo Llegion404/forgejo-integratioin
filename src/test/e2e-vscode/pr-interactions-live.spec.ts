@@ -64,6 +64,27 @@ test.describe('Pull Request Interactions - Live Forgejo', () => {
     return labels;
   }
 
+  /**
+   * Poll until at least one tree row label matches the pattern.
+   * Returns all labels once a match is found, or throws on timeout.
+   */
+  async function waitForTreeRowsMatching(
+    workbox: import('@playwright/test').Page,
+    pattern: RegExp,
+    timeout = 30_000,
+  ): Promise<string[]> {
+    const start = Date.now();
+    let labels: string[] = [];
+    while (Date.now() - start < timeout) {
+      labels = await getTreeRowLabels(workbox);
+      if (labels.some(l => pattern.test(l))) {
+        return labels;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    return labels;
+  }
+
   test('should add a comment to a PR via API', async ({ harness, evaluateInVSCode }) => {
     // Create a fresh PR for this test
     const prNumber = await evaluateInVSCode(async (_vscode, args: { url: string; token: string }) => {
@@ -166,16 +187,14 @@ test.describe('Pull Request Interactions - Live Forgejo', () => {
     await evaluateInVSCode(async (vscode) => {
       await vscode.commands.executeCommand('forgejo.refreshPullRequests');
     });
-    await new Promise(r => setTimeout(r, 5000));
 
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
-
-    const labels = await getTreeRowLabels(workbox);
+    // Poll until a Closed group appears
+    const closedPattern = /^Closed\s*\d+$/;
+    const labels = await waitForTreeRowsMatching(workbox, closedPattern);
     console.log('PR tree after close:', labels);
 
     // Should have a Closed group now
-    const closedGroup = labels.find(label => /^Closed\d+$/.test(label));
+    const closedGroup = labels.find(label => closedPattern.test(label));
     expect(closedGroup).toBeDefined();
 
     await harness.captureScreenshot('pr-closed-tree');
@@ -213,12 +232,17 @@ test.describe('Pull Request Interactions - Live Forgejo', () => {
     await evaluateInVSCode(async (vscode) => {
       await vscode.commands.executeCommand('forgejo.refreshPullRequests');
     });
-    await new Promise(r => setTimeout(r, 5000));
 
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
-
-    const labels = await getTreeRowLabels(workbox);
+    // Poll until the new PR title appears in the tree
+    const start = Date.now();
+    let labels: string[] = [];
+    while (Date.now() - start < 30_000) {
+      labels = await getTreeRowLabels(workbox);
+      if (labels.find(label => label.includes(prTitle))) {
+        break;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
     console.log('PR tree after create:', labels);
 
     const foundPR = labels.find(label => label.includes(prTitle));
@@ -232,18 +256,15 @@ test.describe('Pull Request Interactions - Live Forgejo', () => {
     await evaluateInVSCode(async (vscode) => {
       await vscode.commands.executeCommand('forgejo.refreshPullRequests');
     });
-    await new Promise(r => setTimeout(r, 5000));
 
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
-
-    const labels = await getTreeRowLabels(workbox);
+    // Poll until PR groups appear after refresh
+    const prGroupPattern = /^(Open|Merged|Closed|Draft)\s*\d+$/;
+    const labels = await waitForTreeRowsMatching(workbox, prGroupPattern);
     console.log('PR tree after refresh:', labels);
 
     // Should have at least one group and one PR entry
     expect(labels.length).toBeGreaterThan(0);
 
-    const prGroupPattern = /^(Open|Merged|Closed|Draft)\d+$/;
     const foundGroups = labels.filter(label => prGroupPattern.test(label));
     expect(foundGroups.length).toBeGreaterThan(0);
 

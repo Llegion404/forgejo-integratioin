@@ -12,19 +12,21 @@ import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
 import { ForgejoCommentController } from './providers/prCommentController';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
 import { IssueListItem } from './models/issue';
-import { setInstanceUrl, setAuthToken } from './utils/config';
+import { configureInstanceUrlCommand, setAuthTokenCommand } from './commands/legacyConfig';
 import { migrateToMultiInstance } from './utils/migration';
 import { getAllInstances } from './utils/instanceHelpers';
 import { startOnboarding } from './commands/onboarding';
 import { manageInstances } from './commands/instanceManager';
 import { showDiagnostics } from './commands/diagnostics';
 import { createIssueCommand } from './commands/createIssue';
-import { createReleaseCommand } from './commands/createRelease';
 import { createPullRequestCommand } from './commands/createPullRequest';
-import { logger, logInfo, logError } from './utils/logger';
+import { createReleaseCommand } from './commands/createRelease';
+import { mergePrCommand } from './commands/mergePr';
+import { selectRemoteCommand } from './commands/selectRemote';
+import { closePrCommand } from './commands/closePr';
+import { logger, logInfo } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
-import { detectAllGitRemotes } from './utils/gitUtils';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -165,9 +167,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register create pull request command
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.createPullRequest', () =>
-      createPullRequestCommand(prTreeProvider)
-    )
+    vscode.commands.registerCommand('forgejo.createPullRequest', () => createPullRequestCommand(prTreeProvider))
   );
 
   context.subscriptions.push(
@@ -179,103 +179,20 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register configuration commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.configureInstanceUrl', async () => {
-      const url = await vscode.window.showInputBox({
-        prompt: 'Enter Forgejo instance URL',
-        placeHolder: 'https://codeberg.org',
-        validateInput: (value) => {
-          if (!value) {
-            return 'URL is required';
-          }
-          try {
-            new URL(value);
-            return null;
-          } catch {
-            return 'Invalid URL format';
-          }
-        }
-      });
-
-      if (url) {
-        await setInstanceUrl(url);
-        void vscode.window.showInformationMessage(`Forgejo instance URL set to: ${url}`);
-        // Refresh all views
-        prTreeProvider.refresh();
-        issueTreeProvider.refresh();
-        actionsTreeProvider.refresh();
-      }
-    })
+    vscode.commands.registerCommand('forgejo.configureInstanceUrl', () =>
+      configureInstanceUrlCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider)
+    )
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.setAuthToken', async () => {
-      const token = await vscode.window.showInputBox({
-        prompt: 'Enter your Forgejo personal access token',
-        placeHolder: 'token_xxxxxxxxxxxxxx',
-        password: true,
-        validateInput: (value) => {
-          if (!value) {
-            return 'Token is required';
-          }
-          return null;
-        }
-      });
-
-      if (token) {
-        await setAuthToken(token);
-        void vscode.window.showInformationMessage('Forgejo authentication token saved');
-        // Refresh all views
-        prTreeProvider.refresh();
-        issueTreeProvider.refresh();
-        actionsTreeProvider.refresh();
-      }
-    })
+    vscode.commands.registerCommand('forgejo.setAuthToken', () =>
+      setAuthTokenCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider)
+    )
   );
 
   // Register select remote command
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.selectRemote', async () => {
-      try {
-        const remotes = detectAllGitRemotes();
-
-        if (remotes.size === 0) {
-          void vscode.window.showInformationMessage('No git remotes found in the current workspace.');
-          return;
-        }
-
-        // Build quick pick items with remote name and URL
-        const items = Array.from(remotes.entries()).map(([name, info]) => ({
-          label: name,
-          description: `${info.instanceUrl}/${info.owner}/${info.repo}`,
-          remoteName: name
-        }));
-
-        const selected = await vscode.window.showQuickPick(items, {
-          placeHolder: 'Select a git remote to use for Forgejo'
-        });
-
-        if (!selected) {
-          return; // User cancelled
-        }
-
-        // Save the selected remote to configuration
-        const config = vscode.workspace.getConfiguration('forgejo');
-        await config.update('preferredRemote', selected.remoteName, vscode.ConfigurationTarget.Workspace);
-
-        logInfo(`Selected git remote: ${selected.remoteName}`);
-        void vscode.window.showInformationMessage(`Forgejo remote set to: ${selected.label}`);
-
-        // Refresh all tree providers
-        prTreeProvider.refresh();
-        issueTreeProvider.refresh();
-        actionsTreeProvider.refresh();
-      } catch (error) {
-        logError('Error selecting git remote:', error);
-        void vscode.window.showErrorMessage(
-          `Failed to select git remote: ${error instanceof Error ? error.message : 'Unknown error'}`
-        );
-      }
-    })
+    vscode.commands.registerCommand('forgejo.selectRemote', () => selectRemoteCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider))
   );
 
   // Register open in browser commands
@@ -423,55 +340,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'forgejo.mergePr',
-      async (pr: PullRequestListItem, owner: string, repo: string) => {
-        try {
-          // Show merge method picker
-          const mergeOptions = [
-            { label: 'Create merge commit', value: 'merge' as const },
-            { label: 'Squash and merge', value: 'squash' as const },
-            { label: 'Rebase and merge', value: 'rebase' as const },
-            { label: 'Rebase then merge', value: 'rebase-merge' as const },
-            { label: 'Fast-forward only', value: 'fast-forward-only' as const }
-          ];
-
-          const selected = await vscode.window.showQuickPick(mergeOptions, {
-            placeHolder: 'Select merge method'
-          });
-
-          if (!selected) {
-            return; // User cancelled
-          }
-
-          // Confirm merge
-          const confirm = await vscode.window.showWarningMessage(
-            `Are you sure you want to merge PR #${pr.number}: "${pr.title}"?`,
-            { modal: true },
-            'Merge'
-          );
-
-          if (confirm !== 'Merge') {
-            return;
-          }
-
-          // Execute merge
-          const config = await getForgejoConfig();
-          if (!config) {
-            void vscode.window.showErrorMessage('Forgejo configuration not found');
-            return;
-          }
-
-          const client = new ForgejoClient(config.instanceUrl, config.token);
-          await client.mergePullRequest(owner, repo, pr.number, selected.value);
-
-          void vscode.window.showInformationMessage(`PR #${pr.number} merged successfully!`);
-          prTreeProvider.refresh();
-        } catch (error) {
-          console.error('[Forgejo] Error merging PR:', error);
-          void vscode.window.showErrorMessage(
-            `Failed to merge PR: ${error instanceof Error ? error.message : 'Unknown error'}`
-          );
-        }
-      }
+      (pr: PullRequestListItem, owner: string, repo: string) => mergePrCommand(pr, owner, repo, prTreeProvider)
     )
   );
 
@@ -480,36 +349,7 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'forgejo.closePr',
       async (pr: PullRequestListItem, owner: string, repo: string) => {
-        try {
-          // Confirm close
-          const confirm = await vscode.window.showWarningMessage(
-            `Are you sure you want to close PR #${pr.number}: "${pr.title}"?`,
-            { modal: true },
-            'Close PR'
-          );
-
-          if (confirm !== 'Close PR') {
-            return;
-          }
-
-          // Execute close
-          const config = await getForgejoConfig();
-          if (!config) {
-            void vscode.window.showErrorMessage('Forgejo configuration not found');
-            return;
-          }
-
-          const client = new ForgejoClient(config.instanceUrl, config.token);
-          await client.closePullRequest(owner, repo, pr.number);
-
-          void vscode.window.showInformationMessage(`PR #${pr.number} closed successfully!`);
-          prTreeProvider.refresh();
-        } catch (error) {
-          console.error('[Forgejo] Error closing PR:', error);
-          void vscode.window.showErrorMessage(
-            `Failed to close PR: ${error instanceof Error ? error.message : 'Unknown error'}`
-          );
-        }
+        await closePrCommand(pr, owner, repo, prTreeProvider);
       }
     )
   );

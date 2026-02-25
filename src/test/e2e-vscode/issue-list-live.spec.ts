@@ -69,30 +69,49 @@ test.describe('Issue List - Live Forgejo', () => {
     return labels;
   }
 
+  /**
+   * Poll until at least one tree row label matches the pattern.
+   * Returns all labels once a match is found, or throws on timeout.
+   */
+  async function waitForTreeRowsMatching(
+    workbox: import('@playwright/test').Page,
+    pattern: RegExp,
+    timeout = 30_000,
+  ): Promise<string[]> {
+    const start = Date.now();
+    let labels: string[] = [];
+    while (Date.now() - start < timeout) {
+      labels = await getTreeRowLabels(workbox);
+      if (labels.some(l => pattern.test(l))) {
+        return labels;
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    // Return whatever we have so the caller can produce a useful error
+    return labels;
+  }
+
   test('should display issue groups', async ({ harness, workbox }) => {
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
+    // Poll until the tree view populates with group rows
+    const issueGroupPattern = /^(Open|Closed)\s*\d+$/;
+    const labels = await waitForTreeRowsMatching(workbox, issueGroupPattern);
 
     await harness.captureScreenshot('issue-list-live');
-
-    const labels = await getTreeRowLabels(workbox);
     console.log('Issue tree items:', labels);
 
     // The setup script creates issues, so we should see at least an "Open" group
-    const issueGroupPattern = /^(Open|Closed)\d+$/;
     const foundGroups = labels.filter(label => issueGroupPattern.test(label));
     expect(foundGroups.length).toBeGreaterThan(0);
     console.log('Issue groups found:', foundGroups);
   });
 
   test('should display the test issue entry', async ({ harness, workbox }) => {
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
-
-    const labels = await getTreeRowLabels(workbox);
+    // Poll until issue entries appear (contain #N: pattern)
+    const issueEntryPattern = /#\d+:/;
+    const labels = await waitForTreeRowsMatching(workbox, issueEntryPattern);
 
     // The setup script creates an issue titled "Test Issue"
-    const issueEntries = labels.filter(label => /#\d+:/.test(label));
+    const issueEntries = labels.filter(label => issueEntryPattern.test(label));
     expect(issueEntries.length).toBeGreaterThan(0);
 
     const testIssue = issueEntries.find(label => label.includes('Test Issue'));
@@ -103,13 +122,12 @@ test.describe('Issue List - Live Forgejo', () => {
   });
 
   test('should not display pull requests in issue list', async ({ harness, workbox }) => {
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
-
-    const labels = await getTreeRowLabels(workbox);
+    // Wait for the issue groups to appear first
+    const issueGroupPattern = /^(Open|Closed)\s*\d+$/;
+    const labels = await waitForTreeRowsMatching(workbox, issueGroupPattern);
 
     // PR-specific groups like "Draft" and "Merged" should not appear in issues
-    const prOnlyGroups = labels.filter(label => /^(Draft|Merged)\d+$/.test(label));
+    const prOnlyGroups = labels.filter(label => /^(Draft|Merged)\s*\d+$/.test(label));
     expect(prOnlyGroups.length).toBe(0);
     console.log('No PR-only groups found in issue list (correct)');
 
@@ -122,15 +140,12 @@ test.describe('Issue List - Live Forgejo', () => {
       await vscode.commands.executeCommand('forgejo.refreshIssues');
     });
 
-    // Wait for refresh to complete
-    await new Promise(r => setTimeout(r, 5000));
+    // Poll until issue entries appear after refresh
+    const issueEntryPattern = /#\d+:/;
+    const labels = await waitForTreeRowsMatching(workbox, issueEntryPattern);
 
-    const firstRow = workbox.locator('.monaco-list-row').first();
-    await firstRow.waitFor({ state: 'visible', timeout: 30_000 });
-
-    const labels = await getTreeRowLabels(workbox);
     // After refresh, we should still see issue entries
-    const issueEntries = labels.filter(label => /#\d+:/.test(label));
+    const issueEntries = labels.filter(label => issueEntryPattern.test(label));
     expect(issueEntries.length).toBeGreaterThan(0);
     console.log('Issues after refresh:', issueEntries);
 

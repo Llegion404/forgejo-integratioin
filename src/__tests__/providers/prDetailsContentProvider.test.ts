@@ -3,6 +3,7 @@ import { PRDetailsContentProvider, PR_DETAILS_SCHEME, createPRDetailsUri } from 
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
 import { mockPRWithRefs } from '../fixtures/prRefs';
+import { mockDuplicateStatuses, expectedDeduplicatedContexts } from '../fixtures/commitStatuses';
 
 // Mock dependencies
 jest.mock('../../api/forgejoClient');
@@ -288,6 +289,103 @@ describe('PRDetailsContentProvider', () => {
     test('should handle large PR numbers', () => {
       const uri = createPRDetailsUri('owner', 'repo', 999999);
       expect(uri.path).toBe('/owner/repo/999999');
+    });
+  });
+
+  describe('deduplicateStatuses', () => {
+    test('should deduplicate statuses by context, keeping only the latest per CI job', () => {
+      // mockDuplicateStatuses has 12 entries (6 pending + 6 final) for 6 unique CI jobs
+      const result = PRDetailsContentProvider.deduplicateStatuses(mockDuplicateStatuses);
+
+      expect(result).toHaveLength(6);
+      const contexts = result.map(s => s.context).sort();
+      expect(contexts).toEqual(expectedDeduplicatedContexts.slice().sort());
+    });
+
+    test('should keep the latest (final) status, not the initial pending status', () => {
+      const result = PRDetailsContentProvider.deduplicateStatuses(mockDuplicateStatuses);
+
+      // No status should be "pending" since all jobs have later final statuses
+      const pendingStatuses = result.filter(s => s.status === 'pending');
+      expect(pendingStatuses).toHaveLength(0);
+
+      // The smoke-test-vsix job should show as failure (not pending)
+      const smokeTest = result.find(s => s.context === 'Test / smoke-test-vsix (pull_request)');
+      expect(smokeTest).toBeDefined();
+      expect(smokeTest!.status).toBe('failure');
+      expect(smokeTest!.description).toBe('Failing after 0s');
+    });
+
+    test('should return empty array for empty input', () => {
+      expect(PRDetailsContentProvider.deduplicateStatuses([])).toEqual([]);
+    });
+
+    test('should return statuses unchanged when there are no duplicates', () => {
+      const uniqueStatuses = [
+        mockDuplicateStatuses[0], // id 12, success
+        mockDuplicateStatuses[5], // id 7, failure - different context
+      ];
+      const result = PRDetailsContentProvider.deduplicateStatuses(uniqueStatuses);
+      expect(result).toHaveLength(2);
+    });
+
+    test('should render only 6 CI rows when given 12 duplicate statuses from the API', async () => {
+      const uri = createPRDetailsUri('owner', 'repo', 98);
+      mockClient.getPullRequestDetails.mockResolvedValue(mockPRWithRefs);
+      mockClient.getCommitStatuses.mockResolvedValue(mockDuplicateStatuses);
+
+      const content = await provider.provideTextDocumentContent(uri);
+
+      // Should show CI Status section
+      expect(content).toContain('## CI Status');
+
+      // Count the number of table rows (each CI job gets one row)
+      // Table rows start with "| " and are not the header/separator rows
+      const tableRows = content.split('\n').filter(line =>
+        line.startsWith('| ') && !line.startsWith('| Check') && !line.startsWith('|---')
+      );
+      expect(tableRows).toHaveLength(6);
+
+      // Should NOT contain any "Waiting to run" entries (all were superseded)
+      expect(content).not.toContain('Waiting to run');
+    });
+
+    test('should handle unsorted input and still keep the latest status', () => {
+      // Shuffle: put pending entries first, then final entries (reversed from API order)
+      const unsorted = [
+        ...mockDuplicateStatuses.slice(6),  // pending entries first
+        ...mockDuplicateStatuses.slice(0, 6) // final entries second
+      ];
+      const result = PRDetailsContentProvider.deduplicateStatuses(unsorted);
+
+      expect(result).toHaveLength(6);
+      // All final statuses should win over pending regardless of input order
+      const pendingStatuses = result.filter(s => s.status === 'pending');
+      expect(pendingStatuses).toHaveLength(0);
+    });
+
+    test('should keep first entry when statuses have identical timestamps', () => {
+      const statuses = [
+        { ...mockDuplicateStatuses[0], id: 100, status: 'success' as const, context: 'ci/build', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+        { ...mockDuplicateStatuses[0], id: 101, status: 'failure' as const, context: 'ci/build', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+      ];
+      const result = PRDetailsContentProvider.deduplicateStatuses(statuses);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].context).toBe('ci/build');
+      // First entry wins when timestamps are equal (> not >=)
+      expect(result[0].id).toBe(100);
+    });
+
+    test('should skip statuses with invalid created_at dates', () => {
+      const statuses = [
+        { ...mockDuplicateStatuses[0], context: 'ci/valid', created_at: '2026-01-01T00:00:00Z' },
+        { ...mockDuplicateStatuses[0], context: 'ci/invalid', created_at: 'not-a-date' },
+      ];
+      const result = PRDetailsContentProvider.deduplicateStatuses(statuses);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].context).toBe('ci/valid');
     });
   });
 

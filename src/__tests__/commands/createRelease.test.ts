@@ -64,6 +64,18 @@ describe('createReleaseCommand', () => {
     expect(mockReleaseTreeProvider.refresh).not.toHaveBeenCalled();
   });
 
+  it('shows error and returns early when token is missing', async () => {
+    mockGetForgejoConfig.mockResolvedValue({ ...mockConfig, token: '' });
+
+    await createReleaseCommand(mockReleaseTreeProvider as any);
+
+    expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+      'A Forgejo token is required to create releases. Please configure your token first.'
+    );
+    expect(MockForgejoClient).not.toHaveBeenCalled();
+    expect(mockReleaseTreeProvider.refresh).not.toHaveBeenCalled();
+  });
+
   // ── Tag fetch failure ─────────────────────────────────────────────────────
 
   it('silently continues when listTags throws, showing InputBox for tag name', async () => {

@@ -286,11 +286,11 @@ export function findBestInstanceMatch(
 
 	// Try domain match (handle http vs https, www vs non-www)
 	try {
-		const remoteHost = new URL(normalizedRemote).hostname;
+		const remoteHost = new URL(normalizedRemote).host;
 
 		for (const instance of instances) {
 			try {
-				const instanceHost = new URL(normalizeUrl(instance.instanceUrl)).hostname;
+				const instanceHost = new URL(normalizeUrl(instance.instanceUrl)).host;
 				if (instanceHost === remoteHost) {
 					return { instance, confidence: 'domain' };
 				}

@@ -183,6 +183,17 @@ describe('ReleaseTreeProvider', () => {
       expect(children.some((c: any) => c.label === 'Drafts')).toBe(true);
     });
 
+    test('groups release with draft=true and prerelease=true under Drafts, not Pre-releases', async () => {
+      mockGetForgejoConfig.mockResolvedValue(mockConfig);
+      mockClient.listReleases.mockResolvedValue([
+        makeRelease({ id: 4, draft: true, prerelease: true, name: 'v1.0-beta', tag_name: 'v1.0-beta' }),
+      ]);
+      const children = await provider.getChildren();
+      const labels = children.map((c: any) => c.label);
+      expect(labels).toContain('Drafts');
+      expect(labels).not.toContain('Pre-releases');
+    });
+
     test('shows only relevant groups', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
       mockClient.listReleases.mockResolvedValue([
