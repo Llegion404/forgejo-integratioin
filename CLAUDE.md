@@ -390,7 +390,7 @@ start coverage/lcov-report/index.html  # Windows
 ## Git Push and PR Workflow
 
 - **Use the `forgejo` skill** for creating PRs and pushing code. SSH on port 22 is unavailable; the Forgejo skill uses HTTPS API and handles authentication automatically.
-- To push a branch: `git push https://git.araj.me/maxking/forgejo-vscode.git <branch>`
+- To push a branch: `git push https://codeberg.org/maxking/forgejo-vscode.git <branch>`
 
 ## Troubleshooting Tips for Agents
 

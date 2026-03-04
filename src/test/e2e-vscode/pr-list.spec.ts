@@ -19,7 +19,7 @@ test.describe('Pull Request List', () => {
       await config.update('instances', [{
         id: 'test-forgejo',
         name: 'Forgejo',
-        instanceUrl: 'https://git.araj.me',
+        instanceUrl: 'https://codeberg.org',
         token: '',
         isDefault: true,
       }], vscode.ConfigurationTarget.Global);
