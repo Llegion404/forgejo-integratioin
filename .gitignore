@@ -8,7 +8,7 @@ coverage
 .nyc_output
 .worktrees/
 .worktrees
-.claude/settings.local.json
+.claude/
 research/vscode-extension-debugging.md
 playwright-report/
 test-results/
