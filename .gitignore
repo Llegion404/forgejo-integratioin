@@ -10,11 +10,9 @@ coverage
 .worktrees
 .claude/settings.local.json
 research/vscode-extension-debugging.md
-.claude/settings.local.json
-.claude/settings.local.json
-.claude/settings.local.json
 playwright-report/
 test-results/
 forgejo-data/
+.beads/
 # Work-in-progress assets
 forgejo_icon.png

@@ -145,17 +145,17 @@ npx vsce publish --pre-release -p YOUR_VSCE_PAT
 
 ```bash
 # Via Forgejo web UI:
-# https://git.araj.me/maxking/forgejo-vscode/actions
+# https://codeberg.org/maxking/forgejo-vscode/actions
 
 # Or via API:
 curl -H "Authorization: token YOUR_TOKEN" \
-  "https://git.araj.me/api/v1/repos/maxking/forgejo-vscode/actions/runs?limit=5"
+  "https://codeberg.org/api/v1/repos/maxking/forgejo-vscode/actions/runs?limit=5"
 ```
 
 ### View Published Versions
 
 - **VS Code Marketplace**: https://marketplace.visualstudio.com/items?itemName=maxking.forgejo-vscode
-- **Forgejo Releases**: https://git.araj.me/maxking/forgejo-vscode/releases
+- **Forgejo Releases**: https://codeberg.org/maxking/forgejo-vscode/releases
 
 ### Check if Pre-release is Available
 
@@ -169,7 +169,7 @@ Users can opt-in to pre-release versions in VS Code:
 
 ```bash
 # 1. Check the workflow logs
-# Visit: https://git.araj.me/maxking/forgejo-vscode/actions
+# Visit: https://codeberg.org/maxking/forgejo-vscode/actions
 
 # 2. Common failures:
 
@@ -215,7 +215,7 @@ git tag -d v0.3.0
 git push --delete origin v0.3.0
 
 # 3. Delete the Forgejo release via web UI
-# https://git.araj.me/maxking/forgejo-vscode/releases
+# https://codeberg.org/maxking/forgejo-vscode/releases
 
 # 4. Fix the issue and publish a new version
 ```
@@ -324,6 +324,6 @@ to add this entry automatically. The patch file is at `patches/@mshanemc+vscode-
 ## Support
 
 For questions or issues with the release process:
-- Create an issue: https://git.araj.me/maxking/forgejo-vscode/issues
-- Check workflow logs: https://git.araj.me/maxking/forgejo-vscode/actions
+- Create an issue: https://codeberg.org/maxking/forgejo-vscode/issues
+- Check workflow logs: https://codeberg.org/maxking/forgejo-vscode/actions
 - Review this guide: `MAINTAINERS.md`
