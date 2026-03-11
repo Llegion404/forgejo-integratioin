@@ -148,6 +148,14 @@ describe('ActionsTreeProvider', () => {
       expect(item.owner).toBe(owner);
       expect(item.repo).toBe(repo);
     });
+
+    test('should handle empty job list without crashing', () => {
+      const item = new WorkflowRunTreeItem(42, [], owner, repo);
+      expect(item.label).toBe('Workflow Run #42');
+      expect(item.description).toBe('No jobs');
+      expect(item.tooltip).toContain('Workflow: #42');
+      expect(item.tooltip).toContain('Jobs: 0');
+    });
   });
 
   describe('JobTreeItem', () => {

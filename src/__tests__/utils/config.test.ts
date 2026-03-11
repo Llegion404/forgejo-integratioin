@@ -5,17 +5,22 @@ import { detectGitRemote } from '../../utils/gitUtils';
 // Mock gitUtils
 jest.mock('../../utils/gitUtils');
 
+interface MockConfigOptions {
+		autoDetectFromRemote?: boolean;
+}
+
 // Helper to mock configuration
-const mockConfig = (instances: any[]) => {
-    const get = jest.fn((key) => {
-        if (key === 'instances') return instances;
-        return undefined;
-    });
-    (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
-        get,
-        update: jest.fn(),
-        inspect: jest.fn()
-    });
+const mockConfig = (instances: any[], options: MockConfigOptions = {}) => {
+	const get = jest.fn((key) => {
+		if (key === 'instances') return instances;
+		if (key === 'autoDetectFromRemote') return options.autoDetectFromRemote;
+		return undefined;
+	});
+	(vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+		get,
+		update: jest.fn(),
+		inspect: jest.fn()
+	});
 };
 
 describe('config', () => {
@@ -95,8 +100,28 @@ describe('config', () => {
 
             const config = await getForgejoConfig();
 
+			expect(config).toEqual({
+				instanceUrl: 'https://codeberg.org', // Default instance
+				token: 'token1',
+				owner: 'owner',
+				repo: 'repo',
+				instanceId: '1',
+				matchConfidence: 'default'
+			});
+        });
+
+        it('should skip instance matching when autoDetectFromRemote is false', async () => {
+            mockConfig(mockInstances, { autoDetectFromRemote: false });
+            (detectGitRemote as jest.Mock).mockReturnValue({
+                instanceUrl: 'https://unknown.example.com',
+                owner: 'owner',
+                repo: 'repo'
+            });
+
+            const config = await getForgejoConfig();
+
             expect(config).toEqual({
-                instanceUrl: 'https://codeberg.org', // Default instance
+                instanceUrl: 'https://codeberg.org',
                 token: 'token1',
                 owner: 'owner',
                 repo: 'repo',
