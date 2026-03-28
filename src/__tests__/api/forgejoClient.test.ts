@@ -1027,6 +1027,24 @@ describe('ForgejoClient', () => {
       );
     });
 
+    test('should prefer stable job refs when available', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => mockWorkflowLogs
+      } as unknown as Response);
+
+      await client.getWorkflowLogs('owner', 'repo', 42, {
+        jobId: 201,
+        jobHtmlUrl: 'https://git.example.com/owner/repo/actions/runs/42/jobs/201'
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://git.example.com/owner/repo/actions/runs/42/jobs/201/logs',
+        expect.any(Object)
+      );
+    });
+
     test('should handle 404 response', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,

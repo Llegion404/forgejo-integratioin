@@ -376,8 +376,20 @@
   };
 
   window.viewLogs = function(jobIndex) {
-    console.log('[Forgejo Action Webview] View logs clicked for job:', jobIndex);
-    vscode.postMessage({ type: 'viewLogs', jobIndex: jobIndex });
+    const job = currentData && currentData.jobs ? currentData.jobs[jobIndex] : null;
+    console.log('[Forgejo Action Webview] View logs clicked for job:', jobIndex, job && job.id);
+    if (!job) {
+      vscode.postMessage({ type: 'refresh' });
+      return;
+    }
+    vscode.postMessage({
+      type: 'viewLogs',
+      jobRef: {
+        jobId: job.id,
+        jobHtmlUrl: job.html_url,
+        jobIndex: jobIndex
+      }
+    });
   };
 
   // Start

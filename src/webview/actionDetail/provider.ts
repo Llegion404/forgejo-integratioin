@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
-import { WorkflowRun, WorkflowRunListItem, WorkflowJob } from '../../models/action';
+import { WorkflowRun, WorkflowRunListItem, WorkflowJob, WorkflowJobRef } from '../../models/action';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 
 export type WebviewMessage =
@@ -9,7 +9,18 @@ export type WebviewMessage =
   | { type: 'refresh' }
   | { type: 'rerun' }
   | { type: 'openInBrowser' }
-  | { type: 'viewLogs'; jobIndex: number };
+  | { type: 'viewLogs'; jobRef: WorkflowJobRef };
+
+function isValidJobRef(jobRef: unknown): jobRef is WorkflowJobRef {
+  if (!jobRef || typeof jobRef !== 'object') {
+    return false;
+  }
+
+  const ref = jobRef as WorkflowJobRef;
+  return typeof ref.jobHtmlUrl === 'string'
+    || typeof ref.jobId === 'number'
+    || typeof ref.jobIndex === 'number';
+}
 
 export type ExtensionMessage =
   | { type: 'update'; data: ActionDetailViewData }
@@ -209,7 +220,11 @@ export class ActionDetailWebviewProvider {
         await this._openInBrowser(owner, repo, runId);
         break;
       case 'viewLogs':
-        await this._viewLogs(owner, repo, runId, message.jobIndex);
+        if (!isValidJobRef(message.jobRef)) {
+          void vscode.window.showErrorMessage('Action log request did not include a valid job reference');
+          return;
+        }
+        await this._viewLogs(owner, repo, runId, message.jobRef);
         break;
     }
   }
@@ -244,7 +259,7 @@ export class ActionDetailWebviewProvider {
     }
   }
 
-  private async _viewLogs(owner: string, repo: string, runId: number, jobIndex: number): Promise<void> {
+  private async _viewLogs(owner: string, repo: string, runId: number, jobRef: WorkflowJobRef): Promise<void> {
     // Get the run data to access run_number (sequential index, not internal id)
     const panelKey = `${owner}/${repo}/${String(runId)}`;
     const state = this._panels.get(panelKey);
@@ -265,7 +280,7 @@ export class ActionDetailWebviewProvider {
         cancellable: false
       }, async () => {
         const client = new ForgejoClient(config.instanceUrl, config.token);
-        const logs = await client.getWorkflowLogs(owner, repo, run.run_number, jobIndex);
+        const logs = await client.getWorkflowLogs(owner, repo, run.run_number, jobRef);
 
         // Create untitled document with logs
         const doc = await vscode.workspace.openTextDocument({

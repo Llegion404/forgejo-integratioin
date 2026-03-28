@@ -183,7 +183,7 @@ describe('ActionsTreeProvider', () => {
       expect(item.tooltip).toContain('Job: CI');
       expect(item.tooltip).toContain('Status: success');
       expect(item.tooltip).toContain('Run: #42');
-      expect(item.tooltip).toContain('Index: 0');
+      expect(item.tooltip).toContain('Job ID: 123');
     });
 
     test('should be Collapsed (has step children)', () => {
@@ -243,6 +243,10 @@ describe('ActionsTreeProvider', () => {
       const item = new JobTreeItem(mockWorkflowRunSuccess, 2, owner, repo);
       expect(item.job).toBe(mockWorkflowRunSuccess);
       expect(item.jobIndex).toBe(2);
+      expect(item.jobRef).toEqual({
+        jobId: 123,
+        jobIndex: 2
+      });
     });
 
     test('should initialize with no cached steps', () => {
@@ -257,44 +261,44 @@ describe('ActionsTreeProvider', () => {
     const repo = 'test-repo';
 
     test('should create with step summary as label', () => {
-      const item = new StepTreeItem(mockScrapedStepCheckout, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       expect(item.label).toBe('Checkout');
     });
 
     test('should show duration in description', () => {
-      const item = new StepTreeItem(mockScrapedStepCheckout, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       expect(item.description).toBe('5s');
     });
 
     test('should have undefined description when no duration', () => {
-      const item = new StepTreeItem(mockScrapedStepRunning, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepRunning, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       expect(item.description).toBeUndefined();
     });
 
     test('should set tooltip with step info', () => {
-      const item = new StepTreeItem(mockScrapedStepCheckout, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       expect(item.tooltip).toContain('Step: Checkout');
       expect(item.tooltip).toContain('Status: success');
       expect(item.tooltip).toContain('Duration: 5s');
     });
 
     test('should omit duration from tooltip when empty', () => {
-      const item = new StepTreeItem(mockScrapedStepRunning, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepRunning, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       expect(item.tooltip).not.toContain('Duration:');
     });
 
     test('should be a leaf node (None collapsible state)', () => {
-      const item = new StepTreeItem(mockScrapedStepCheckout, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       expect(item.collapsibleState).toBe(vscode.TreeItemCollapsibleState.None);
     });
 
     test('should set contextValue to workflowStep', () => {
-      const item = new StepTreeItem(mockScrapedStepCheckout, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       expect(item.contextValue).toBe('workflowStep');
     });
 
     test('should set command to forgejo.viewStepLogs with plain serializable args', () => {
-      const item = new StepTreeItem(mockScrapedStepCheckout, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       expect(item.command).toBeDefined();
       expect(item.command!.command).toBe('forgejo.viewStepLogs');
       const args = item.command!.arguments![0];
@@ -305,45 +309,45 @@ describe('ActionsTreeProvider', () => {
         owner,
         repo,
         runNumber: 42,
-        jobIndex: 0
+        jobRef: { jobId: 123, jobIndex: 0 }
       });
     });
 
     test('should not create circular JSON in command arguments', () => {
-      const item = new StepTreeItem(mockScrapedStepCheckout, 1, 55, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 1 }, 55, owner, repo);
       // JSON.stringify must not throw "Converting circular structure to JSON"
       expect(() => JSON.stringify(item.command!.arguments)).not.toThrow();
     });
 
     test('should set correct icon for success', () => {
-      const item = new StepTreeItem(mockScrapedStepCheckout, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('pass');
     });
 
     test('should set correct icon for failure', () => {
-      const item = new StepTreeItem(mockScrapedStepFailed, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepFailed, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('error');
     });
 
     test('should set correct icon for running (from web scraping)', () => {
-      const item = new StepTreeItem(mockScrapedStepRunning, 0, 42, owner, repo);
+      const item = new StepTreeItem(mockScrapedStepRunning, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('sync~spin');
     });
 
     test('should set correct icon for in_progress', () => {
       const inProgressStep: ScrapedStep = { summary: 'Deploy', duration: '', status: 'in_progress' };
-      const item = new StepTreeItem(inProgressStep, 0, 42, owner, repo);
+      const item = new StepTreeItem(inProgressStep, { jobId: 123, jobIndex: 0 }, 42, owner, repo);
       const icon = item.iconPath as vscode.ThemeIcon;
       expect(icon.id).toBe('sync~spin');
     });
 
-    test('should store jobIndex, runNumber, owner, repo', () => {
-      const item = new StepTreeItem(mockScrapedStepCheckout, 2, 42, owner, repo);
+    test('should store jobRef, runNumber, owner, repo', () => {
+      const item = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 2 }, 42, owner, repo);
       expect(item.step).toBe(mockScrapedStepCheckout);
-      expect(item.jobIndex).toBe(2);
+      expect(item.jobRef).toEqual({ jobId: 123, jobIndex: 2 });
       expect(item.runNumber).toBe(42);
       expect(item.owner).toBe(owner);
       expect(item.repo).toBe(repo);
@@ -482,7 +486,10 @@ describe('ActionsTreeProvider', () => {
       const jobItem = new JobTreeItem(mockWorkflowRunSuccess, 0, 'test-owner', 'test-repo');
       const children = await provider.getChildren(jobItem);
 
-      expect(mockClient.getJobSteps).toHaveBeenCalledWith('test-owner', 'test-repo', 42, 0);
+      expect(mockClient.getJobSteps).toHaveBeenCalledWith('test-owner', 'test-repo', 42, {
+        jobId: 123,
+        jobIndex: 0
+      });
       expect(children).toHaveLength(3);
       expect(children[0]).toBeInstanceOf(StepTreeItem);
       expect((children[0] as StepTreeItem).step.summary).toBe('Checkout');
@@ -559,7 +566,7 @@ describe('ActionsTreeProvider', () => {
       expect((children[0] as any).label).toBe('No Forgejo configuration found');
     });
 
-    test('should pass correct runNumber and jobIndex to StepTreeItem', async () => {
+    test('should pass correct runNumber and jobRef to StepTreeItem', async () => {
       mockGetForgejoConfig.mockResolvedValue(mockConfig);
       mockClient.getJobSteps.mockResolvedValue([mockScrapedStepCheckout]);
 
@@ -567,7 +574,10 @@ describe('ActionsTreeProvider', () => {
       const children = await provider.getChildren(jobItem);
 
       const stepItem = children[0] as StepTreeItem;
-      expect(stepItem.jobIndex).toBe(1);
+      expect(stepItem.jobRef).toEqual({
+        jobId: 123,
+        jobIndex: 1
+      });
       expect(stepItem.runNumber).toBe(42); // mockWorkflowRunSuccess.run_number
       expect(stepItem.owner).toBe('test-owner');
       expect(stepItem.repo).toBe('test-repo');
@@ -576,7 +586,7 @@ describe('ActionsTreeProvider', () => {
 
   describe('Provider getChildren - StepTreeItem (leaf)', () => {
     test('should return empty array for step items', async () => {
-      const stepItem = new StepTreeItem(mockScrapedStepCheckout, 0, 42, 'test-owner', 'test-repo');
+      const stepItem = new StepTreeItem(mockScrapedStepCheckout, { jobId: 123, jobIndex: 0 }, 42, 'test-owner', 'test-repo');
       const children = await provider.getChildren(stepItem);
 
       expect(children).toHaveLength(0);

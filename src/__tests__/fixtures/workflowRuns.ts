@@ -94,7 +94,7 @@ export const mockWorkflowJobSuccess: WorkflowJob = {
   conclusion: null,
   started_at: '2024-01-15T10:00:10Z',
   completed_at: '2024-01-15T10:04:00Z',
-  html_url: 'https://git.example.com/owner/repo/actions/runs/42/jobs/0',
+  html_url: 'https://git.example.com/owner/repo/actions/runs/42/jobs/201',
   steps: [
     {
       name: 'Checkout',
@@ -131,7 +131,7 @@ export const mockWorkflowJobFailed: WorkflowJob = {
   conclusion: null,
   started_at: '2024-01-15T11:00:10Z',
   completed_at: '2024-01-15T11:03:00Z',
-  html_url: 'https://git.example.com/owner/repo/actions/runs/43/jobs/0',
+  html_url: 'https://git.example.com/owner/repo/actions/runs/43/jobs/202',
   steps: [
     {
       name: 'Checkout',
@@ -156,7 +156,7 @@ export const mockWorkflowJobNoSteps: WorkflowJob = {
   conclusion: null,
   started_at: '2024-01-15T10:05:00Z',
   completed_at: '2024-01-15T10:06:00Z',
-  html_url: 'https://git.example.com/owner/repo/actions/runs/42/jobs/1',
+  html_url: 'https://git.example.com/owner/repo/actions/runs/42/jobs/203',
   steps: []
 };
 
