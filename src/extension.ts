@@ -428,7 +428,8 @@ export async function activate(context: vscode.ExtensionContext) {
           // Steps don't have their own URL; open the parent job page
           void getForgejoConfig().then(config => {
             if (config) {
-              const url = `${config.instanceUrl}/${item.owner}/${item.repo}/actions/runs/${item.runNumber}/jobs/${item.jobIndex}`;
+              const url = item.jobRef.jobHtmlUrl
+                ?? `${config.instanceUrl}/${item.owner}/${item.repo}/actions/runs/${item.runNumber}/jobs/${item.jobRef.jobId ?? item.jobRef.jobIndex ?? 0}`;
               void vscode.env.openExternal(vscode.Uri.parse(url));
             }
           });
@@ -549,35 +550,42 @@ export async function activate(context: vscode.ExtensionContext) {
           }
 
           let runNumber: number;
-          let jobIndex: number;
+          let jobRef: { jobId?: number; jobHtmlUrl?: string; jobIndex?: number };
           let actualOwner: string;
           let actualRepo: string;
           let jobName: string;
 
           if (runOrItem instanceof JobTreeItem) {
             runNumber = runOrItem.job.run_number;
-            jobIndex = runOrItem.jobIndex;
+            jobRef = runOrItem.jobRef;
             actualOwner = runOrItem.owner;
             actualRepo = runOrItem.repo;
             jobName = runOrItem.job.name;
           } else if (runOrItem instanceof WorkflowRunTreeItem) {
             // jobs is guaranteed non-empty — the constructor accesses jobs[0]
             runNumber = runOrItem.runNumber;
-            jobIndex = 0;
+            const firstJob = runOrItem.jobs[0];
+            jobRef = {
+              jobId: firstJob.id,
+              jobHtmlUrl: firstJob.html_url,
+              jobIndex: 0
+            };
             actualOwner = runOrItem.owner;
             actualRepo = runOrItem.repo;
-            jobName = runOrItem.jobs[0].name;
+            jobName = firstJob.name;
           } else if (runOrItem instanceof StepTreeItem) {
             runNumber = runOrItem.runNumber;
-            jobIndex = runOrItem.jobIndex;
+            jobRef = runOrItem.jobRef;
             actualOwner = runOrItem.owner;
             actualRepo = runOrItem.repo;
             jobName = runOrItem.step.summary;
           } else {
             // Legacy direct invocation with explicit args
             runNumber = runOrItem.run_number;
-            const urlParts = job?.html_url?.split('/') ?? [];
-            jobIndex = parseInt(urlParts[urlParts.length - 1] ?? '0', 10) || 0;
+            jobRef = {
+              jobId: job?.id,
+              jobHtmlUrl: job?.html_url
+            };
             actualOwner = owner ?? '';
             actualRepo = repo ?? '';
             jobName = job?.name ?? 'job';
@@ -591,8 +599,7 @@ export async function activate(context: vscode.ExtensionContext) {
             },
             async () => {
               const client = new ForgejoClient(config.instanceUrl, config.token);
-              const logs = await client.getWorkflowLogs(actualOwner, actualRepo, runNumber, jobIndex);
-
+              const logs = await client.getWorkflowLogs(actualOwner, actualRepo, runNumber, jobRef);
               const doc = await vscode.workspace.openTextDocument({
                 content: logs,
                 language: 'log'
@@ -631,7 +638,7 @@ export async function activate(context: vscode.ExtensionContext) {
             async () => {
               const client = new ForgejoClient(config.instanceUrl, config.token);
               const logs = await client.getWorkflowLogs(
-                args.owner, args.repo, args.runNumber, args.jobIndex
+                args.owner, args.repo, args.runNumber, args.jobRef
               );
 
               const doc = await vscode.workspace.openTextDocument({

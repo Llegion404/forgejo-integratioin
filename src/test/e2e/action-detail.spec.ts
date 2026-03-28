@@ -375,7 +375,10 @@ test.describe('Action Detail Webview', () => {
     const messages = await getPostedMessages(page);
     const viewLogsMsg = messages.find(m => m.type === 'viewLogs');
     expect(viewLogsMsg).toBeDefined();
-    expect(viewLogsMsg).toMatchObject({ type: 'viewLogs', jobIndex: 0 });
+    expect(viewLogsMsg).toMatchObject({
+      type: 'viewLogs',
+      jobRef: { jobId: 1, jobIndex: 0 }
+    });
   });
 
   test('shows error state', async ({ page }) => {

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
-import { WorkflowRunListItem } from '../models/action';
+import { WorkflowRunListItem, WorkflowJobRef } from '../models/action';
 import { getForgejoConfig } from '../utils/config';
 
 /**
@@ -24,7 +24,15 @@ export interface StepLogArgs {
   owner: string;
   repo: string;
   runNumber: number;
-  jobIndex: number;
+  jobRef: WorkflowJobRef;
+}
+
+function createJobRef(job: WorkflowRunListItem, jobIndex: number): WorkflowJobRef {
+  return {
+    jobId: job.id,
+    jobHtmlUrl: job.html_url,
+    jobIndex
+  };
 }
 
 
@@ -124,11 +132,15 @@ export class JobTreeItem extends vscode.TreeItem {
     super(job.name, vscode.TreeItemCollapsibleState.Collapsed);
 
     this.description = job.status;
-    this.tooltip = `Job: ${job.name}\nStatus: ${job.status}\nRun: #${job.run_number}\nIndex: ${jobIndex}`;
+    this.tooltip = `Job: ${job.name}\nStatus: ${job.status}\nRun: #${job.run_number}\nJob ID: ${job.id}`;
     this.contextValue = 'workflowJob';
 
     // Set icon based on status
     this.iconPath = getStatusIcon(job.status);
+  }
+
+  get jobRef(): WorkflowJobRef {
+    return createJobRef(this.job, this.jobIndex);
   }
 }
 
@@ -139,7 +151,7 @@ export class JobTreeItem extends vscode.TreeItem {
 export class StepTreeItem extends vscode.TreeItem {
   constructor(
     public readonly step: ScrapedStep,
-    public readonly jobIndex: number,
+    public readonly jobRef: WorkflowJobRef,
     public readonly runNumber: number,
     public readonly owner: string,
     public readonly repo: string
@@ -159,7 +171,7 @@ export class StepTreeItem extends vscode.TreeItem {
       owner,
       repo,
       runNumber,
-      jobIndex
+      jobRef
     };
     this.command = {
       command: 'forgejo.viewStepLogs',
@@ -259,7 +271,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
     // Return cached result if available
     if (jobItem.fetchedSteps) {
       return jobItem.fetchedSteps.map(step =>
-        new StepTreeItem(step, jobItem.jobIndex, jobItem.job.run_number, jobItem.owner, jobItem.repo)
+        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo)
       );
     }
     if (jobItem.fetchError) {
@@ -275,7 +287,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       }
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      const steps = await client.getJobSteps(config.owner, config.repo, jobItem.job.run_number, jobItem.jobIndex);
+      const steps = await client.getJobSteps(config.owner, config.repo, jobItem.job.run_number, jobItem.jobRef);
 
       jobItem.fetchedSteps = steps;
 
@@ -284,7 +296,7 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
       }
 
       return steps.map(step =>
-        new StepTreeItem(step, jobItem.jobIndex, jobItem.job.run_number, jobItem.owner, jobItem.repo)
+        new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo)
       );
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Failed to fetch steps';
