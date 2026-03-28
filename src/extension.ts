@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import { PRTreeProvider } from './providers/prTreeProvider';
-import { IssueTreeProvider } from './providers/issueTreeProvider';
+import { PRTreeProvider, PRTreeItem, PROverviewItem } from './providers/prTreeProvider';
+import { IssueTreeProvider, IssueTreeItem } from './providers/issueTreeProvider';
 import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from './providers/actionsTreeProvider';
 import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
-import { WorkflowRunListItem, WorkflowJob } from './models/action';
+import { WorkflowRunListItem } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
@@ -11,7 +11,6 @@ import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
 import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
 import { ForgejoCommentController } from './providers/prCommentController';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
-import { IssueListItem } from './models/issue';
 import { configureInstanceUrlCommand, setAuthTokenCommand } from './commands/legacyConfig';
 import { migrateToMultiInstance } from './utils/migration';
 import { getAllInstances } from './utils/instanceHelpers';
@@ -320,13 +319,28 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Register PR details viewer command
+  // Handles both direct tree item click (args: pr, owner, repo) and
+  // context menu invocation (args: PROverviewItem)
   context.subscriptions.push(
     registerCommand(
       'forgejo.showPrDetails',
-      async (pr: PullRequestListItem, owner: string, repo: string) => {
+      async (prOrItem, owner?, repo?) => {
         try {
-          // Show the webview panel
-          await prDetailWebviewProvider.showPRDetails(owner, repo, pr.number);
+          let prNumber: number;
+          let actualOwner: string;
+          let actualRepo: string;
+
+          if (prOrItem instanceof PROverviewItem) {
+            prNumber = prOrItem.pr.number;
+            actualOwner = prOrItem.owner;
+            actualRepo = prOrItem.repo;
+          } else {
+            prNumber = prOrItem.number;
+            actualOwner = owner ?? '';
+            actualRepo = repo ?? '';
+          }
+
+          await prDetailWebviewProvider.showPRDetails(actualOwner, actualRepo, prNumber);
         } catch (error) {
           console.error('[Forgejo] Error opening PR details:', error);
           void vscode.window.showErrorMessage(
@@ -337,20 +351,52 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // Register merge PR command
+  // Handles both TreeItem.command (args: pr, owner, repo) and
+  // context menu invocation (args: PRTreeItem)
   context.subscriptions.push(
     registerCommand(
       'forgejo.mergePr',
-      (pr: PullRequestListItem, owner: string, repo: string) => mergePrCommand(pr, owner, repo, prTreeProvider)
+      (prOrItem, owner?, repo?) => {
+        let pr: PullRequestListItem;
+        let actualOwner: string;
+        let actualRepo: string;
+
+        if (prOrItem instanceof PRTreeItem) {
+          pr = prOrItem.pr;
+          actualOwner = prOrItem.owner;
+          actualRepo = prOrItem.repo;
+        } else {
+          pr = prOrItem;
+          actualOwner = owner ?? '';
+          actualRepo = repo ?? '';
+        }
+
+        return mergePrCommand(pr, actualOwner, actualRepo, prTreeProvider);
+      }
     )
   );
 
-  // Register close PR command
+  // Handles both TreeItem.command (args: pr, owner, repo) and
+  // context menu invocation (args: PRTreeItem)
   context.subscriptions.push(
     registerCommand(
       'forgejo.closePr',
-      async (pr: PullRequestListItem, owner: string, repo: string) => {
-        await closePrCommand(pr, owner, repo, prTreeProvider);
+      async (prOrItem, owner?, repo?) => {
+        let pr: PullRequestListItem;
+        let actualOwner: string;
+        let actualRepo: string;
+
+        if (prOrItem instanceof PRTreeItem) {
+          pr = prOrItem.pr;
+          actualOwner = prOrItem.owner;
+          actualRepo = prOrItem.repo;
+        } else {
+          pr = prOrItem;
+          actualOwner = owner ?? '';
+          actualRepo = repo ?? '';
+        }
+
+        await closePrCommand(pr, actualOwner, actualRepo, prTreeProvider);
       }
     )
   );
@@ -433,13 +479,33 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Register Action details viewer command
+  // Handles both direct invocation (args: run, owner, repo) and
+  // context menu invocation (args: WorkflowRunTreeItem or JobTreeItem)
   context.subscriptions.push(
     registerCommand(
       'forgejo.showActionDetails',
-      async (run: WorkflowRunListItem, owner: string, repo: string) => {
+      async (runOrItem, owner?, repo?) => {
         try {
-          // Show the webview panel with the run data we already have
-          await actionDetailWebviewProvider.showActionDetails(owner, repo, run);
+          let run: WorkflowRunListItem;
+          let actualOwner: string;
+          let actualRepo: string;
+
+          if (runOrItem instanceof WorkflowRunTreeItem) {
+            // jobs is guaranteed non-empty — the constructor accesses jobs[0]
+            run = runOrItem.jobs[0];
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
+          } else if (runOrItem instanceof JobTreeItem) {
+            run = runOrItem.job;
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
+          } else {
+            run = runOrItem;
+            actualOwner = owner ?? '';
+            actualRepo = repo ?? '';
+          }
+
+          await actionDetailWebviewProvider.showActionDetails(actualOwner, actualRepo, run);
         } catch (error) {
           console.error('[Forgejo] Error opening Action details:', error);
           void vscode.window.showErrorMessage(
@@ -450,10 +516,13 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Register action log viewer command
+  // Handles context menu invocation where first arg is a tree item
+  // (WorkflowRunTreeItem, JobTreeItem, or StepTreeItem)
   context.subscriptions.push(
     registerCommand(
       'forgejo.viewActionLogs',
-      async (run: WorkflowRunListItem, job: WorkflowJob, owner: string, repo: string) => {
+      async (runOrItem, job?, owner?, repo?) => {
         try {
           const config = await getForgejoConfig();
           if (!config) {
@@ -461,21 +530,51 @@ export async function activate(context: vscode.ExtensionContext) {
             return;
           }
 
+          let runNumber: number;
+          let jobIndex: number;
+          let actualOwner: string;
+          let actualRepo: string;
+          let jobName: string;
+
+          if (runOrItem instanceof JobTreeItem) {
+            runNumber = runOrItem.job.run_number;
+            jobIndex = runOrItem.jobIndex;
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
+            jobName = runOrItem.job.name;
+          } else if (runOrItem instanceof WorkflowRunTreeItem) {
+            // jobs is guaranteed non-empty — the constructor accesses jobs[0]
+            runNumber = runOrItem.runNumber;
+            jobIndex = 0;
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
+            jobName = runOrItem.jobs[0].name;
+          } else if (runOrItem instanceof StepTreeItem) {
+            runNumber = runOrItem.runNumber;
+            jobIndex = runOrItem.jobIndex;
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
+            jobName = runOrItem.step.summary;
+          } else {
+            // Legacy direct invocation with explicit args
+            runNumber = runOrItem.run_number;
+            const urlParts = job?.html_url?.split('/') ?? [];
+            jobIndex = parseInt(urlParts[urlParts.length - 1] ?? '0', 10) || 0;
+            actualOwner = owner ?? '';
+            actualRepo = repo ?? '';
+            jobName = job?.name ?? 'job';
+          }
+
           void vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
-              title: `Fetching logs for ${job.name}...`,
+              title: `Fetching logs for ${jobName}...`,
               cancellable: false
             },
             async () => {
               const client = new ForgejoClient(config.instanceUrl, config.token);
-              // Extract job index from html_url (e.g., .../jobs/0)
-              const urlParts = job.html_url?.split('/') ?? [];
-              const jobIndex = parseInt(urlParts[urlParts.length - 1] ?? '0', 10) || 0;
+              const logs = await client.getWorkflowLogs(actualOwner, actualRepo, runNumber, jobIndex);
 
-              const logs = await client.getWorkflowLogs(owner, repo, run.run_number, jobIndex);
-
-              // Create a new untitled document with the logs
               const doc = await vscode.workspace.openTextDocument({
                 content: logs,
                 language: 'log'
@@ -549,13 +648,28 @@ export async function activate(context: vscode.ExtensionContext) {
   const actionDetailWebviewProvider = new ActionDetailWebviewProvider(context.extensionUri);
 
   // Register Issue details viewer command
+  // Handles both direct tree item click (args: issue, owner, repo) and
+  // context menu invocation (args: IssueTreeItem)
   context.subscriptions.push(
     registerCommand(
       'forgejo.showIssueDetails',
-      async (issue: IssueListItem, owner: string, repo: string) => {
+      async (issueOrItem, owner?, repo?) => {
         try {
-          // Show the webview panel
-          await issueDetailWebviewProvider.showIssueDetails(owner, repo, issue.number);
+          let issueNumber: number;
+          let actualOwner: string;
+          let actualRepo: string;
+
+          if (issueOrItem instanceof IssueTreeItem) {
+            issueNumber = issueOrItem.issue.number;
+            actualOwner = issueOrItem.owner;
+            actualRepo = issueOrItem.repo;
+          } else {
+            issueNumber = issueOrItem.number;
+            actualOwner = owner ?? '';
+            actualRepo = repo ?? '';
+          }
+
+          await issueDetailWebviewProvider.showIssueDetails(actualOwner, actualRepo, issueNumber);
         } catch (error) {
           console.error('[Forgejo] Error opening Issue details:', error);
           void vscode.window.showErrorMessage(
