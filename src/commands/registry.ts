@@ -17,9 +17,9 @@ import * as vscode from 'vscode';
 import type { PullRequestListItem, PullRequestFile } from '../models/pullRequest';
 import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
-import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
-import type { PRTreeItem, PRFileItem } from '../providers/prTreeProvider';
 import type { IssueTreeItem } from '../providers/issueTreeProvider';
+import type { PRTreeItem, PROverviewItem, PRFileItem } from '../providers/prTreeProvider';
+import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
 
 // ---------------------------------------------------------------------------
 // Command argument map
@@ -69,20 +69,57 @@ export interface CommandMap {
   ];
 
   // -- Context menu commands -----------------------------------------------
-  // Commands registered in package.json `view/item/context` receive
-  // the tree item as arg 0.
+  // Commands in package.json `view/item/context` receive the tree item as
+  // arg 0. Union types below ensure handlers accept both the context-menu
+  // path (tree item) and the direct-invocation path (data object).
 
   'forgejo.openPrInBrowserFromContext': [prItem: PRTreeItem];
   'forgejo.openPrFileInBrowser': [fileItem: PRFileItem];
 
-  'forgejo.showPrDetails': [pr: PullRequestListItem, owner: string, repo: string];
-  'forgejo.mergePr': [pr: PullRequestListItem, owner: string, repo: string];
-  'forgejo.closePr': [pr: PullRequestListItem, owner: string, repo: string];
-  'forgejo.showIssueDetails': [issue: IssueListItem, owner: string, repo: string];
+  // view/item/context: viewItem == prOverview  +  executeCommand calls
+  'forgejo.showPrDetails': [
+    prOrItem: PullRequestListItem | PROverviewItem,
+    owner?: string,
+    repo?: string,
+  ];
+
+  // view/item/context: viewItem == pullRequest
+  'forgejo.mergePr': [
+    prOrItem: PullRequestListItem | PRTreeItem,
+    owner?: string,
+    repo?: string,
+  ];
+
+  // view/item/context: viewItem == pullRequest
+  'forgejo.closePr': [
+    prOrItem: PullRequestListItem | PRTreeItem,
+    owner?: string,
+    repo?: string,
+  ];
+
+  // view/item/context: viewItem == issue  +  TreeItem.command
+  'forgejo.showIssueDetails': [
+    issueOrItem: IssueListItem | IssueTreeItem,
+    owner?: string,
+    repo?: string,
+  ];
+
   'forgejo.openIssueInBrowserFromContext': [issueItem: IssueTreeItem];
 
-  'forgejo.showActionDetails': [run: WorkflowRunListItem, owner: string, repo: string];
-  'forgejo.viewActionLogs': [run: WorkflowRunListItem, job: WorkflowJob, owner: string, repo: string];
+  // view/item/context: viewItem == workflowRun | workflowJob
+  'forgejo.showActionDetails': [
+    runOrItem: WorkflowRunListItem | WorkflowRunTreeItem | JobTreeItem,
+    owner?: string,
+    repo?: string,
+  ];
+
+  // view/item/context: viewItem == workflowRun | workflowJob | workflowStep
+  'forgejo.viewActionLogs': [
+    runOrItem: WorkflowRunTreeItem | JobTreeItem | StepTreeItem | WorkflowRunListItem,
+    job?: WorkflowJob,
+    owner?: string,
+    repo?: string,
+  ];
 
   'forgejo.openActionInBrowser': [item: WorkflowRunTreeItem | JobTreeItem | StepTreeItem];
   'forgejo.rerunAction': [item: WorkflowRunTreeItem | JobTreeItem];

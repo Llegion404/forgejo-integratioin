@@ -123,7 +123,7 @@ class PRLoadingItem extends vscode.TreeItem {
 /**
  * Overview item for PR details
  */
-class PROverviewItem extends vscode.TreeItem {
+export class PROverviewItem extends vscode.TreeItem {
   constructor(
     public readonly pr: PullRequestListItem,
     public readonly owner: string,
