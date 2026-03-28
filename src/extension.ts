@@ -484,22 +484,23 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand(
       'forgejo.showActionDetails',
-      async (firstArg, owner?, repo?) => {
+      async (runOrItem, owner?, repo?) => {
         try {
           let run: WorkflowRunListItem;
           let actualOwner: string;
           let actualRepo: string;
 
-          if (firstArg instanceof WorkflowRunTreeItem) {
-            run = firstArg.jobs[0];
-            actualOwner = firstArg.owner;
-            actualRepo = firstArg.repo;
-          } else if (firstArg instanceof JobTreeItem) {
-            run = firstArg.job;
-            actualOwner = firstArg.owner;
-            actualRepo = firstArg.repo;
+          if (runOrItem instanceof WorkflowRunTreeItem) {
+            // jobs is guaranteed non-empty — the constructor accesses jobs[0]
+            run = runOrItem.jobs[0];
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
+          } else if (runOrItem instanceof JobTreeItem) {
+            run = runOrItem.job;
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
           } else {
-            run = firstArg;
+            run = runOrItem;
             actualOwner = owner ?? '';
             actualRepo = repo ?? '';
           }
@@ -521,7 +522,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand(
       'forgejo.viewActionLogs',
-      async (firstArg, job?, owner?, repo?) => {
+      async (runOrItem, job?, owner?, repo?) => {
         try {
           const config = await getForgejoConfig();
           if (!config) {
@@ -535,28 +536,28 @@ export async function activate(context: vscode.ExtensionContext) {
           let actualRepo: string;
           let jobName: string;
 
-          if (firstArg instanceof JobTreeItem) {
-            runNumber = firstArg.job.run_number;
-            jobIndex = firstArg.jobIndex;
-            actualOwner = firstArg.owner;
-            actualRepo = firstArg.repo;
-            jobName = firstArg.job.name;
-          } else if (firstArg instanceof WorkflowRunTreeItem) {
-            const firstJob = firstArg.jobs[0];
-            runNumber = firstArg.runNumber;
+          if (runOrItem instanceof JobTreeItem) {
+            runNumber = runOrItem.job.run_number;
+            jobIndex = runOrItem.jobIndex;
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
+            jobName = runOrItem.job.name;
+          } else if (runOrItem instanceof WorkflowRunTreeItem) {
+            // jobs is guaranteed non-empty — the constructor accesses jobs[0]
+            runNumber = runOrItem.runNumber;
             jobIndex = 0;
-            actualOwner = firstArg.owner;
-            actualRepo = firstArg.repo;
-            jobName = firstJob.name;
-          } else if (firstArg instanceof StepTreeItem) {
-            runNumber = firstArg.runNumber;
-            jobIndex = firstArg.jobIndex;
-            actualOwner = firstArg.owner;
-            actualRepo = firstArg.repo;
-            jobName = firstArg.step.summary;
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
+            jobName = runOrItem.jobs[0].name;
+          } else if (runOrItem instanceof StepTreeItem) {
+            runNumber = runOrItem.runNumber;
+            jobIndex = runOrItem.jobIndex;
+            actualOwner = runOrItem.owner;
+            actualRepo = runOrItem.repo;
+            jobName = runOrItem.step.summary;
           } else {
             // Legacy direct invocation with explicit args
-            runNumber = firstArg.run_number;
+            runNumber = runOrItem.run_number;
             const urlParts = job?.html_url?.split('/') ?? [];
             jobIndex = parseInt(urlParts[urlParts.length - 1] ?? '0', 10) || 0;
             actualOwner = owner ?? '';
