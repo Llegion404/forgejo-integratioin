@@ -24,6 +24,7 @@ import { createReleaseCommand } from './commands/createRelease';
 import { mergePrCommand } from './commands/mergePr';
 import { selectRemoteCommand } from './commands/selectRemote';
 import { closePrCommand } from './commands/closePr';
+import { registerCommand } from './commands/registry';
 import { logger, logInfo } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
@@ -96,7 +97,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register submit inline comment command
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.submitInlineComment', async (reply: vscode.CommentReply) => {
+    registerCommand('forgejo.submitInlineComment', async (reply: vscode.CommentReply) => {
       await commentController.handleCreateComment(reply);
     })
   );
@@ -110,7 +111,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register instance management commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.addInstance', async () => {
+    registerCommand('forgejo.addInstance', async () => {
       const success = await startOnboarding();
       if (success) {
         await updateNoInstanceContext();
@@ -123,7 +124,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.manageInstances', async () => {
+    registerCommand('forgejo.manageInstances', async () => {
       await manageInstances();
       await updateNoInstanceContext();
       prTreeProvider.refresh();
@@ -134,27 +135,27 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.showDiagnostics', async () => {
+    registerCommand('forgejo.showDiagnostics', async () => {
       await showDiagnostics();
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.showOutput', () => {
+    registerCommand('forgejo.showOutput', () => {
       logger.show();
     })
   );
 
   // Register refresh commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.refreshPullRequests', () => {
+    registerCommand('forgejo.refreshPullRequests', () => {
       prTreeProvider.refresh();
       void vscode.window.showInformationMessage('Pull Requests refreshed');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.refreshIssues', () => {
+    registerCommand('forgejo.refreshIssues', () => {
       issueTreeProvider.refresh();
       void vscode.window.showInformationMessage('Issues refreshed');
     })
@@ -162,16 +163,16 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register create issue command
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.createIssue', () => createIssueCommand(issueTreeProvider))
+    registerCommand('forgejo.createIssue', () => createIssueCommand(issueTreeProvider))
   );
 
   // Register create pull request command
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.createPullRequest', () => createPullRequestCommand(prTreeProvider))
+    registerCommand('forgejo.createPullRequest', () => createPullRequestCommand(prTreeProvider))
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.refreshActions', () => {
+    registerCommand('forgejo.refreshActions', () => {
       actionsTreeProvider.refresh();
       void vscode.window.showInformationMessage('Actions refreshed');
     })
@@ -179,25 +180,25 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register configuration commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.configureInstanceUrl', () =>
+    registerCommand('forgejo.configureInstanceUrl', () =>
       configureInstanceUrlCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider)
     )
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.setAuthToken', () =>
+    registerCommand('forgejo.setAuthToken', () =>
       setAuthTokenCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider)
     )
   );
 
   // Register select remote command
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.selectRemote', () => selectRemoteCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider))
+    registerCommand('forgejo.selectRemote', () => selectRemoteCommand(prTreeProvider, issueTreeProvider, actionsTreeProvider))
   );
 
   // Register open in browser commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.openPrInBrowser', (url: string) => {
+    registerCommand('forgejo.openPrInBrowser', (url: string) => {
       if (url) {
         void vscode.env.openExternal(vscode.Uri.parse(url));
       }
@@ -205,7 +206,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.openIssueInBrowser', (url: string) => {
+    registerCommand('forgejo.openIssueInBrowser', (url: string) => {
       if (url) {
         void vscode.env.openExternal(vscode.Uri.parse(url));
       }
@@ -214,7 +215,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register PR file diff viewer
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.showPrFileDiff',
       async (
         file: PullRequestFile,
@@ -296,10 +297,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Add context menu command to open PR in browser
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.openPrInBrowserFromContext',
-      (prItem: unknown) => {
-        if (prItem && typeof prItem === 'object' && 'htmlUrl' in prItem && typeof prItem.htmlUrl === 'string') {
+      (prItem) => {
+        if (prItem.htmlUrl) {
           void vscode.env.openExternal(vscode.Uri.parse(prItem.htmlUrl));
         }
       }
@@ -308,10 +309,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Add context menu command to open file in browser
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.openPrFileInBrowser',
-      (fileItem: unknown) => {
-        if (fileItem && typeof fileItem === 'object' && 'file' in fileItem && fileItem.file && typeof fileItem.file === 'object' && 'blob_url' in fileItem.file && typeof fileItem.file.blob_url === 'string') {
+      (fileItem) => {
+        if (fileItem.file.blob_url) {
           void vscode.env.openExternal(vscode.Uri.parse(fileItem.file.blob_url));
         }
       }
@@ -320,7 +321,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register PR details viewer command
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.showPrDetails',
       async (pr: PullRequestListItem, owner: string, repo: string) => {
         try {
@@ -338,7 +339,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register merge PR command
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.mergePr',
       (pr: PullRequestListItem, owner: string, repo: string) => mergePrCommand(pr, owner, repo, prTreeProvider)
     )
@@ -346,7 +347,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register close PR command
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.closePr',
       async (pr: PullRequestListItem, owner: string, repo: string) => {
         await closePrCommand(pr, owner, repo, prTreeProvider);
@@ -356,7 +357,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register Actions commands
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.openActionInBrowser',
       (item: WorkflowRunTreeItem | JobTreeItem | StepTreeItem) => {
         if (item instanceof WorkflowRunTreeItem) {
@@ -382,7 +383,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.openActionInBrowserDirect',
       (url: string) => {
         if (url) {
@@ -393,7 +394,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.rerunAction',
       async (item: WorkflowRunTreeItem | JobTreeItem) => {
         // Get the run data from either a run item or a job item
@@ -433,7 +434,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register Action details viewer command
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.showActionDetails',
       async (run: WorkflowRunListItem, owner: string, repo: string) => {
         try {
@@ -450,7 +451,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.viewActionLogs',
       async (run: WorkflowRunListItem, job: WorkflowJob, owner: string, repo: string) => {
         try {
@@ -494,7 +495,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register step log viewer command (triggered by clicking a step in the tree)
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.viewStepLogs',
       async (args: StepLogArgs) => {
         try {
@@ -549,7 +550,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register Issue details viewer command
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.showIssueDetails',
       async (issue: IssueListItem, owner: string, repo: string) => {
         try {
@@ -567,10 +568,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register open issue in browser from context menu command
   context.subscriptions.push(
-    vscode.commands.registerCommand(
+    registerCommand(
       'forgejo.openIssueInBrowserFromContext',
-      (issueItem: unknown) => {
-        if (issueItem && typeof issueItem === 'object' && 'htmlUrl' in issueItem && typeof issueItem.htmlUrl === 'string') {
+      (issueItem) => {
+        if (issueItem.htmlUrl) {
           void vscode.env.openExternal(vscode.Uri.parse(issueItem.htmlUrl));
         }
       }
@@ -579,14 +580,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register release commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.refreshReleases', () => {
+    registerCommand('forgejo.refreshReleases', () => {
       releaseTreeProvider.refresh();
       void vscode.window.showInformationMessage('Releases refreshed');
     })
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.openReleaseInBrowser', (url: string) => {
+    registerCommand('forgejo.openReleaseInBrowser', (url: string) => {
       if (url) {
         void vscode.env.openExternal(vscode.Uri.parse(url));
       }
@@ -594,7 +595,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('forgejo.createRelease', () => createReleaseCommand(releaseTreeProvider))
+    registerCommand('forgejo.createRelease', () => createReleaseCommand(releaseTreeProvider))
   );
 
   // Add releases tree view to subscriptions

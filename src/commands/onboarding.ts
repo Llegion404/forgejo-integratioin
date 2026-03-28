@@ -8,6 +8,7 @@ import {
 	testInstanceConnection
 } from '../utils/instanceHelpers';
 import { logInfo, logWarn, logError } from '../utils/logger';
+import { executeCommand } from './registry';
 
 /**
  * Starts the onboarding wizard for adding a new Forgejo instance
@@ -173,9 +174,9 @@ export async function startOnboarding(): Promise<boolean> {
 				'Show Output'
 			).then(action => {
 				if (action === 'Manage Instances') {
-					void vscode.commands.executeCommand('forgejo.manageInstances');
+					void executeCommand('forgejo.manageInstances');
 				} else if (action === 'Show Output') {
-					void vscode.commands.executeCommand('forgejo.showOutput');
+					void executeCommand('forgejo.showOutput');
 				}
 			});
 		} else {
@@ -185,9 +186,9 @@ export async function startOnboarding(): Promise<boolean> {
 				'Show Output'
 			).then(action => {
 				if (action === 'View Instances') {
-					void vscode.commands.executeCommand('forgejo.manageInstances');
+					void executeCommand('forgejo.manageInstances');
 				} else if (action === 'Show Output') {
-					void vscode.commands.executeCommand('forgejo.showOutput');
+					void executeCommand('forgejo.showOutput');
 				}
 			});
 		}
@@ -201,7 +202,7 @@ export async function startOnboarding(): Promise<boolean> {
 			'Show Output'
 		).then(action => {
 			if (action === 'Show Output') {
-				void vscode.commands.executeCommand('forgejo.showOutput');
+				void executeCommand('forgejo.showOutput');
 			}
 		});
 		return false;
