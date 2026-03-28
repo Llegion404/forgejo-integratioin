@@ -428,8 +428,19 @@ export async function activate(context: vscode.ExtensionContext) {
           // Steps don't have their own URL; open the parent job page
           void getForgejoConfig().then(config => {
             if (config) {
-              const url = item.jobRef.jobHtmlUrl
-                ?? `${config.instanceUrl}/${item.owner}/${item.repo}/actions/runs/${item.runNumber}/jobs/${item.jobRef.jobId ?? item.jobRef.jobIndex ?? 0}`;
+              const jobTarget = item.jobRef.jobHtmlUrl
+                ?? (item.jobRef.jobId !== undefined
+                  ? `${config.instanceUrl}/${item.owner}/${item.repo}/actions/runs/${item.runNumber}/jobs/${item.jobRef.jobId}`
+                  : item.jobRef.jobIndex !== undefined
+                    ? `${config.instanceUrl}/${item.owner}/${item.repo}/actions/runs/${item.runNumber}/jobs/${item.jobRef.jobIndex}`
+                    : null);
+
+              if (!jobTarget) {
+                void vscode.window.showErrorMessage('Cannot open job page: missing job reference');
+                return;
+              }
+
+              const url = jobTarget;
               void vscode.env.openExternal(vscode.Uri.parse(url));
             }
           });

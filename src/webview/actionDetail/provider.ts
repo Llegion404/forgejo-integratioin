@@ -11,6 +11,17 @@ export type WebviewMessage =
   | { type: 'openInBrowser' }
   | { type: 'viewLogs'; jobRef: WorkflowJobRef };
 
+function isValidJobRef(jobRef: unknown): jobRef is WorkflowJobRef {
+  if (!jobRef || typeof jobRef !== 'object') {
+    return false;
+  }
+
+  const ref = jobRef as WorkflowJobRef;
+  return typeof ref.jobHtmlUrl === 'string'
+    || typeof ref.jobId === 'number'
+    || typeof ref.jobIndex === 'number';
+}
+
 export type ExtensionMessage =
   | { type: 'update'; data: ActionDetailViewData }
   | { type: 'loading'; show: boolean }
@@ -209,6 +220,10 @@ export class ActionDetailWebviewProvider {
         await this._openInBrowser(owner, repo, runId);
         break;
       case 'viewLogs':
+        if (!isValidJobRef(message.jobRef)) {
+          void vscode.window.showErrorMessage('Action log request did not include a valid job reference');
+          return;
+        }
         await this._viewLogs(owner, repo, runId, message.jobRef);
         break;
     }

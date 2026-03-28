@@ -379,6 +379,7 @@
     const job = currentData && currentData.jobs ? currentData.jobs[jobIndex] : null;
     console.log('[Forgejo Action Webview] View logs clicked for job:', jobIndex, job && job.id);
     if (!job) {
+      vscode.postMessage({ type: 'refresh' });
       return;
     }
     vscode.postMessage({
