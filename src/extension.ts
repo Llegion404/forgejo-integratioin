@@ -3,7 +3,7 @@ import { PRTreeProvider, PRTreeItem, PROverviewItem } from './providers/prTreePr
 import { IssueTreeProvider, IssueTreeItem } from './providers/issueTreeProvider';
 import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from './providers/actionsTreeProvider';
 import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
-import { WorkflowRunListItem } from './models/action';
+import { WorkflowRunListItem, WorkflowJob } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
