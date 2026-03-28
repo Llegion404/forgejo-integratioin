@@ -3,9 +3,10 @@ import { detectAllGitRemotes } from '../../utils/gitUtils';
 
 jest.mock('child_process');
 
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 
 const mockedExecSync = execSync as jest.MockedFunction<typeof execSync>;
+const mockedSpawnSync = spawnSync as jest.MockedFunction<typeof spawnSync>;
 
 describe('detectAllGitRemotes', () => {
   beforeEach(() => {
@@ -33,11 +34,14 @@ describe('detectAllGitRemotes', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    mockedExecSync.mockImplementation((cmd: string) => {
-      const cmdStr = String(cmd);
-      if (cmdStr === 'git remote') { return 'origin\n'; }
-      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
-      return '';
+    mockedExecSync.mockReturnValue('origin\n');
+    mockedSpawnSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      const argsArr = args as string[];
+      const argStr = argsArr.join(' ');
+      if (argStr.includes('remote.origin.url')) {
+        return { status: 0, stdout: 'https://codeberg.org/owner/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any;
+      }
+      return { status: 1, stdout: '', stderr: 'not found', pid: 0, output: [], signal: null } as any;
     });
 
     const result = await detectAllGitRemotes();
@@ -53,12 +57,17 @@ describe('detectAllGitRemotes', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    mockedExecSync.mockImplementation((cmd: string) => {
-      const cmdStr = String(cmd);
-      if (cmdStr === 'git remote') { return 'origin\nupstream\n'; }
-      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
-      if (cmdStr.includes('remote.upstream.url')) { return 'git@github.com:upstream-owner/repo.git\n'; }
-      return '';
+    mockedExecSync.mockReturnValue('origin\nupstream\n');
+    mockedSpawnSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      const argsArr = args as string[];
+      const argStr = argsArr.join(' ');
+      if (argStr.includes('remote.origin.url')) {
+        return { status: 0, stdout: 'https://codeberg.org/owner/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any;
+      }
+      if (argStr.includes('remote.upstream.url')) {
+        return { status: 0, stdout: 'git@github.com:upstream-owner/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any;
+      }
+      return { status: 1, stdout: '', stderr: 'not found', pid: 0, output: [], signal: null } as any;
     });
 
     const result = await detectAllGitRemotes();
@@ -79,12 +88,17 @@ describe('detectAllGitRemotes', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    mockedExecSync.mockImplementation((cmd: string) => {
-      const cmdStr = String(cmd);
-      if (cmdStr === 'git remote') { return 'origin\nbad-remote\n'; }
-      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
-      if (cmdStr.includes('remote.bad-remote.url')) { return 'not-a-valid-url\n'; }
-      return '';
+    mockedExecSync.mockReturnValue('origin\nbad-remote\n');
+    mockedSpawnSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      const argsArr = args as string[];
+      const argStr = argsArr.join(' ');
+      if (argStr.includes('remote.origin.url')) {
+        return { status: 0, stdout: 'https://codeberg.org/owner/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any;
+      }
+      if (argStr.includes('remote.bad-remote.url')) {
+        return { status: 0, stdout: 'not-a-valid-url\n', stderr: '', pid: 0, output: [], signal: null } as any;
+      }
+      return { status: 1, stdout: '', stderr: 'not found', pid: 0, output: [], signal: null } as any;
     });
 
     const result = await detectAllGitRemotes();
@@ -93,16 +107,21 @@ describe('detectAllGitRemotes', () => {
     expect(result.has('bad-remote')).toBe(false);
   });
 
-  it('should handle error when getting individual remote URL', async () => {
+  it('should handle non-zero exit when getting individual remote URL', async () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    mockedExecSync.mockImplementation((cmd: string) => {
-      const cmdStr = String(cmd);
-      if (cmdStr === 'git remote') { return 'origin\nbroken\n'; }
-      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
-      if (cmdStr.includes('remote.broken.url')) { throw new Error('failed'); }
-      return '';
+    mockedExecSync.mockReturnValue('origin\nbroken\n');
+    mockedSpawnSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      const argsArr = args as string[];
+      const argStr = argsArr.join(' ');
+      if (argStr.includes('remote.origin.url')) {
+        return { status: 0, stdout: 'https://codeberg.org/owner/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any;
+      }
+      if (argStr.includes('remote.broken.url')) {
+        return { status: 1, stdout: '', stderr: 'failed', pid: 0, output: [], signal: null } as any;
+      }
+      return { status: 1, stdout: '', stderr: 'not found', pid: 0, output: [], signal: null } as any;
     });
 
     const result = await detectAllGitRemotes();
@@ -124,12 +143,17 @@ describe('detectAllGitRemotes', () => {
     (vscode.workspace as any).workspaceFolders = [
       { uri: { fsPath: '/workspace/project' } }
     ];
-    mockedExecSync.mockImplementation((cmd: string) => {
-      const cmdStr = String(cmd);
-      if (cmdStr === 'git remote') { return '  origin  \n  upstream  \n'; }
-      if (cmdStr.includes('remote.origin.url')) { return 'https://codeberg.org/owner/repo.git\n'; }
-      if (cmdStr.includes('remote.upstream.url')) { return 'https://git.example.com/other/repo.git\n'; }
-      return '';
+    mockedExecSync.mockReturnValue('  origin  \n  upstream  \n');
+    mockedSpawnSync.mockImplementation((_cmd: unknown, args: unknown) => {
+      const argsArr = args as string[];
+      const argStr = argsArr.join(' ');
+      if (argStr.includes('remote.origin.url')) {
+        return { status: 0, stdout: 'https://codeberg.org/owner/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any;
+      }
+      if (argStr.includes('remote.upstream.url')) {
+        return { status: 0, stdout: 'https://git.example.com/other/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any;
+      }
+      return { status: 1, stdout: '', stderr: 'not found', pid: 0, output: [], signal: null } as any;
     });
 
     const result = await detectAllGitRemotes();

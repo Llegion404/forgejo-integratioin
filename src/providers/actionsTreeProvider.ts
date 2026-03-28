@@ -64,13 +64,16 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
   ) {
     // Use first job to get run metadata (all jobs in same run share these)
     const firstJob = jobs[0];
-    const label = `${firstJob.display_title} (#${runNumber})`;
+    const hasJobs = Boolean(firstJob);
+    const label = hasJobs ? `${firstJob.display_title} (#${runNumber})` : `Workflow Run #${runNumber}`;
 
     super(label, vscode.TreeItemCollapsibleState.Collapsed);
 
     // Description shows branch and workflow file (more useful than a short SHA)
-    this.description = `${firstJob.head_branch} · ${firstJob.workflow_id}`;
-    this.tooltip = `Workflow: ${firstJob.workflow_id}\nBranch: ${firstJob.head_branch}\nCommit: ${firstJob.head_sha}\nTrigger: ${firstJob.event}\n${firstJob.display_title}\nJobs: ${jobs.length}`;
+    this.description = hasJobs ? `${firstJob.head_branch} · ${firstJob.workflow_id}` : 'No jobs';
+    this.tooltip = hasJobs ?
+      `Workflow: ${firstJob.workflow_id}\nBranch: ${firstJob.head_branch}\nCommit: ${firstJob.head_sha}\nTrigger: ${firstJob.event}\n${firstJob.display_title}\nJobs: ${jobs.length}`
+      : `Workflow: #${runNumber}\nJobs: ${jobs.length}`;
     this.contextValue = 'workflowRun';
 
     // Icon based on aggregate status
@@ -78,6 +81,10 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
   }
 
   private getAggregateStatusIcon(jobs: WorkflowRunListItem[]): vscode.ThemeIcon {
+    // No jobs — show neutral icon (not 'pass' which would be misleading)
+    if (jobs.length === 0) {
+      return new vscode.ThemeIcon('circle-outline');
+    }
     // If any job is running, show running icon
     if (jobs.some(j => j.status === 'in_progress' || j.status === 'queued' || j.status === 'waiting')) {
       return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));

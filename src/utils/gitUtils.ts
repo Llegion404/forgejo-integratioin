@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 
 export interface GitRemoteInfo {
   instanceUrl: string;
@@ -24,11 +24,16 @@ export function detectGitRemote(remoteName?: string): GitRemoteInfo | null {
   console.log('[Forgejo] Detecting git remote in:', workspaceRoot, 'using remote:', remote);
 
   try {
-    // Get the remote URL
-    const remoteUrl = execSync(`git config --get remote.${remote}.url`, {
+    // Get the remote URL (use spawnSync to avoid shell injection via remote name)
+    const result = spawnSync('git', ['config', '--get', `remote.${remote}.url`], {
       cwd: workspaceRoot,
       encoding: 'utf-8'
-    }).trim();
+    });
+    if (result.status !== 0) {
+      console.log('[Forgejo] Could not get remote URL for:', remote);
+      return null;
+    }
+    const remoteUrl = result.stdout.trim();
 
     console.log('[Forgejo] Found git remote URL:', remoteUrl);
     const parsed = parseRemoteUrl(remoteUrl);
@@ -74,10 +79,15 @@ export function detectAllGitRemotes(): Map<string, GitRemoteInfo> {
 
     for (const name of remoteNames) {
       try {
-        const remoteUrl = execSync(`git config --get remote.${name}.url`, {
+        const remoteResult = spawnSync('git', ['config', '--get', `remote.${name}.url`], {
           cwd: workspaceRoot,
           encoding: 'utf-8'
-        }).trim();
+        });
+        if (remoteResult.status !== 0) {
+          console.log(`[Forgejo] Could not get URL for remote '${name}'`);
+          continue;
+        }
+        const remoteUrl = remoteResult.stdout.trim();
 
         const parsed = parseRemoteUrl(remoteUrl);
         if (parsed) {

@@ -3,9 +3,10 @@ import { parseRemoteUrl, detectGitRemote, hasGitRepository } from '../../utils/g
 
 jest.mock('child_process');
 
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 
 const mockedExecSync = execSync as jest.MockedFunction<typeof execSync>;
+const mockedSpawnSync = spawnSync as jest.MockedFunction<typeof spawnSync>;
 
 describe('gitUtils', () => {
   beforeEach(() => {
@@ -144,7 +145,7 @@ describe('gitUtils', () => {
       (vscode.workspace as any).workspaceFolders = [
         { uri: { fsPath: '/workspace/project' } }
       ];
-      mockedExecSync.mockReturnValue('https://codeberg.org/owner/repo.git\n');
+      mockedSpawnSync.mockReturnValue({ status: 0, stdout: 'https://codeberg.org/owner/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any);
 
       const result = await detectGitRemote();
       expect(result).toEqual({
@@ -152,17 +153,17 @@ describe('gitUtils', () => {
         owner: 'owner',
         repo: 'repo'
       });
-      expect(mockedExecSync).toHaveBeenCalledWith(
-        'git config --get remote.origin.url',
+      expect(mockedSpawnSync).toHaveBeenCalledWith(
+        'git', ['config', '--get', 'remote.origin.url'],
         { cwd: '/workspace/project', encoding: 'utf-8' }
       );
     });
 
-    it('should return null when execSync throws', async () => {
+    it('should return null when spawnSync returns non-zero', async () => {
       (vscode.workspace as any).workspaceFolders = [
         { uri: { fsPath: '/workspace/project' } }
       ];
-      mockedExecSync.mockImplementation(() => { throw new Error('not a git repo'); });
+      mockedSpawnSync.mockReturnValue({ status: 1, stdout: '', stderr: 'error', pid: 0, output: [], signal: null } as any);
 
       const result = await detectGitRemote();
       expect(result).toBeNull();
