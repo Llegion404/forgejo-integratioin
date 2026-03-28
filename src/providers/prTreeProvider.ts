@@ -66,7 +66,7 @@ class PRMessageItem extends vscode.TreeItem {
 /**
  * Represents a file changed in a PR
  */
-class PRFileItem extends vscode.TreeItem {
+export class PRFileItem extends vscode.TreeItem {
   constructor(
     public readonly file: PullRequestFile,
     public readonly pr: PullRequestListItem,

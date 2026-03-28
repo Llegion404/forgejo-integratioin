@@ -18,6 +18,8 @@ import type { PullRequestListItem, PullRequestFile } from '../models/pullRequest
 import type { WorkflowRunListItem, WorkflowJob } from '../models/action';
 import type { IssueListItem } from '../models/issue';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
+import type { PRTreeItem, PRFileItem } from '../providers/prTreeProvider';
+import type { IssueTreeItem } from '../providers/issueTreeProvider';
 
 // ---------------------------------------------------------------------------
 // Command argument map
@@ -67,19 +69,17 @@ export interface CommandMap {
   ];
 
   // -- Context menu commands -----------------------------------------------
-  // NOTE: commands registered in package.json `view/item/context` receive
-  // the tree item as arg 0. Entries below that don't yet include the tree
-  // item type are known-broken for context menu invocation and should be
-  // fixed to use union types (see showActionDetails for an example).
+  // Commands registered in package.json `view/item/context` receive
+  // the tree item as arg 0.
 
-  'forgejo.openPrInBrowserFromContext': [prItem: unknown];
-  'forgejo.openPrFileInBrowser': [fileItem: unknown];
+  'forgejo.openPrInBrowserFromContext': [prItem: PRTreeItem];
+  'forgejo.openPrFileInBrowser': [fileItem: PRFileItem];
 
   'forgejo.showPrDetails': [pr: PullRequestListItem, owner: string, repo: string];
   'forgejo.mergePr': [pr: PullRequestListItem, owner: string, repo: string];
   'forgejo.closePr': [pr: PullRequestListItem, owner: string, repo: string];
   'forgejo.showIssueDetails': [issue: IssueListItem, owner: string, repo: string];
-  'forgejo.openIssueInBrowserFromContext': [issueItem: unknown];
+  'forgejo.openIssueInBrowserFromContext': [issueItem: IssueTreeItem];
 
   'forgejo.showActionDetails': [run: WorkflowRunListItem, owner: string, repo: string];
   'forgejo.viewActionLogs': [run: WorkflowRunListItem, job: WorkflowJob, owner: string, repo: string];

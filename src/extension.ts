@@ -299,8 +299,8 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand(
       'forgejo.openPrInBrowserFromContext',
-      (prItem: unknown) => {
-        if (prItem && typeof prItem === 'object' && 'htmlUrl' in prItem && typeof prItem.htmlUrl === 'string') {
+      (prItem) => {
+        if (prItem.htmlUrl) {
           void vscode.env.openExternal(vscode.Uri.parse(prItem.htmlUrl));
         }
       }
@@ -311,8 +311,8 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand(
       'forgejo.openPrFileInBrowser',
-      (fileItem: unknown) => {
-        if (fileItem && typeof fileItem === 'object' && 'file' in fileItem && fileItem.file && typeof fileItem.file === 'object' && 'blob_url' in fileItem.file && typeof fileItem.file.blob_url === 'string') {
+      (fileItem) => {
+        if (fileItem.file.blob_url) {
           void vscode.env.openExternal(vscode.Uri.parse(fileItem.file.blob_url));
         }
       }
@@ -570,8 +570,8 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     registerCommand(
       'forgejo.openIssueInBrowserFromContext',
-      (issueItem: unknown) => {
-        if (issueItem && typeof issueItem === 'object' && 'htmlUrl' in issueItem && typeof issueItem.htmlUrl === 'string') {
+      (issueItem) => {
+        if (issueItem.htmlUrl) {
           void vscode.env.openExternal(vscode.Uri.parse(issueItem.htmlUrl));
         }
       }
