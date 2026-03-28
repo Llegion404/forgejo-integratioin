@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { ForgejoClient } from '../api/forgejoClient';
 import { getForgejoConfig } from '../utils/config';
 import { logInfo, logError } from '../utils/logger';
@@ -52,19 +52,22 @@ export async function createPullRequestCommand(prTreeProvider: PRTreeProvider): 
 		}
 
 		// Get default branch
-	let defaultBranch = 'main';
-	try {
-		const preferredRemote = vscode.workspace.getConfiguration('forgejo').get<string>('preferredRemote', 'origin') || 'origin';
-		const symbolicRef = execSync(`git symbolic-ref refs/remotes/${preferredRemote}/HEAD`, {
-			cwd: workspaceRoot,
-			encoding: 'utf-8'
-		}).trim();
-		// Extract branch name from refs/remotes/<remote>/<branch>
-		defaultBranch = symbolicRef.replace(/^refs\/remotes\//, '').replace(/^[^/]+\//, '');
-	} catch {
-		// Fall back to 'main' if we can't detect it
-		defaultBranch = 'main';
-	}
+		let defaultBranch = 'main';
+		try {
+			const preferredRemote = vscode.workspace.getConfiguration('forgejo').get<string>('preferredRemote', 'origin') || 'origin';
+			const result = spawnSync('git', ['symbolic-ref', `refs/remotes/${preferredRemote}/HEAD`], {
+				cwd: workspaceRoot,
+				encoding: 'utf-8'
+			});
+			if (result.status === 0) {
+				const symbolicRef = result.stdout.trim();
+				// Extract branch name from refs/remotes/<remote>/<branch>
+				defaultBranch = symbolicRef.replace(/^refs\/remotes\//, '').replace(/^[^/]+\//, '');
+			}
+		} catch {
+			// Fall back to 'main' if we can't detect it
+			defaultBranch = 'main';
+		}
 
 		const defaultTitle = branchNameToTitle(currentBranch);
 

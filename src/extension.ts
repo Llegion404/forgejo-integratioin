@@ -355,30 +355,30 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Register Actions commands
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			'forgejo.openActionInBrowser',
-			(item: WorkflowRunTreeItem | JobTreeItem | StepTreeItem) => {
-				if (item instanceof WorkflowRunTreeItem) {
-					if (item.jobs.length === 0) {
-						void vscode.window.showInformationMessage('No workflow run URL available');
-						return;
-					}
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.openActionInBrowser',
+      (item: WorkflowRunTreeItem | JobTreeItem | StepTreeItem) => {
+        if (item instanceof WorkflowRunTreeItem) {
+          if (item.jobs.length === 0) {
+            void vscode.window.showInformationMessage('No workflow run URL available');
+            return;
+          }
 
-					const run = item.jobs[0];
-					if (run.url) {
-						void vscode.env.openExternal(vscode.Uri.parse(run.url));
-					} else {
-						void vscode.window.showInformationMessage('No workflow run URL available');
-					}
-				} else if (item instanceof JobTreeItem) {
-					if (item.job.url) {
-						void vscode.env.openExternal(vscode.Uri.parse(item.job.url));
-					} else {
-						void vscode.window.showInformationMessage('No job URL available');
-					}
-				} else if (item instanceof StepTreeItem) {
-					// Steps don't have their own URL; open the parent job page
+          const run = item.jobs[0];
+          if (run.url) {
+            void vscode.env.openExternal(vscode.Uri.parse(run.url));
+          } else {
+            void vscode.window.showInformationMessage('No workflow run URL available');
+          }
+        } else if (item instanceof JobTreeItem) {
+          if (item.job.url) {
+            void vscode.env.openExternal(vscode.Uri.parse(item.job.url));
+          } else {
+            void vscode.window.showInformationMessage('No job URL available');
+          }
+        } else if (item instanceof StepTreeItem) {
+          // Steps don't have their own URL; open the parent job page
           void getForgejoConfig().then(config => {
             if (config) {
               const url = `${config.instanceUrl}/${item.owner}/${item.repo}/actions/runs/${item.runNumber}/jobs/${item.jobIndex}`;
@@ -401,21 +401,21 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
-	context.subscriptions.push(
-		vscode.commands.registerCommand(
-			'forgejo.rerunAction',
-			async (item: WorkflowRunTreeItem | JobTreeItem) => {
-				// Get the run data from either a run item or a job item
-				let run: WorkflowRunListItem | WorkflowJob | undefined;
-				if (item instanceof WorkflowRunTreeItem) {
-					run = item.jobs.length > 0 ? item.jobs[0] : undefined;
-				} else {
-					run = item.job;
-				}
-				if (!run) {
-					void vscode.window.showErrorMessage('Cannot re-run this workflow: no run information available.');
-					return;
-				}
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'forgejo.rerunAction',
+      async (item: WorkflowRunTreeItem | JobTreeItem) => {
+        // Get the run data from either a run item or a job item
+        let run: WorkflowRunListItem | WorkflowJob | undefined;
+        if (item instanceof WorkflowRunTreeItem) {
+          run = item.jobs.length > 0 ? item.jobs[0] : undefined;
+        } else {
+          run = item.job;
+        }
+        if (!run) {
+          void vscode.window.showErrorMessage('Cannot re-run this workflow: no run information available.');
+          return;
+        }
 
         try {
           const confirm = await vscode.window.showWarningMessage(

@@ -110,6 +110,26 @@ describe('config', () => {
 			});
         });
 
+        it('should match instance when autoDetectFromRemote is explicitly true', async () => {
+            mockConfig(mockInstances, { autoDetectFromRemote: true });
+            (detectGitRemote as jest.Mock).mockReturnValue({
+                instanceUrl: 'https://git.company.com',
+                owner: 'myorg',
+                repo: 'myrepo'
+            });
+
+            const config = await getForgejoConfig();
+
+            expect(config).toEqual({
+                instanceUrl: 'https://git.company.com',
+                token: 'token2',
+                owner: 'myorg',
+                repo: 'myrepo',
+                instanceId: '2',
+                matchConfidence: 'exact'
+            });
+        });
+
         it('should skip instance matching when autoDetectFromRemote is false', async () => {
             mockConfig(mockInstances, { autoDetectFromRemote: false });
             (detectGitRemote as jest.Mock).mockReturnValue({
@@ -155,12 +175,13 @@ describe('config', () => {
             });
         });
 
-        it('should return null if git remote detection fails', async () => {
+        it('should return null if git remote detection fails (even with instances)', async () => {
             mockConfig(mockInstances);
             (detectGitRemote as jest.Mock).mockReturnValue(null);
 
             const config = await getForgejoConfig();
 
+            // Cannot determine owner/repo without gitInfo, so returns null
             expect(config).toBeNull();
         });
 

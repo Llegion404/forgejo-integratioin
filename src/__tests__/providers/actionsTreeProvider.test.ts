@@ -156,6 +156,12 @@ describe('ActionsTreeProvider', () => {
       expect(item.tooltip).toContain('Workflow: #42');
       expect(item.tooltip).toContain('Jobs: 0');
     });
+
+    test('should show neutral icon (not pass) for empty job list', () => {
+      const item = new WorkflowRunTreeItem(42, [], owner, repo);
+      const icon = item.iconPath as vscode.ThemeIcon;
+      expect(icon.id).toBe('circle-outline');
+    });
   });
 
   describe('JobTreeItem', () => {
@@ -449,6 +455,13 @@ describe('ActionsTreeProvider', () => {
 
       expect((children[0] as JobTreeItem).owner).toBe('test-owner');
       expect((children[0] as JobTreeItem).repo).toBe('test-repo');
+    });
+
+    test('should return empty array for run with no jobs', async () => {
+      const runItem = new WorkflowRunTreeItem(42, [], 'test-owner', 'test-repo');
+      const children = await provider.getChildren(runItem);
+
+      expect(children).toHaveLength(0);
     });
 
     test('should not make any API calls for job children', async () => {

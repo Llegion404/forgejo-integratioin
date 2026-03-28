@@ -38,9 +38,9 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 	let selectedInstance: ForgejoInstance | undefined;
 	let confidence: 'exact' | 'domain' | 'default' | 'first' = 'first';
 
-	if (instances.length > 0 && gitInfo) {
+	if (instances.length > 0) {
 		// Try to match instance to git remote
-		if (autoDetectFromRemote) {
+		if (gitInfo && autoDetectFromRemote) {
 			const match = findBestInstanceMatch(instances, gitInfo.instanceUrl);
 			if (match) {
 				selectedInstance = match.instance;

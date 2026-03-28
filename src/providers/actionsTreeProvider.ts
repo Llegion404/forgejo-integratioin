@@ -81,6 +81,10 @@ export class WorkflowRunTreeItem extends vscode.TreeItem {
   }
 
   private getAggregateStatusIcon(jobs: WorkflowRunListItem[]): vscode.ThemeIcon {
+    // No jobs — show neutral icon (not 'pass' which would be misleading)
+    if (jobs.length === 0) {
+      return new vscode.ThemeIcon('circle-outline');
+    }
     // If any job is running, show running icon
     if (jobs.some(j => j.status === 'in_progress' || j.status === 'queued' || j.status === 'waiting')) {
       return new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.yellow'));

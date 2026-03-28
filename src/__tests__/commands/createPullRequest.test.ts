@@ -1,11 +1,14 @@
 import * as vscode from 'vscode';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { branchNameToTitle, createPullRequestCommand } from '../../commands/createPullRequest';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
 
 // Mock dependencies
-jest.mock('child_process');
+jest.mock('child_process', () => ({
+  execSync: jest.fn(),
+  spawnSync: jest.fn(),
+}));
 jest.mock('../../api/forgejoClient');
 jest.mock('../../utils/config');
 jest.mock('../../utils/logger', () => ({
@@ -16,6 +19,7 @@ jest.mock('../../utils/logger', () => ({
 const mockGetForgejoConfig = getForgejoConfig as jest.MockedFunction<typeof getForgejoConfig>;
 const MockForgejoClient = ForgejoClient as jest.MockedClass<typeof ForgejoClient>;
 const mockedExecSync = execSync as jest.MockedFunction<typeof execSync>;
+const mockedSpawnSync = spawnSync as jest.MockedFunction<typeof spawnSync>;
 
 const mockConfig = {
   instanceUrl: 'https://git.example.com',
@@ -75,10 +79,20 @@ describe('createPullRequestCommand', () => {
     // Default workspace
     (vscode.workspace as any).workspaceFolders = [{ uri: { fsPath: '/workspace' } }];
 
-    // Default: execSync returns branch names successfully
-    mockedExecSync
-      .mockReturnValueOnce('feat/issue-88\n' as any)  // current branch
-      .mockReturnValueOnce('refs/remotes/origin/master\n' as any);  // default branch
+    // Restore getConfiguration mock (resetMocks: true in jest.config clears it)
+    (vscode.workspace.getConfiguration as jest.Mock).mockImplementation(() => ({
+      get: jest.fn((key: string, defaultVal?: unknown) => {
+        if (key === 'preferredRemote') return defaultVal ?? '';
+        return defaultVal;
+      }),
+      update: jest.fn(),
+      has: jest.fn(),
+      inspect: jest.fn(),
+    }));
+
+    // Default: execSync returns current branch, spawnSync returns default branch
+    mockedExecSync.mockReturnValueOnce('feat/issue-88\n' as any);  // current branch
+    mockedSpawnSync.mockReturnValueOnce({ status: 0, stdout: 'refs/remotes/origin/master\n', stderr: '', pid: 0, output: [], signal: null } as any);  // default branch
   });
 
   // ── Config / token / workspace guards ────────────────────────────────────
@@ -135,12 +149,12 @@ describe('createPullRequestCommand', () => {
     expect(mockPRTreeProvider.refresh).not.toHaveBeenCalled();
   });
 
-  it('falls back to "main" when default branch detection throws, then continues', async () => {
+  it('falls back to "main" when default branch detection fails, then continues', async () => {
     mockGetForgejoConfig.mockResolvedValue(mockConfig);
     mockedExecSync.mockReset();
-    mockedExecSync
-      .mockReturnValueOnce('feat/my-feature\n' as any)  // current branch succeeds
-      .mockImplementationOnce(() => { throw new Error('no origin/HEAD'); });  // default branch fails
+    mockedSpawnSync.mockReset();
+    mockedExecSync.mockReturnValueOnce('feat/my-feature\n' as any);  // current branch succeeds
+    mockedSpawnSync.mockReturnValueOnce({ status: 1, stdout: '', stderr: 'error', pid: 0, output: [], signal: null } as any);  // default branch fails
 
     // User cancels at title so the test stays contained
     (vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce(undefined);
@@ -213,6 +227,92 @@ describe('createPullRequestCommand', () => {
     expect(mockCreatePullRequest).not.toHaveBeenCalled();
     expect(mockPRTreeProvider.refresh).not.toHaveBeenCalled();
     expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
+  });
+
+  // ── preferredRemote and branch extraction ─────────────────────────────────
+
+  it('uses preferredRemote setting for default branch detection', async () => {
+    mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockedExecSync.mockReset();
+    mockedSpawnSync.mockReset();
+    mockedExecSync.mockReturnValueOnce('feat/my-feature\n' as any);
+
+    // Mock config to return a custom preferredRemote
+    (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
+      get: jest.fn((key: string, defaultVal?: unknown) => {
+        if (key === 'preferredRemote') return 'upstream';
+        return defaultVal;
+      }),
+    });
+
+    mockedSpawnSync.mockReturnValueOnce({
+      status: 0, stdout: 'refs/remotes/upstream/develop\n', stderr: '', pid: 0, output: [], signal: null
+    } as any);
+
+    // User cancels at title to keep test contained
+    (vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce(undefined);
+
+    await createPullRequestCommand(mockPRTreeProvider as any);
+
+    // Verify spawnSync was called with the preferred remote name
+    expect(mockedSpawnSync).toHaveBeenCalledWith(
+      'git',
+      ['symbolic-ref', 'refs/remotes/upstream/HEAD'],
+      expect.objectContaining({ encoding: 'utf-8' })
+    );
+  });
+
+  it('correctly extracts branch name from non-origin remote ref', async () => {
+    mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockedExecSync.mockReset();
+    mockedSpawnSync.mockReset();
+    mockedExecSync.mockReturnValueOnce('feat/my-feature\n' as any);
+
+    mockedSpawnSync.mockReturnValueOnce({
+      status: 0, stdout: 'refs/remotes/upstream/develop\n', stderr: '', pid: 0, output: [], signal: null
+    } as any);
+
+    (vscode.window.showInputBox as jest.Mock)
+      .mockResolvedValueOnce('My Title')  // title
+      .mockResolvedValueOnce('')          // body
+      .mockResolvedValueOnce(undefined);  // cancel at base branch to inspect default
+
+    await createPullRequestCommand(mockPRTreeProvider as any);
+
+    // Base branch prompt should have defaulted to 'develop' (extracted from upstream ref)
+    const calls = (vscode.window.showInputBox as jest.Mock).mock.calls;
+    const baseBranchCall = calls.find((c: any[]) => c[0]?.prompt === 'Enter the base branch to merge into');
+    expect(baseBranchCall).toBeDefined();
+    expect(baseBranchCall![0].value).toBe('develop');
+  });
+
+  it('uses spawnSync (not execSync) for default branch detection to prevent injection', async () => {
+    // Import spawnSync from the mocked module to verify it's the same reference
+    const cp = require('child_process');
+
+    mockGetForgejoConfig.mockResolvedValue(mockConfig);
+    mockedExecSync.mockReset();
+    cp.spawnSync.mockReset();
+    mockedExecSync.mockReturnValueOnce('feat/test\n' as any);  // current branch only
+
+    cp.spawnSync.mockReturnValueOnce({
+      status: 0, stdout: 'refs/remotes/origin/main\n', stderr: '', pid: 0, output: [], signal: null
+    });
+
+    // Set up all showInputBox responses to let the function proceed to spawnSync
+    (vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce(undefined);
+
+    await createPullRequestCommand(mockPRTreeProvider as any);
+
+    // spawnSync should have been called for default branch detection
+    expect(cp.spawnSync).toHaveBeenCalledTimes(1);
+    expect(cp.spawnSync).toHaveBeenCalledWith(
+      'git',
+      ['symbolic-ref', expect.stringContaining('refs/remotes/')],
+      expect.objectContaining({ encoding: 'utf-8' })
+    );
+    // execSync should only be called once (for current branch), NOT for default branch
+    expect(mockedExecSync).toHaveBeenCalledTimes(1);
   });
 
   // ── API success paths ─────────────────────────────────────────────────────
