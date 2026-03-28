@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
 import { PullRequest, CommitStatus } from '../../models/pullRequest';
+import { executeCommand } from '../../commands/registry';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 
 export type WebviewMessage =
@@ -280,7 +281,7 @@ export class PRDetailWebviewProvider {
 
         if (matchingRun) {
           // Deep-link to the action detail webview within the extension
-          await vscode.commands.executeCommand('forgejo.showActionDetails', matchingRun, owner, repo);
+          await executeCommand('forgejo.showActionDetails', matchingRun, owner, repo);
           return;
         }
       } catch (error) {
