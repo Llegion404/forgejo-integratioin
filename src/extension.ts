@@ -602,7 +602,7 @@ export async function activate(context: vscode.ExtensionContext) {
             jobName = job?.name ?? 'job';
           }
 
-          void vscode.window.withProgress(
+          await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
               title: `Fetching logs for ${jobName}...`,
@@ -620,9 +620,11 @@ export async function activate(context: vscode.ExtensionContext) {
           );
         } catch (error) {
           console.error('[Forgejo] Error fetching logs:', error);
-          void vscode.window.showErrorMessage(
-            `Failed to fetch logs: ${error instanceof Error ? error.message : 'Unknown error'}`
-          );
+          const is404 = error instanceof Error && error.message.includes('404');
+          const msg = is404
+            ? 'Logs not available — private repo action logs are not supported due to auth limitations.'
+            : `Failed to fetch logs: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          void vscode.window.showErrorMessage(msg);
         }
       }
     )
@@ -661,9 +663,11 @@ export async function activate(context: vscode.ExtensionContext) {
           );
         } catch (error) {
           console.error('[Forgejo] Error fetching step logs:', error);
-          void vscode.window.showErrorMessage(
-            `Failed to fetch logs: ${error instanceof Error ? error.message : 'Unknown error'}`
-          );
+          const is404 = error instanceof Error && error.message.includes('404');
+          const msg = is404
+            ? 'Logs not available — private repo action logs are not supported due to auth limitations.'
+            : `Failed to fetch logs: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          void vscode.window.showErrorMessage(msg);
         }
       }
     )

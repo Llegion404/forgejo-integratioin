@@ -299,7 +299,10 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
         new StepTreeItem(step, jobItem.jobRef, jobItem.job.run_number, jobItem.owner, jobItem.repo)
       );
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : 'Failed to fetch steps';
+      const is404 = error instanceof Error && error.message.includes('404');
+      const errMsg = is404
+        ? 'Steps and logs not available (private repo action logs are not supported due to auth limitations)'
+        : error instanceof Error ? error.message : 'Failed to fetch steps';
       jobItem.fetchError = errMsg;
       console.error('[Forgejo] Error fetching steps for job:', error);
       return [new ActionMessageItem(errMsg, true)];

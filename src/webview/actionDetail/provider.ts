@@ -290,7 +290,11 @@ export class ActionDetailWebviewProvider {
         await vscode.window.showTextDocument(doc, { preview: true });
       });
     } catch (error) {
-      void vscode.window.showErrorMessage(`Failed to view logs: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const is404 = error instanceof Error && error.message.includes('404');
+      const msg = is404
+        ? 'Logs not available — private repo action logs are not supported due to auth limitations.'
+        : `Failed to view logs: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      void vscode.window.showErrorMessage(msg);
     }
   }
 
