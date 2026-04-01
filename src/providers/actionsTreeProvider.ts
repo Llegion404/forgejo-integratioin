@@ -27,11 +27,11 @@ export interface StepLogArgs {
   jobRef: WorkflowJobRef;
 }
 
-function createJobRef(job: WorkflowRunListItem, jobIndex: number): WorkflowJobRef {
+function createJobRef(job: WorkflowRunListItem): WorkflowJobRef {
   return {
     jobId: job.id,
+    jobName: job.name,
     jobHtmlUrl: job.html_url,
-    jobIndex
   };
 }
 
@@ -140,7 +140,7 @@ export class JobTreeItem extends vscode.TreeItem {
   }
 
   get jobRef(): WorkflowJobRef {
-    return createJobRef(this.job, this.jobIndex);
+    return createJobRef(this.job);
   }
 }
 
