@@ -245,7 +245,8 @@ describe('ActionsTreeProvider', () => {
       expect(item.jobIndex).toBe(2);
       expect(item.jobRef).toEqual({
         jobId: 123,
-        jobIndex: 2
+        jobName: 'CI',
+        jobHtmlUrl: undefined,
       });
     });
 
@@ -488,7 +489,8 @@ describe('ActionsTreeProvider', () => {
 
       expect(mockClient.getJobSteps).toHaveBeenCalledWith('test-owner', 'test-repo', 42, {
         jobId: 123,
-        jobIndex: 0
+        jobName: 'CI',
+        jobHtmlUrl: undefined,
       });
       expect(children).toHaveLength(3);
       expect(children[0]).toBeInstanceOf(StepTreeItem);
@@ -576,7 +578,8 @@ describe('ActionsTreeProvider', () => {
       const stepItem = children[0] as StepTreeItem;
       expect(stepItem.jobRef).toEqual({
         jobId: 123,
-        jobIndex: 1
+        jobName: 'CI',
+        jobHtmlUrl: undefined,
       });
       expect(stepItem.runNumber).toBe(42); // mockWorkflowRunSuccess.run_number
       expect(stepItem.owner).toBe('test-owner');
