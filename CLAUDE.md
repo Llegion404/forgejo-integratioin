@@ -240,7 +240,7 @@ vsce package  # Creates forgejo-vscode-X.Y.Z.vsix
 ### Issue: API authentication fails
 **Check:**
 1. Token is set: `forgejo.token` in settings
-2. Token has correct permissions (repo scope)
+2. Token has required scopes: `read:repository` and `read:issues`
 3. Instance URL is correct and accessible
 
 
@@ -257,7 +257,7 @@ vsce package  # Creates forgejo-vscode-X.Y.Z.vsix
 ### Authentication
 - Header: `Authorization: token <TOKEN>`
 - Token obtained from Forgejo Settings → Applications → Generate Token
-- Required scope: `repo` (read access)
+- Required scopes: `read:repository` (PRs and files), `read:issues` (Issues)
 
 ## Code Patterns and Conventions
 
