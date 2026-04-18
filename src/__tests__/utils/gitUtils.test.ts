@@ -124,6 +124,42 @@ describe('gitUtils', () => {
       expect(result!.repo).toBe('my-repo');
     });
 
+    it('should parse HTTPS URL with dots in repo name', () => {
+      const result = parseRemoteUrl('https://forgejo.example.com/my-org/my.project.git');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should parse HTTPS URL with dots in repo name without .git suffix', () => {
+      const result = parseRemoteUrl('https://forgejo.example.com/my-org/my.project');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should parse SSH scp-style URL with dots in repo name', () => {
+      const result = parseRemoteUrl('git@forgejo.example.com:my-org/my.project.git');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should parse SSH protocol URL with dots in repo name', () => {
+      const result = parseRemoteUrl('ssh://git@forgejo.example.com/my-org/my.project.git');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
     it('should handle SSH URL with custom host', () => {
       const result = parseRemoteUrl('git@my-forgejo.internal:myorg/myproject.git');
       expect(result).toEqual({
