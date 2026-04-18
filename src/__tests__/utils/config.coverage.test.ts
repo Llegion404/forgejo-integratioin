@@ -26,20 +26,9 @@ describe('config - uncovered functions', () => {
   });
 
   describe('setAuthToken', () => {
-    it('should update token in global config', async () => {
-      const mockUpdate = jest.fn().mockResolvedValue(undefined);
-      (vscode.workspace.getConfiguration as jest.Mock).mockReturnValue({
-        get: jest.fn(),
-        update: mockUpdate,
-        inspect: jest.fn()
-      });
-
-      await setAuthToken('my-secret-token');
-
-      expect(mockUpdate).toHaveBeenCalledWith(
-        'token',
-        'my-secret-token',
-        vscode.ConfigurationTarget.Global
+    it('should throw as deprecated', () => {
+      expect(() => setAuthToken('my-secret-token')).toThrow(
+        'setAuthToken is deprecated. Use SecretStorage instead.'
       );
     });
   });

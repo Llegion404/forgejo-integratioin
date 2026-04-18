@@ -13,7 +13,7 @@ export async function showDiagnostics(): Promise<void> {
 	// Get all settings
 	const instances = config.get('instances');
 	const legacyUrl = config.get<string>('instanceUrl');
-	const legacyToken = config.get<string>('token');
+	const legacyToken = config.get<string>('token'); // May be empty after migration to SecretStorage
 	const autoDetect = config.get<boolean>('autoDetectFromRemote');
 
 	// Get instances through our helper (validates and cleans)
@@ -29,7 +29,7 @@ export async function showDiagnostics(): Promise<void> {
 		'## Raw Settings:',
 		`- forgejo.instances: ${JSON.stringify(instances, null, 2)}`,
 		`- forgejo.instanceUrl: ${legacyUrl ?? '(not set)'}`,
-		`- forgejo.token: ${legacyToken ? '***' : '(not set)'}`,
+		`- forgejo.token: ${legacyToken ? '*** (migrate to SecretStorage pending)' : '(migrated to secure storage)'}`,
 		`- forgejo.autoDetectFromRemote: ${String(autoDetect)}`,
 		'',
 		'## Validated Instances:',

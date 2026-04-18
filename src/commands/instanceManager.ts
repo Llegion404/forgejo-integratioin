@@ -8,6 +8,7 @@ import {
 	getConnectionStatus,
 	updateInstance
 } from '../utils/instanceHelpers';
+import { setToken } from '../utils/secretStorage';
 import { startOnboarding } from './onboarding';
 
 interface InstanceQuickPickItem extends vscode.QuickPickItem {
@@ -281,8 +282,10 @@ async function handleEditToken(instanceId: string): Promise<void> {
 		}
 	}
 
-	// Update instance
-	instance.token = token.trim();
+	// Store token in SecretStorage
+	await setToken(instance.id, token.trim());
+
+	// Update instance metadata (token is not stored in settings)
 	instance.lastConnectionTest = tempInstance.lastConnectionTest;
 	await updateInstance(instance);
 

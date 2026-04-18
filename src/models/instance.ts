@@ -8,8 +8,8 @@ export interface ForgejoInstance {
 	name: string;
 	/** Base URL of the Forgejo instance */
 	instanceUrl: string;
-	/** Personal access token for authentication */
-	token: string;
+	/** Personal access token for authentication (hydrated from SecretStorage at runtime) */
+	token?: string;
 	/** Whether this is the default instance */
 	isDefault?: boolean;
 	/** Last connection test result */

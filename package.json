@@ -391,7 +391,8 @@
                 "type": "string"
               },
               "token": {
-                "type": "string"
+                "type": "string",
+                "deprecationMessage": "Tokens are now stored securely in the OS keychain via VS Code SecretStorage. Any token here will be migrated automatically."
               },
               "isDefault": {
                 "type": "boolean"
@@ -411,8 +412,8 @@
         "forgejo.token": {
           "type": "string",
           "default": "",
-          "description": "[DEPRECATED] Use forgejo.instances instead. Personal access token for authentication",
-          "deprecationMessage": "Use 'forgejo.instances' for multi-instance support. This setting is kept for backward compatibility."
+          "description": "[DEPRECATED] Tokens are now stored securely via VS Code SecretStorage (OS keychain). Any token here will be migrated automatically on next activation.",
+          "deprecationMessage": "Tokens are now stored securely via VS Code SecretStorage. This setting is kept only for backward compatibility migration."
         },
         "forgejo.autoDetectFromRemote": {
           "type": "boolean",

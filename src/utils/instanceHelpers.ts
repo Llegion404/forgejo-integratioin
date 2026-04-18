@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ForgejoInstance, InstanceMatch } from '../models/instance';
 import { ForgejoClient } from '../api/forgejoClient';
 import { logInfo, logWarn, logError } from './logger';
+import { getToken, setToken, deleteToken, isInitialized } from './secretStorage';
 
 /**
  * Generates a UUID v4
@@ -45,8 +46,7 @@ export function isValidInstance(instance: unknown): instance is ForgejoInstance 
 		typeof obj.name === 'string' &&
 		obj.name.trim() !== '' &&
 		typeof obj.instanceUrl === 'string' &&
-		obj.instanceUrl.trim() !== '' &&
-		typeof obj.token === 'string'
+		obj.instanceUrl.trim() !== ''
 	);
 }
 
@@ -78,6 +78,16 @@ export async function getAllInstances(): Promise<ForgejoInstance[]> {
 	if (validInstances.length !== instances.length && instances.length > 0) {
 		logInfo(`Cleaned up ${instances.length - validInstances.length} invalid instance(s)`);
 		await config.update('instances', validInstances, vscode.ConfigurationTarget.Global);
+	}
+
+	// Hydrate tokens from SecretStorage
+	if (isInitialized()) {
+		for (const instance of validInstances) {
+			const token = await getToken(instance.id);
+			if (token) {
+				instance.token = token;
+			}
+		}
 	}
 
 	return validInstances;
@@ -121,11 +131,19 @@ export async function addInstance(instance: ForgejoInstance): Promise<void> {
 		logInfo('Set as default (first instance)');
 	}
 
-	instances.push(instance);
+	// Store token in SecretStorage before saving instance to settings
+	if (instance.token && isInitialized()) {
+		await setToken(instance.id, instance.token);
+		logInfo('Token stored in SecretStorage');
+	}
+
+	// Strip token from settings-bound copy
+	const settingsInstance = stripTokenFromInstance(instance);
+	instances.push(settingsInstance);
 	logInfo('Saving instances array with', instances.length, 'instance(s)');
 
 	try {
-		await config.update('instances', instances, vscode.ConfigurationTarget.Global);
+		await config.update('instances', instances.map(stripTokenFromInstance), vscode.ConfigurationTarget.Global);
 		logInfo('Config updated successfully');
 
 		// Verify the save worked
@@ -161,7 +179,8 @@ export async function updateInstance(instance: ForgejoInstance): Promise<void> {
 	}
 
 	instances[index] = instance;
-	await config.update('instances', instances, vscode.ConfigurationTarget.Global);
+	// Strip tokens from all instances before writing to settings
+	await config.update('instances', instances.map(stripTokenFromInstance), vscode.ConfigurationTarget.Global);
 
 	// Sync to legacy settings if this is the default
 	if (instance.isDefault) {
@@ -177,12 +196,17 @@ export async function removeInstance(id: string): Promise<void> {
 	const instances = await getAllInstances();
 
 	const filtered = instances.filter(i => i.id !== id);
-	await config.update('instances', filtered, vscode.ConfigurationTarget.Global);
+	await config.update('instances', filtered.map(stripTokenFromInstance), vscode.ConfigurationTarget.Global);
+
+	// Delete token from SecretStorage
+	if (isInitialized()) {
+		await deleteToken(id);
+	}
 
 	// If we removed the default, make the first remaining instance default
 	if (filtered.length > 0 && !filtered.some(i => i.isDefault)) {
 		filtered[0].isDefault = true;
-		await config.update('instances', filtered, vscode.ConfigurationTarget.Global);
+		await config.update('instances', filtered.map(stripTokenFromInstance), vscode.ConfigurationTarget.Global);
 		await syncToLegacySettings(filtered[0]);
 	}
 }
@@ -199,7 +223,7 @@ export async function setDefaultInstance(id: string): Promise<void> {
 		i.isDefault = i.id === id;
 	});
 
-	await config.update('instances', instances, vscode.ConfigurationTarget.Global);
+	await config.update('instances', instances.map(stripTokenFromInstance), vscode.ConfigurationTarget.Global);
 
 	// Sync to legacy settings
 	const defaultInstance = instances.find(i => i.id === id);
@@ -311,7 +335,16 @@ export function findBestInstanceMatch(
 async function syncToLegacySettings(instance: ForgejoInstance): Promise<void> {
 	const config = vscode.workspace.getConfiguration('forgejo');
 	await config.update('instanceUrl', instance.instanceUrl, vscode.ConfigurationTarget.Global);
-	await config.update('token', instance.token, vscode.ConfigurationTarget.Global);
+	// Token is no longer synced to legacy settings — stored in SecretStorage instead
+}
+
+/**
+ * Creates a copy of the instance with the token stripped out, safe for writing to settings.json
+ */
+function stripTokenFromInstance(instance: ForgejoInstance): ForgejoInstance {
+	// eslint-disable-next-line @typescript-eslint/no-unused-vars
+	const { token: _token, ...rest } = instance;
+	return rest as ForgejoInstance;
 }
 
 /**
