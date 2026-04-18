@@ -142,6 +142,24 @@ describe('gitUtils', () => {
       });
     });
 
+    it('should parse HTTPS URL with trailing slash', () => {
+      const result = parseRemoteUrl('https://forgejo.example.com/my-org/my.project.git/');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should parse HTTPS URL with credentials', () => {
+      const result = parseRemoteUrl('https://user:token@forgejo.example.com/my-org/my.project.git');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
     it('should parse SSH scp-style URL with dots in repo name', () => {
       const result = parseRemoteUrl('git@forgejo.example.com:my-org/my.project.git');
       expect(result).toEqual({
@@ -158,6 +176,29 @@ describe('gitUtils', () => {
         owner: 'my-org',
         repo: 'my.project'
       });
+    });
+
+    it('should parse SSH protocol URL with custom username and port', () => {
+      const result = parseRemoteUrl('ssh://builder@forgejo.example.com:2222/my-org/my.project.git');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com:2222',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should parse SSH scp-style URL with trailing slash', () => {
+      const result = parseRemoteUrl('git@forgejo.example.com:my-org/my.project.git/');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should return null for URLs with extra path segments', () => {
+      expect(parseRemoteUrl('https://forgejo.example.com/my-org/my.project/extra')).toBeNull();
+      expect(parseRemoteUrl('git@forgejo.example.com:my-org/my.project/extra')).toBeNull();
     });
 
     it('should handle SSH URL with custom host', () => {

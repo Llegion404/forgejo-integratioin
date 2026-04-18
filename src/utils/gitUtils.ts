@@ -107,48 +107,114 @@ export function detectAllGitRemotes(): Map<string, GitRemoteInfo> {
   return result;
 }
 
+function decodeRemotePathSegment(segment: string): string | null {
+  try {
+    const decoded = decodeURIComponent(segment);
+    if (!decoded || decoded.includes('/')) {
+      return null;
+    }
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+function parseRemotePath(pathname: string): Pick<GitRemoteInfo, 'owner' | 'repo'> | null {
+  const segments = pathname
+    .split('/')
+    .filter(segment => segment.length > 0);
+
+  if (segments.length !== 2) {
+    return null;
+  }
+
+  const owner = decodeRemotePathSegment(segments[0]);
+  const repoSegment = decodeRemotePathSegment(segments[1]);
+
+  if (!owner || !repoSegment) {
+    return null;
+  }
+
+  const repo = repoSegment.endsWith('.git')
+    ? repoSegment.slice(0, -4)
+    : repoSegment;
+
+  if (!repo) {
+    return null;
+  }
+
+  return { owner, repo };
+}
+
+function parseStandardRemoteUrl(parsedUrl: URL): GitRemoteInfo | null {
+  if (!['http:', 'https:', 'ssh:'].includes(parsedUrl.protocol) || !parsedUrl.host) {
+    return null;
+  }
+
+  const pathInfo = parseRemotePath(parsedUrl.pathname);
+  if (!pathInfo) {
+    return null;
+  }
+
+  return {
+    instanceUrl: `https://${parsedUrl.host}`,
+    ...pathInfo
+  };
+}
+
+function parseScpStyleRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
+  const atIndex = remoteUrl.indexOf('@');
+  const colonIndex = remoteUrl.indexOf(':', atIndex + 1);
+
+  if (atIndex <= 0 || colonIndex <= atIndex + 1) {
+    return null;
+  }
+
+  const host = remoteUrl.slice(atIndex + 1, colonIndex).trim();
+  const path = remoteUrl.slice(colonIndex + 1).trim();
+
+  if (!host || !path) {
+    return null;
+  }
+
+  const pathInfo = parseRemotePath(path);
+  if (!pathInfo) {
+    return null;
+  }
+
+  return {
+    instanceUrl: `https://${host}`,
+    ...pathInfo
+  };
+}
+
 /**
  * Parse git remote URL to extract instance URL, owner, and repo
- * Supports HTTPS and SSH formats (both scp-style and ssh:// protocol)
+ * Uses the URL parser for HTTP(S) and ssh:// remotes, with a fallback parser for scp-style SSH remotes.
  */
 export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
   if (!remoteUrl) {
     return null;
   }
 
-  let match;
-
-  // HTTPS format: https://codeberg.org/owner/repo.git
-  match = remoteUrl.match(/https?:\/\/([^/]+)\/([^/]+)\/([^/]+?)(?:\.git)?$/);
-  if (match) {
-    const [, host, owner, repo] = match;
-    return {
-      instanceUrl: `https://${host}`,
-      owner,
-      repo: repo.replace(/\.git$/, '')
-    };
+  const trimmedRemoteUrl = remoteUrl.trim();
+  if (!trimmedRemoteUrl) {
+    return null;
   }
 
-  // SSH protocol format: ssh://git@host/owner/repo.git
-  match = remoteUrl.match(/ssh:\/\/(?:git@)?([^/]+)\/([^/]+)\/([^/]+?)(?:\.git)?$/);
-  if (match) {
-    const [, host, owner, repo] = match;
-    return {
-      instanceUrl: `https://${host}`,
-      owner,
-      repo: repo.replace(/\.git$/, '')
-    };
+  try {
+    const parsedUrl = new URL(trimmedRemoteUrl);
+    const parsedRemote = parseStandardRemoteUrl(parsedUrl);
+    if (parsedRemote) {
+      return parsedRemote;
+    }
+  } catch {
+    // Fall back to scp-style parsing below.
   }
 
-  // SSH scp-style format: git@codeberg.org:owner/repo.git
-  match = remoteUrl.match(/git@([^:]+):([^/]+)\/([^/]+?)(?:\.git)?$/);
-  if (match) {
-    const [, host, owner, repo] = match;
-    return {
-      instanceUrl: `https://${host}`,
-      owner,
-      repo: repo.replace(/\.git$/, '')
-    };
+  const scpStyleRemote = parseScpStyleRemoteUrl(trimmedRemoteUrl);
+  if (scpStyleRemote) {
+    return scpStyleRemote;
   }
 
   console.warn('[Forgejo] Could not parse git remote URL:', remoteUrl);
