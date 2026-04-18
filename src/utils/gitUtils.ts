@@ -7,6 +7,23 @@ export interface GitRemoteInfo {
   repo: string;
 }
 
+function maskRemoteUrlForLogging(remoteUrl: string): string {
+  const trimmedRemoteUrl = remoteUrl.trim();
+
+  try {
+    const parsedUrl = new URL(trimmedRemoteUrl);
+    if (parsedUrl.username || parsedUrl.password) {
+      parsedUrl.username = parsedUrl.username ? '***' : '';
+      parsedUrl.password = parsedUrl.password ? '***' : '';
+    }
+    return parsedUrl.toString();
+  } catch {
+    return trimmedRemoteUrl
+      .replace(/(https?:\/\/)([^/@\s]+)@/i, '$1***@')
+      .replace(/(ssh:\/\/)([^/@\s]+)@/i, '$1***@');
+  }
+}
+
 /**
  * Detect git repository and extract remote information
  * @param remoteName Optional remote name to use instead of 'origin'
@@ -35,7 +52,7 @@ export function detectGitRemote(remoteName?: string): GitRemoteInfo | null {
     }
     const remoteUrl = result.stdout.trim();
 
-    console.log('[Forgejo] Found git remote URL:', remoteUrl);
+    console.log('[Forgejo] Found git remote URL:', maskRemoteUrlForLogging(remoteUrl));
     const parsed = parseRemoteUrl(remoteUrl);
     console.log('[Forgejo] Parsed remote info:', parsed);
     return parsed;
@@ -94,7 +111,7 @@ export function detectAllGitRemotes(): Map<string, GitRemoteInfo> {
           result.set(name, parsed);
           console.log(`[Forgejo] Parsed remote '${name}':`, parsed);
         } else {
-          console.log(`[Forgejo] Could not parse remote '${name}' URL:`, remoteUrl);
+          console.log(`[Forgejo] Could not parse remote '${name}' URL:`, maskRemoteUrlForLogging(remoteUrl));
         }
       } catch (error) {
         console.log(`[Forgejo] Error getting URL for remote '${name}':`, error instanceof Error ? error.message : error);
@@ -147,7 +164,7 @@ function parseRemotePath(pathname: string): Pick<GitRemoteInfo, 'owner' | 'repo'
 }
 
 function parseStandardRemoteUrl(parsedUrl: URL): GitRemoteInfo | null {
-  if (!['http:', 'https:', 'ssh:'].includes(parsedUrl.protocol) || !parsedUrl.host) {
+  if (!['http:', 'https:', 'ssh:'].includes(parsedUrl.protocol) || !parsedUrl.hostname) {
     return null;
   }
 
@@ -156,8 +173,12 @@ function parseStandardRemoteUrl(parsedUrl: URL): GitRemoteInfo | null {
     return null;
   }
 
+  const instanceHost = parsedUrl.protocol === 'ssh:'
+    ? parsedUrl.hostname
+    : parsedUrl.host;
+
   return {
-    instanceUrl: `https://${parsedUrl.host}`,
+    instanceUrl: `https://${instanceHost}`,
     ...pathInfo
   };
 }
@@ -217,7 +238,7 @@ export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
     return scpStyleRemote;
   }
 
-  console.warn('[Forgejo] Could not parse git remote URL:', remoteUrl);
+  console.warn('[Forgejo] Could not parse git remote URL:', maskRemoteUrlForLogging(remoteUrl));
   return null;
 }
 

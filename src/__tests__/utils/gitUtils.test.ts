@@ -101,11 +101,13 @@ describe('gitUtils', () => {
       expect(parseRemoteUrl('ftp://example.com/repo')).toBeNull();
     });
 
-    it('should handle URL with port number in host', () => {
+    it('should keep HTTP(S) port in instanceUrl', () => {
       const result = parseRemoteUrl('https://git.example.com:3000/owner/repo.git');
-      expect(result).not.toBeNull();
-      expect(result!.owner).toBe('owner');
-      expect(result!.repo).toBe('repo');
+      expect(result).toEqual({
+        instanceUrl: 'https://git.example.com:3000',
+        owner: 'owner',
+        repo: 'repo'
+      });
     });
 
     it('should always return https instanceUrl even for http input', () => {
@@ -178,10 +180,10 @@ describe('gitUtils', () => {
       });
     });
 
-    it('should parse SSH protocol URL with custom username and port', () => {
+    it('should drop SSH port from instanceUrl', () => {
       const result = parseRemoteUrl('ssh://builder@forgejo.example.com:2222/my-org/my.project.git');
       expect(result).toEqual({
-        instanceUrl: 'https://forgejo.example.com:2222',
+        instanceUrl: 'https://forgejo.example.com',
         owner: 'my-org',
         repo: 'my.project'
       });
@@ -234,6 +236,27 @@ describe('gitUtils', () => {
         'git', ['config', '--get', 'remote.origin.url'],
         { cwd: '/workspace/project', encoding: 'utf-8' }
       );
+    });
+
+    it('should mask credentials when logging git remote URLs', async () => {
+      const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      (vscode.workspace as any).workspaceFolders = [
+        { uri: { fsPath: '/workspace/project' } }
+      ];
+      mockedSpawnSync.mockReturnValue({ status: 0, stdout: 'https://user:token@codeberg.org/owner/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any);
+
+      const result = await detectGitRemote();
+
+      expect(result).toEqual({
+        instanceUrl: 'https://codeberg.org',
+        owner: 'owner',
+        repo: 'repo'
+      });
+      const loggedOutput = logSpy.mock.calls.flat().join(' ');
+      expect(loggedOutput).toContain('https://***:***@codeberg.org/owner/repo.git');
+      expect(loggedOutput).not.toContain('user:token@codeberg.org');
+
+      logSpy.mockRestore();
     });
 
     it('should return null when spawnSync returns non-zero', async () => {
