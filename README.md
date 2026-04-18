@@ -71,7 +71,8 @@ Authentication is **optional for public repositories** but required for private 
 2. Under "Manage Access Tokens", click **Generate New Token**
 3. Enter a name (e.g., "VS Code Extension")
 4. Select permissions:
-   - `read:repository` - View PRs and Issues (minimum required)
+   - `read:repository` - Browse repository files and pull requests (required)
+   - `read:issues` - Browse issues (required)
    - `write:repository` - Merge PRs, close Issues (optional)
 5. Click **Generate Token**
 6. **Copy the token immediately** - you won't see it again!
@@ -183,7 +184,7 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 
 1. Regenerate your token on the Forgejo website
 2. Run **"Forgejo: Manage Instances"** to update the token
-3. Make sure the token has `read:repository` scope
+3. Make sure the token has `read:repository` and `read:issues` scopes
 
 ### Git remote not detected
 
