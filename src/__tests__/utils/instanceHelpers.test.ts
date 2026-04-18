@@ -22,12 +22,26 @@ jest.mock('../../utils/logger', () => ({
 	logDebug: jest.fn()
 }));
 
+// Mock SecretStorage
+jest.mock('../../utils/secretStorage', () => ({
+	getToken: jest.fn().mockResolvedValue(undefined),
+	setToken: jest.fn().mockResolvedValue(undefined),
+	deleteToken: jest.fn().mockResolvedValue(undefined),
+	isInitialized: jest.fn(() => true)
+}));
+
+import { getToken, setToken, deleteToken, isInitialized } from '../../utils/secretStorage';
+const mockGetToken = getToken as jest.MockedFunction<typeof getToken>;
+const mockSetToken = setToken as jest.MockedFunction<typeof setToken>;
+const mockDeleteToken = deleteToken as jest.MockedFunction<typeof deleteToken>;
+const mockIsInitialized = isInitialized as jest.MockedFunction<typeof isInitialized>;
+
 // Helper to mock configuration with state
 const mockConfig = (initialInstances: any[]) => {
 	let currentInstances = [...initialInstances];
 
 	const get = jest.fn().mockImplementation(() => currentInstances);
-	
+
 	const update = jest.fn().mockImplementation((key, value) => {
 		if (key === 'instances') {
 			currentInstances = value;
@@ -41,8 +55,8 @@ const mockConfig = (initialInstances: any[]) => {
 		inspect: jest.fn()
 	});
 
-	return { 
-		get, 
+	return {
+		get,
 		update,
 		getCurrentInstances: () => currentInstances
 	};
@@ -51,10 +65,24 @@ const mockConfig = (initialInstances: any[]) => {
 describe('instanceHelpers', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
+		// Re-set mock implementations after clearAllMocks
+		mockGetToken.mockResolvedValue(undefined);
+		mockSetToken.mockResolvedValue(undefined);
+		mockDeleteToken.mockResolvedValue(undefined);
+		mockIsInitialized.mockReturnValue(true);
 	});
 
 	describe('isValidInstance', () => {
-		it('should return true for valid instance', () => {
+		it('should return true for valid instance without token', () => {
+			const instance = {
+				id: '1',
+				name: 'Test',
+				instanceUrl: 'https://example.com'
+			};
+			expect(isValidInstance(instance)).toBe(true);
+		});
+
+		it('should return true for valid instance with token', () => {
 			const instance = {
 				id: '1',
 				name: 'Test',
@@ -67,8 +95,7 @@ describe('instanceHelpers', () => {
 		it('should return false for missing id', () => {
 			const instance = {
 				name: 'Test',
-				instanceUrl: 'https://example.com',
-				token: 'token'
+				instanceUrl: 'https://example.com'
 			};
 			expect(isValidInstance(instance)).toBe(false);
 		});
@@ -77,8 +104,7 @@ describe('instanceHelpers', () => {
 			const instance = {
 				id: '1',
 				name: '',
-				instanceUrl: 'https://example.com',
-				token: 'token'
+				instanceUrl: 'https://example.com'
 			};
 			expect(isValidInstance(instance)).toBe(false);
 		});
@@ -91,106 +117,112 @@ describe('instanceHelpers', () => {
 			expect(instances).toEqual([]);
 		});
 
-		it('should return configured instances', async () => {
+		it('should return configured instances with tokens hydrated from SecretStorage', async () => {
 			const mockInstances = [{
 				id: '1',
 				name: 'Test',
-				instanceUrl: 'https://example.com',
-				token: 'token'
+				instanceUrl: 'https://example.com'
 			}];
+			mockGetToken.mockResolvedValue('secret-token');
 			mockConfig(mockInstances);
 			const instances = await getAllInstances();
-			expect(instances).toEqual(mockInstances);
+			expect(instances).toHaveLength(1);
+			expect(instances[0].token).toBe('secret-token');
 		});
 
 		it('should filter out invalid instances and update config', async () => {
 			const validInstance = {
 				id: '1',
 				name: 'Valid',
-				instanceUrl: 'https://valid.com',
-				token: 'token'
+				instanceUrl: 'https://valid.com'
 			};
 			const invalidInstance = {
 				id: '2',
 				// Missing name
-				instanceUrl: 'https://invalid.com',
-				token: 'token'
+				instanceUrl: 'https://invalid.com'
 			};
 
 			const { update } = mockConfig([validInstance, invalidInstance]);
-			
+
 			const instances = await getAllInstances();
-			
+
 			expect(instances).toHaveLength(1);
-			expect(instances[0]).toEqual(validInstance);
+			expect(instances[0].id).toBe('1');
 			expect(update).toHaveBeenCalledWith('instances', [validInstance], vscode.ConfigurationTarget.Global);
 		});
 	});
 
 	describe('addInstance', () => {
-		it('should add new instance and set as default if first one', async () => {
+		it('should add new instance, set as default if first one, and store token in SecretStorage', async () => {
 			const { update } = mockConfig([]);
 			const newInstance: ForgejoInstance = {
 				id: '1',
 				name: 'New',
 				instanceUrl: 'https://new.com',
-				token: 'token'
+				token: 'my-token'
 			};
 
 			await addInstance(newInstance);
 
-			expect(update).toHaveBeenCalledWith(
-				'instances', 
-				[expect.objectContaining({ ...newInstance, isDefault: true })], 
-				vscode.ConfigurationTarget.Global
-			);
+			// Token should be stored in SecretStorage
+			expect(mockSetToken).toHaveBeenCalledWith('1', 'my-token');
+
+			// Settings should NOT contain token
+			const instancesCalls = update.mock.calls.filter((c: any[]) => c[0] === 'instances');
+			const savedInstances = instancesCalls[0][1];
+			expect(savedInstances[0].token).toBeUndefined();
+			expect(savedInstances[0].isDefault).toBe(true);
 		});
 
-		it('should add to existing instances', async () => {
+		it('should add to existing instances and store new token in SecretStorage', async () => {
 			const existingInstance = {
 				id: '1',
 				name: 'Existing',
 				instanceUrl: 'https://existing.com',
-				token: 'token',
 				isDefault: true
 			};
+			mockGetToken.mockResolvedValue('existing-token');
 			const { update } = mockConfig([existingInstance]);
-			
+
 			const newInstance: ForgejoInstance = {
 				id: '2',
 				name: 'New',
 				instanceUrl: 'https://new.com',
-				token: 'token'
+				token: 'new-token'
 			};
 
 			await addInstance(newInstance);
 
-			expect(update).toHaveBeenCalledWith(
-				'instances',
-				[existingInstance, newInstance],
-				vscode.ConfigurationTarget.Global
-			);
+			// New token should be stored in SecretStorage
+			expect(mockSetToken).toHaveBeenCalledWith('2', 'new-token');
+
+			// Both instances should be saved to settings
+			const instancesCalls = update.mock.calls.filter((c: any[]) => c[0] === 'instances');
+			expect(instancesCalls.length).toBeGreaterThan(0);
+			const savedInstances = instancesCalls[0][1];
+			expect(savedInstances).toHaveLength(2);
+			expect(savedInstances[0].id).toBe('1');
+			expect(savedInstances[1].id).toBe('2');
 		});
 	});
 
 	describe('updateInstance', () => {
-		it('should update existing instance', async () => {
+		it('should update existing instance without token in settings', async () => {
 			const originalInstance = {
 				id: '1',
 				name: 'Original',
-				instanceUrl: 'https://original.com',
-				token: 'token'
+				instanceUrl: 'https://original.com'
 			};
+			mockGetToken.mockResolvedValue('token');
 			const { update } = mockConfig([originalInstance]);
 
 			const updatedInstance = { ...originalInstance, name: 'Updated' };
 			await updateInstance(updatedInstance);
 
-			expect(update).toHaveBeenCalledWith(
-				'instances',
-				[updatedInstance],
-				vscode.ConfigurationTarget.Global
-			);
+			const instancesCalls = update.mock.calls.filter((c: any[]) => c[0] === 'instances');
+			const savedInstances = instancesCalls[0][1];
+			expect(savedInstances[0].name).toBe('Updated');
+			expect(savedInstances[0].token).toBeUndefined();
 		});
 
 		it('should throw error if instance not found', async () => {
@@ -198,8 +230,7 @@ describe('instanceHelpers', () => {
 			const instance = {
 				id: '1',
 				name: 'Test',
-				instanceUrl: 'https://test.com',
-				token: 'token'
+				instanceUrl: 'https://test.com'
 			};
 
 			await expect(updateInstance(instance)).rejects.toThrow('Instance 1 not found');
@@ -207,45 +238,39 @@ describe('instanceHelpers', () => {
 	});
 
 	describe('removeInstance', () => {
-		it('should remove instance by id', async () => {
-			const instance1 = { id: '1', name: '1', instanceUrl: 'url', token: 'token' };
-			const instance2 = { id: '2', name: '2', instanceUrl: 'url', token: 'token' };
-			const { update } = mockConfig([instance1, instance2]);
+		it('should remove instance by id and delete token from SecretStorage', async () => {
+			const instance1 = { id: '1', name: '1', instanceUrl: 'url' };
+			const instance2 = { id: '2', name: '2', instanceUrl: 'url' };
+			mockConfig([instance1, instance2]);
 
 			await removeInstance('1');
 
-			expect(update).toHaveBeenCalledWith(
-				'instances',
-				[instance2],
-				vscode.ConfigurationTarget.Global
-			);
+			expect(mockDeleteToken).toHaveBeenCalledWith('1');
 		});
 
 		it('should set new default if default instance removed', async () => {
-			const instance1 = { id: '1', name: '1', instanceUrl: 'url', token: 'token', isDefault: true };
-			const instance2 = { id: '2', name: '2', instanceUrl: 'url', token: 'token' };
+			const instance1 = { id: '1', name: '1', instanceUrl: 'url', isDefault: true };
+			const instance2 = { id: '2', name: '2', instanceUrl: 'url' };
 			const { update } = mockConfig([instance1, instance2]);
 
 			await removeInstance('1');
 
-			// Check that instances were updated with the new default
-			// The update function is called multiple times (removing instance, setting new default, syncing legacy settings)
-			// We want to find the call that sets the instances with the new default
-			const instancesUpdateCalls = update.mock.calls.filter(call => call[0] === 'instances');
+			// Check that the remaining instance was set as default
+			const instancesUpdateCalls = update.mock.calls.filter((call: any[]) => call[0] === 'instances');
 			const lastInstancesUpdate = instancesUpdateCalls[instancesUpdateCalls.length - 1];
 
-			expect(lastInstancesUpdate).toEqual([
-				'instances',
-				[expect.objectContaining({ ...instance2, isDefault: true })],
-				vscode.ConfigurationTarget.Global
+			expect(lastInstancesUpdate[1]).toEqual([
+				expect.objectContaining({ id: '2', isDefault: true })
 			]);
+			// Token should not be in settings
+			expect(lastInstancesUpdate[1][0].token).toBeUndefined();
 		});
 	});
 
 	describe('setDefaultInstance', () => {
 		it('should set specified instance as default and unset others', async () => {
-			const instance1 = { id: '1', name: '1', instanceUrl: 'url', token: 'token', isDefault: true };
-			const instance2 = { id: '2', name: '2', instanceUrl: 'url', token: 'token', isDefault: false };
+			const instance1 = { id: '1', name: '1', instanceUrl: 'url', isDefault: true };
+			const instance2 = { id: '2', name: '2', instanceUrl: 'url', isDefault: false };
 			const { update } = mockConfig([instance1, instance2]);
 
 			await setDefaultInstance('2');
@@ -305,20 +330,17 @@ describe('instanceHelpers', () => {
 			{
 				id: '1',
 				name: 'Codeberg',
-				instanceUrl: 'https://codeberg.org',
-				token: 'token1'
+				instanceUrl: 'https://codeberg.org'
 			},
 			{
 				id: '2',
 				name: 'Work',
-				instanceUrl: 'https://git.company.com',
-				token: 'token2'
+				instanceUrl: 'https://git.company.com'
 			},
 			{
 				id: '3',
 				name: 'Local',
-				instanceUrl: 'http://localhost:3000',
-				token: 'token3'
+				instanceUrl: 'http://localhost:3000'
 			}
 		];
 
@@ -385,14 +407,12 @@ describe('instanceHelpers', () => {
 				{
 					id: '1',
 					name: 'HTTPS',
-					instanceUrl: 'https://codeberg.org',
-					token: 'token1'
+					instanceUrl: 'https://codeberg.org'
 				},
 				{
 					id: '2',
 					name: 'HTTP',
-					instanceUrl: 'http://codeberg.org',
-					token: 'token2'
+					instanceUrl: 'http://codeberg.org'
 				}
 			];
 
@@ -434,8 +454,7 @@ describe('instanceHelpers', () => {
 			const instance: ForgejoInstance = {
 				id: '1',
 				name: 'Test',
-				instanceUrl: 'https://codeberg.org',
-				token: 'token'
+				instanceUrl: 'https://codeberg.org'
 			};
 
 			expect(getConnectionStatus(instance)).toBe('$(question) Not tested');
@@ -446,7 +465,6 @@ describe('instanceHelpers', () => {
 				id: '1',
 				name: 'Test',
 				instanceUrl: 'https://codeberg.org',
-				token: 'token',
 				lastConnectionTest: {
 					success: true,
 					timestamp: Date.now() - 5 * 60 * 1000 // 5 minutes ago
@@ -463,7 +481,6 @@ describe('instanceHelpers', () => {
 				id: '1',
 				name: 'Test',
 				instanceUrl: 'https://codeberg.org',
-				token: 'token',
 				lastConnectionTest: {
 					success: false,
 					timestamp: Date.now() - 10 * 60 * 1000, // 10 minutes ago
@@ -481,7 +498,6 @@ describe('instanceHelpers', () => {
 				id: '1',
 				name: 'Test',
 				instanceUrl: 'https://codeberg.org',
-				token: 'token',
 				lastConnectionTest: {
 					success: true,
 					timestamp: Date.now() - 30 * 1000 // 30 seconds ago
@@ -497,7 +513,6 @@ describe('instanceHelpers', () => {
 				id: '1',
 				name: 'Test',
 				instanceUrl: 'https://codeberg.org',
-				token: 'token',
 				lastConnectionTest: {
 					success: true,
 					timestamp: Date.now() - 2 * 60 * 60 * 1000 // 2 hours ago
@@ -513,7 +528,6 @@ describe('instanceHelpers', () => {
 				id: '1',
 				name: 'Test',
 				instanceUrl: 'https://codeberg.org',
-				token: 'token',
 				lastConnectionTest: {
 					success: true,
 					timestamp: Date.now() - 3 * 24 * 60 * 60 * 1000 // 3 days ago

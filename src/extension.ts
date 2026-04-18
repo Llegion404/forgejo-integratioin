@@ -27,14 +27,22 @@ import { registerCommand } from './commands/registry';
 import { logger, logInfo } from './utils/logger';
 import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
+import { initializeSecretStorage } from './utils/secretStorage';
+import { migrateTokensToSecretStorage } from './utils/migration';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
   logInfo('VS Code version:', vscode.version);
   logInfo('Workspace folders:', vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath));
 
+  // Initialize SecretStorage before any migration or config reads
+  initializeSecretStorage(context.secrets);
+
   // Migrate legacy config first (before creating tree providers)
   await migrateToMultiInstance();
+
+  // Migrate plaintext tokens from settings.json to SecretStorage
+  await migrateTokensToSecretStorage();
 
   // Create tree data providers
   const prTreeProvider = new PRTreeProvider();

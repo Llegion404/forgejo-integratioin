@@ -88,7 +88,7 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 
 	const finalConfig: ForgejoConfig = {
 		instanceUrl: normalizeUrl(selectedInstance.instanceUrl),
-		token: selectedInstance.token,
+		token: selectedInstance.token ?? '',
 		owner: gitInfo.owner,
 		repo: gitInfo.repo,
 		instanceId: selectedInstance.id,
@@ -112,9 +112,10 @@ export async function setInstanceUrl(url: string): Promise<void> {
 }
 
 /**
- * Set authentication token in configuration
+ * @deprecated Token is now stored in SecretStorage. Use secretStorage.setToken() instead.
  */
-export async function setAuthToken(token: string): Promise<void> {
-  const config = vscode.workspace.getConfiguration('forgejo');
-  await config.update('token', token, vscode.ConfigurationTarget.Global);
+export function setAuthToken(_token: string): Promise<void> {
+  // This function is kept for backward compatibility but no longer stores tokens in settings.
+  // Callers should use secretStorage.setToken() directly.
+  throw new Error('setAuthToken is deprecated. Use SecretStorage instead.');
 }

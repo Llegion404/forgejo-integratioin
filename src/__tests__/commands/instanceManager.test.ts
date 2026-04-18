@@ -4,6 +4,12 @@ import { manageInstances } from '../../commands/instanceManager';
 // Mock dependencies
 jest.mock('../../utils/instanceHelpers');
 jest.mock('../../commands/onboarding');
+jest.mock('../../utils/secretStorage', () => ({
+  setToken: jest.fn().mockResolvedValue(undefined),
+  getToken: jest.fn().mockResolvedValue(undefined),
+  deleteToken: jest.fn().mockResolvedValue(undefined),
+  isInitialized: jest.fn(() => true)
+}));
 
 import {
   getAllInstances,
@@ -15,7 +21,9 @@ import {
   updateInstance
 } from '../../utils/instanceHelpers';
 import { startOnboarding } from '../../commands/onboarding';
+import { setToken } from '../../utils/secretStorage';
 
+const mockSetToken = setToken as jest.MockedFunction<typeof setToken>;
 const mockGetAllInstances = getAllInstances as jest.MockedFunction<typeof getAllInstances>;
 const mockGetInstanceById = getInstanceById as jest.MockedFunction<typeof getInstanceById>;
 const mockSetDefaultInstance = setDefaultInstance as jest.MockedFunction<typeof setDefaultInstance>;
@@ -203,9 +211,10 @@ describe('instanceManager', () => {
 
       await manageInstances();
 
-      expect(mockUpdateInstance).toHaveBeenCalledWith(
-        expect.objectContaining({ token: 'new-token' })
-      );
+      // Token should be stored in SecretStorage
+      expect(mockSetToken).toHaveBeenCalledWith('1', 'new-token');
+      // updateInstance should still be called (for metadata like lastConnectionTest)
+      expect(mockUpdateInstance).toHaveBeenCalled();
     });
 
     it('should prompt to save anyway when connection test fails', async () => {

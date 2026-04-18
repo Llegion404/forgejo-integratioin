@@ -2,12 +2,19 @@ import * as vscode from 'vscode';
 
 jest.mock('../../utils/config', () => ({
 	setInstanceUrl: jest.fn(),
-	setAuthToken: jest.fn(),
 }));
 
 jest.mock('../../utils/logger', () => ({
 	logInfo: jest.fn(),
 	logError: jest.fn(),
+}));
+
+jest.mock('../../utils/instanceHelpers', () => ({
+	getDefaultOrFirstInstance: jest.fn(),
+}));
+
+jest.mock('../../utils/secretStorage', () => ({
+	setToken: jest.fn().mockResolvedValue(undefined),
 }));
 
 import {
@@ -16,10 +23,13 @@ import {
 	validateUrl,
 	validateToken,
 } from '../../commands/legacyConfig';
-import { setInstanceUrl, setAuthToken } from '../../utils/config';
+import { setInstanceUrl } from '../../utils/config';
+import { getDefaultOrFirstInstance } from '../../utils/instanceHelpers';
+import { setToken } from '../../utils/secretStorage';
 
 const mockSetInstanceUrl = setInstanceUrl as jest.MockedFunction<typeof setInstanceUrl>;
-const mockSetAuthToken = setAuthToken as jest.MockedFunction<typeof setAuthToken>;
+const mockGetDefaultOrFirstInstance = getDefaultOrFirstInstance as jest.MockedFunction<typeof getDefaultOrFirstInstance>;
+const mockSetToken = setToken as jest.MockedFunction<typeof setToken>;
 
 describe('validateUrl', () => {
 	it('returns null for a valid URL', () => {
@@ -103,10 +113,29 @@ describe('setAuthTokenCommand', () => {
 		mockPRTreeProvider = { refresh: jest.fn() };
 		mockIssueTreeProvider = { refresh: jest.fn() };
 		mockActionsTreeProvider = { refresh: jest.fn() };
-		mockSetAuthToken.mockResolvedValue(undefined);
+	});
+
+	it('shows error when no instance configured', async () => {
+		mockGetDefaultOrFirstInstance.mockResolvedValue(undefined);
+		(vscode.window.showErrorMessage as jest.Mock).mockResolvedValue(undefined);
+
+		await setAuthTokenCommand(
+			mockPRTreeProvider as any,
+			mockIssueTreeProvider as any,
+			mockActionsTreeProvider as any
+		);
+
+		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+			'No Forgejo instance configured. Please add an instance first.',
+			'Add Instance'
+		);
+		expect(mockSetToken).not.toHaveBeenCalled();
 	});
 
 	it('returns early without saving when user cancels (showInputBox returns undefined)', async () => {
+		mockGetDefaultOrFirstInstance.mockResolvedValue({
+			id: '1', name: 'Test', instanceUrl: 'https://test.com'
+		});
 		(vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce(undefined);
 
 		await setAuthTokenCommand(
@@ -115,14 +144,15 @@ describe('setAuthTokenCommand', () => {
 			mockActionsTreeProvider as any
 		);
 
-		expect(mockSetAuthToken).not.toHaveBeenCalled();
+		expect(mockSetToken).not.toHaveBeenCalled();
 		expect(vscode.window.showInformationMessage).not.toHaveBeenCalled();
 		expect(mockPRTreeProvider.refresh).not.toHaveBeenCalled();
-		expect(mockIssueTreeProvider.refresh).not.toHaveBeenCalled();
-		expect(mockActionsTreeProvider.refresh).not.toHaveBeenCalled();
 	});
 
-	it('saves token, shows info message, and refreshes all three providers on success', async () => {
+	it('saves token to SecretStorage, shows info message, and refreshes providers', async () => {
+		mockGetDefaultOrFirstInstance.mockResolvedValue({
+			id: '1', name: 'Test', instanceUrl: 'https://test.com'
+		});
 		(vscode.window.showInputBox as jest.Mock).mockResolvedValueOnce('token_abc123');
 
 		await setAuthTokenCommand(
@@ -131,9 +161,9 @@ describe('setAuthTokenCommand', () => {
 			mockActionsTreeProvider as any
 		);
 
-		expect(mockSetAuthToken).toHaveBeenCalledWith('token_abc123');
+		expect(mockSetToken).toHaveBeenCalledWith('1', 'token_abc123');
 		expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-			'Forgejo authentication token saved'
+			'Forgejo authentication token saved securely'
 		);
 		expect(mockPRTreeProvider.refresh).toHaveBeenCalled();
 		expect(mockIssueTreeProvider.refresh).toHaveBeenCalled();

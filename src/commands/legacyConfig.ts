@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
-import { setInstanceUrl, setAuthToken } from '../utils/config';
+import { setInstanceUrl } from '../utils/config';
 import { PRTreeProvider } from '../providers/prTreeProvider';
 import { IssueTreeProvider } from '../providers/issueTreeProvider';
 import { ActionsTreeProvider } from '../providers/actionsTreeProvider';
+import { getDefaultOrFirstInstance } from '../utils/instanceHelpers';
+import { setToken } from '../utils/secretStorage';
 
 export function validateUrl(value: string): string | null {
 	if (!value) {
@@ -48,6 +50,19 @@ export async function setAuthTokenCommand(
 	issueTreeProvider: IssueTreeProvider,
 	actionsTreeProvider: ActionsTreeProvider
 ): Promise<void> {
+	const defaultInstance = await getDefaultOrFirstInstance();
+	if (!defaultInstance) {
+		void vscode.window.showErrorMessage(
+			'No Forgejo instance configured. Please add an instance first.',
+			'Add Instance'
+		).then(action => {
+			if (action === 'Add Instance') {
+				void vscode.commands.executeCommand('forgejo.addInstance');
+			}
+		});
+		return;
+	}
+
 	const token = await vscode.window.showInputBox({
 		prompt: 'Enter your Forgejo personal access token',
 		placeHolder: 'token_xxxxxxxxxxxxxx',
@@ -56,8 +71,8 @@ export async function setAuthTokenCommand(
 	});
 
 	if (token) {
-		await setAuthToken(token);
-		void vscode.window.showInformationMessage('Forgejo authentication token saved');
+		await setToken(defaultInstance.id, token);
+		void vscode.window.showInformationMessage('Forgejo authentication token saved securely');
 		prTreeProvider.refresh();
 		issueTreeProvider.refresh();
 		actionsTreeProvider.refresh();
