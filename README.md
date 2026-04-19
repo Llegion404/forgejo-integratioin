@@ -22,6 +22,12 @@
 
 For private repositories, [add a Personal Access Token](#setting-up-authentication).
 
+## News
+
+### Next version
+
+- **Safer git remote detection:** the extension now separates repository identity from instance resolution. HTTP(S) remotes still support zero-config detection, while SSH remotes no longer guess a Forgejo web/API URL from the git transport. If you're using SSH remotes with a self-hosted instance, configure the Forgejo instance explicitly for the most reliable matching.
+
 ## Features
 
 ### Pull Requests
