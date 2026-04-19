@@ -45,10 +45,11 @@ describe('config', () => {
             }
         ];
 
-        it('should return unauthenticated config from git remote when no instances configured', async () => {
+        it('should return unauthenticated config from HTTP(S) git remote when no instances configured', async () => {
             mockConfig([]);
             (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://codeberg.org',
+                remoteHost: 'codeberg.org',
                 owner: 'owner',
                 repo: 'repo'
             });
@@ -70,10 +71,23 @@ describe('config', () => {
             expect(config).toBeNull();
         });
 
-        it('should return matched instance from git remote', async () => {
+        it('should return null for SSH remotes when no instances are configured', async () => {
+            mockConfig([]);
+            (detectGitRemote as jest.Mock).mockReturnValue({
+                remoteHost: 'codeberg.org',
+                owner: 'owner',
+                repo: 'repo'
+            });
+
+            const config = await getForgejoConfig();
+            expect(config).toBeNull();
+        });
+
+        it('should return matched instance from HTTP(S) git remote', async () => {
             mockConfig(mockInstances);
             (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://git.company.com',
+                remoteHost: 'git.company.com',
                 owner: 'myorg',
                 repo: 'myrepo'
             });
@@ -94,6 +108,7 @@ describe('config', () => {
             mockConfig(mockInstances);
             (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://github.com', // Not in instances
+                remoteHost: 'github.com',
                 owner: 'owner',
                 repo: 'repo'
             });
@@ -114,6 +129,7 @@ describe('config', () => {
             mockConfig(mockInstances, { autoDetectFromRemote: true });
             (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://git.company.com',
+                remoteHost: 'git.company.com',
                 owner: 'myorg',
                 repo: 'myrepo'
             });
@@ -134,6 +150,7 @@ describe('config', () => {
             mockConfig(mockInstances, { autoDetectFromRemote: false });
             (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://unknown.example.com',
+                remoteHost: 'unknown.example.com',
                 owner: 'owner',
                 repo: 'repo'
             });
@@ -159,6 +176,7 @@ describe('config', () => {
             
             (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://github.com',
+                remoteHost: 'github.com',
                 owner: 'owner',
                 repo: 'repo'
             });
@@ -189,6 +207,7 @@ describe('config', () => {
             mockConfig(mockInstances);
             (detectGitRemote as jest.Mock).mockReturnValue({
                 instanceUrl: 'https://codeberg.org',
+                remoteHost: 'codeberg.org',
                 owner: 'owner',
                 repo: 'repo'
             });
@@ -197,6 +216,26 @@ describe('config', () => {
 
             expect(config?.instanceId).toBe('1');
             expect(config?.matchConfidence).toBe('exact');
+        });
+
+        it('should match configured instance from SSH remote host without inferring instanceUrl', async () => {
+            mockConfig(mockInstances);
+            (detectGitRemote as jest.Mock).mockReturnValue({
+                remoteHost: 'git.company.com',
+                owner: 'myorg',
+                repo: 'myrepo'
+            });
+
+            const config = await getForgejoConfig();
+
+            expect(config).toEqual({
+                instanceUrl: 'https://git.company.com',
+                token: 'token2',
+                owner: 'myorg',
+                repo: 'myrepo',
+                instanceId: '2',
+                matchConfidence: 'exact'
+            });
         });
     });
 });

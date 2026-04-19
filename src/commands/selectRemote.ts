@@ -22,12 +22,15 @@ export async function selectRemoteCommand(
 			return;
 		}
 
-		// Build quick pick items with remote name and URL
-		const items = Array.from(remotes.entries()).map(([name, info]) => ({
-			label: name,
-			description: `${info.instanceUrl}/${info.owner}/${info.repo}`,
-			remoteName: name
-		}));
+		// Build quick pick items with remote name and a human-readable target
+		const items = Array.from(remotes.entries()).map(([name, info]) => {
+			const remoteTarget = info.instanceUrl ?? `ssh://${info.remoteHost}`;
+			return {
+				label: name,
+				description: `${remoteTarget}/${info.owner}/${info.repo}`,
+				remoteName: name
+			};
+		});
 
 		const selected = await vscode.window.showQuickPick(items, {
 			placeHolder: 'Select a git remote to use for Forgejo'

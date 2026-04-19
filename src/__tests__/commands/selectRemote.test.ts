@@ -12,8 +12,8 @@ jest.mock('../../utils/logger', () => ({
 const mockDetectAllGitRemotes = detectAllGitRemotes as jest.MockedFunction<typeof detectAllGitRemotes>;
 
 const mockRemotes = new Map([
-  ['origin', { instanceUrl: 'https://git.example.com', owner: 'test-owner', repo: 'test-repo' }],
-  ['upstream', { instanceUrl: 'https://git.example.com', owner: 'upstream-owner', repo: 'test-repo' }],
+  ['origin', { instanceUrl: 'https://git.example.com', remoteHost: 'git.example.com', owner: 'test-owner', repo: 'test-repo' }],
+  ['upstream', { instanceUrl: 'https://git.example.com', remoteHost: 'git.example.com', owner: 'upstream-owner', repo: 'test-repo' }],
 ]);
 
 describe('selectRemoteCommand', () => {

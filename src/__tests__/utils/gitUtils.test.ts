@@ -19,6 +19,7 @@ describe('gitUtils', () => {
       const result = parseRemoteUrl('https://codeberg.org/owner/repo.git');
       expect(result).toEqual({
         instanceUrl: 'https://codeberg.org',
+        remoteHost: 'codeberg.org',
         owner: 'owner',
         repo: 'repo'
       });
@@ -28,51 +29,53 @@ describe('gitUtils', () => {
       const result = parseRemoteUrl('https://codeberg.org/owner/repo');
       expect(result).toEqual({
         instanceUrl: 'https://codeberg.org',
+        remoteHost: 'codeberg.org',
         owner: 'owner',
         repo: 'repo'
       });
     });
 
-    it('should parse HTTP URL', () => {
+    it('should preserve HTTP URL scheme', () => {
       const result = parseRemoteUrl('http://git.example.com/owner/repo.git');
       expect(result).toEqual({
-        instanceUrl: 'https://git.example.com',
+        instanceUrl: 'http://git.example.com',
+        remoteHost: 'git.example.com',
         owner: 'owner',
         repo: 'repo'
       });
     });
 
-    it('should parse SSH scp-style URL with .git suffix', () => {
+    it('should parse SSH scp-style URL with .git suffix without inferring instance URL', () => {
       const result = parseRemoteUrl('git@codeberg.org:owner/repo.git');
       expect(result).toEqual({
-        instanceUrl: 'https://codeberg.org',
+        remoteHost: 'codeberg.org',
         owner: 'owner',
         repo: 'repo'
       });
     });
 
-    it('should parse SSH scp-style URL without .git suffix', () => {
+    it('should parse SSH scp-style URL without .git suffix without inferring instance URL', () => {
       const result = parseRemoteUrl('git@codeberg.org:owner/repo');
       expect(result).toEqual({
-        instanceUrl: 'https://codeberg.org',
+        remoteHost: 'codeberg.org',
         owner: 'owner',
         repo: 'repo'
       });
     });
 
-    it('should parse SSH protocol URL with .git suffix', () => {
+    it('should parse SSH protocol URL with .git suffix without inferring instance URL', () => {
       const result = parseRemoteUrl('ssh://git@git.example.com/owner/repo.git');
       expect(result).toEqual({
-        instanceUrl: 'https://git.example.com',
+        remoteHost: 'git.example.com',
         owner: 'owner',
         repo: 'repo'
       });
     });
 
-    it('should parse SSH protocol URL without .git suffix', () => {
+    it('should parse SSH protocol URL without .git suffix without inferring instance URL', () => {
       const result = parseRemoteUrl('ssh://git@git.example.com/owner/repo');
       expect(result).toEqual({
-        instanceUrl: 'https://git.example.com',
+        remoteHost: 'git.example.com',
         owner: 'owner',
         repo: 'repo'
       });
@@ -81,7 +84,7 @@ describe('gitUtils', () => {
     it('should parse SSH protocol URL without git@ prefix', () => {
       const result = parseRemoteUrl('ssh://git.example.com/owner/repo.git');
       expect(result).toEqual({
-        instanceUrl: 'https://git.example.com',
+        remoteHost: 'git.example.com',
         owner: 'owner',
         repo: 'repo'
       });
@@ -101,17 +104,21 @@ describe('gitUtils', () => {
       expect(parseRemoteUrl('ftp://example.com/repo')).toBeNull();
     });
 
-    it('should handle URL with port number in host', () => {
+    it('should keep HTTP(S) port in instanceUrl', () => {
       const result = parseRemoteUrl('https://git.example.com:3000/owner/repo.git');
-      expect(result).not.toBeNull();
-      expect(result!.owner).toBe('owner');
-      expect(result!.repo).toBe('repo');
+      expect(result).toEqual({
+        instanceUrl: 'https://git.example.com:3000',
+        remoteHost: 'git.example.com:3000',
+        owner: 'owner',
+        repo: 'repo'
+      });
     });
 
-    it('should always return https instanceUrl even for http input', () => {
+    it('should preserve http instanceUrl for insecure remotes', () => {
       const result = parseRemoteUrl('http://insecure.example.com/owner/repo');
       expect(result).not.toBeNull();
-      expect(result!.instanceUrl).toBe('https://insecure.example.com');
+      expect(result!.instanceUrl).toBe('http://insecure.example.com');
+      expect(result!.remoteHost).toBe('insecure.example.com');
     });
 
     it('should return the correct owner', () => {
@@ -128,6 +135,7 @@ describe('gitUtils', () => {
       const result = parseRemoteUrl('https://forgejo.example.com/my-org/my.project.git');
       expect(result).toEqual({
         instanceUrl: 'https://forgejo.example.com',
+        remoteHost: 'forgejo.example.com',
         owner: 'my-org',
         repo: 'my.project'
       });
@@ -137,6 +145,27 @@ describe('gitUtils', () => {
       const result = parseRemoteUrl('https://forgejo.example.com/my-org/my.project');
       expect(result).toEqual({
         instanceUrl: 'https://forgejo.example.com',
+        remoteHost: 'forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should parse HTTPS URL with trailing slash', () => {
+      const result = parseRemoteUrl('https://forgejo.example.com/my-org/my.project.git/');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com',
+        remoteHost: 'forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should parse HTTPS URL with credentials', () => {
+      const result = parseRemoteUrl('https://user:token@forgejo.example.com/my-org/my.project.git');
+      expect(result).toEqual({
+        instanceUrl: 'https://forgejo.example.com',
+        remoteHost: 'forgejo.example.com',
         owner: 'my-org',
         repo: 'my.project'
       });
@@ -145,7 +174,7 @@ describe('gitUtils', () => {
     it('should parse SSH scp-style URL with dots in repo name', () => {
       const result = parseRemoteUrl('git@forgejo.example.com:my-org/my.project.git');
       expect(result).toEqual({
-        instanceUrl: 'https://forgejo.example.com',
+        remoteHost: 'forgejo.example.com',
         owner: 'my-org',
         repo: 'my.project'
       });
@@ -154,16 +183,39 @@ describe('gitUtils', () => {
     it('should parse SSH protocol URL with dots in repo name', () => {
       const result = parseRemoteUrl('ssh://git@forgejo.example.com/my-org/my.project.git');
       expect(result).toEqual({
-        instanceUrl: 'https://forgejo.example.com',
+        remoteHost: 'forgejo.example.com',
         owner: 'my-org',
         repo: 'my.project'
       });
     });
 
+    it('should not infer instanceUrl from SSH remotes with custom ports', () => {
+      const result = parseRemoteUrl('ssh://builder@forgejo.example.com:2222/my-org/my.project.git');
+      expect(result).toEqual({
+        remoteHost: 'forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should parse SSH scp-style URL with trailing slash', () => {
+      const result = parseRemoteUrl('git@forgejo.example.com:my-org/my.project.git/');
+      expect(result).toEqual({
+        remoteHost: 'forgejo.example.com',
+        owner: 'my-org',
+        repo: 'my.project'
+      });
+    });
+
+    it('should return null for URLs with extra path segments', () => {
+      expect(parseRemoteUrl('https://forgejo.example.com/my-org/my.project/extra')).toBeNull();
+      expect(parseRemoteUrl('git@forgejo.example.com:my-org/my.project/extra')).toBeNull();
+    });
+
     it('should handle SSH URL with custom host', () => {
       const result = parseRemoteUrl('git@my-forgejo.internal:myorg/myproject.git');
       expect(result).toEqual({
-        instanceUrl: 'https://my-forgejo.internal',
+        remoteHost: 'my-forgejo.internal',
         owner: 'myorg',
         repo: 'myproject'
       });
@@ -186,6 +238,7 @@ describe('gitUtils', () => {
       const result = await detectGitRemote();
       expect(result).toEqual({
         instanceUrl: 'https://codeberg.org',
+        remoteHost: 'codeberg.org',
         owner: 'owner',
         repo: 'repo'
       });
@@ -193,6 +246,28 @@ describe('gitUtils', () => {
         'git', ['config', '--get', 'remote.origin.url'],
         { cwd: '/workspace/project', encoding: 'utf-8' }
       );
+    });
+
+    it('should mask credentials when logging git remote URLs', async () => {
+      const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      (vscode.workspace as any).workspaceFolders = [
+        { uri: { fsPath: '/workspace/project' } }
+      ];
+      mockedSpawnSync.mockReturnValue({ status: 0, stdout: 'https://user:token@codeberg.org/owner/repo.git\n', stderr: '', pid: 0, output: [], signal: null } as any);
+
+      const result = await detectGitRemote();
+
+      expect(result).toEqual({
+        instanceUrl: 'https://codeberg.org',
+        remoteHost: 'codeberg.org',
+        owner: 'owner',
+        repo: 'repo'
+      });
+      const loggedOutput = logSpy.mock.calls.flat().join(' ');
+      expect(loggedOutput).toContain('https://***:***@codeberg.org/owner/repo.git');
+      expect(loggedOutput).not.toContain('user:token@codeberg.org');
+
+      logSpy.mockRestore();
     });
 
     it('should return null when spawnSync returns non-zero', async () => {
