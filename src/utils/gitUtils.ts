@@ -2,9 +2,10 @@ import * as vscode from 'vscode';
 import { execSync, spawnSync } from 'child_process';
 
 export interface GitRemoteInfo {
-  instanceUrl: string;
   owner: string;
   repo: string;
+  remoteHost: string;
+  instanceUrl?: string;
 }
 
 function maskRemoteUrlForLogging(remoteUrl: string): string {
@@ -173,12 +174,16 @@ function parseStandardRemoteUrl(parsedUrl: URL): GitRemoteInfo | null {
     return null;
   }
 
-  const instanceHost = parsedUrl.protocol === 'ssh:'
-    ? parsedUrl.hostname
-    : parsedUrl.host;
+  if (parsedUrl.protocol === 'ssh:') {
+    return {
+      remoteHost: parsedUrl.hostname,
+      ...pathInfo
+    };
+  }
 
   return {
-    instanceUrl: `https://${instanceHost}`,
+    remoteHost: parsedUrl.host,
+    instanceUrl: parsedUrl.origin,
     ...pathInfo
   };
 }
@@ -204,14 +209,15 @@ function parseScpStyleRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
   }
 
   return {
-    instanceUrl: `https://${host}`,
+    remoteHost: host,
     ...pathInfo
   };
 }
 
 /**
- * Parse git remote URL to extract instance URL, owner, and repo
- * Uses the URL parser for HTTP(S) and ssh:// remotes, with a fallback parser for scp-style SSH remotes.
+ * Parse git remote URL to extract owner/repo and remote host information.
+ * For HTTP(S) remotes, also returns an explicit instanceUrl.
+ * For SSH-based remotes, we intentionally avoid inferring the web/API URL from the git transport.
  */
 export function parseRemoteUrl(remoteUrl: string): GitRemoteInfo | null {
   if (!remoteUrl) {

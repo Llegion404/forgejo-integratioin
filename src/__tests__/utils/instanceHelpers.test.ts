@@ -368,6 +368,13 @@ describe('instanceHelpers', () => {
 			expect(result?.confidence).toBe('exact');
 		});
 
+		it('should find exact match when only the remote host is available', () => {
+			const result = findBestInstanceMatch(instances, 'codeberg.org');
+			expect(result).not.toBeNull();
+			expect(result?.instance.id).toBe('1');
+			expect(result?.confidence).toBe('exact');
+		});
+
 		it('should find domain match for http vs https', () => {
 			const result = findBestInstanceMatch(instances, 'http://codeberg.org');
 			expect(result).not.toBeNull();

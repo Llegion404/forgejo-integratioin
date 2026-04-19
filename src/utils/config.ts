@@ -18,6 +18,14 @@ export interface ForgejoConfig {
 	matchConfidence?: 'exact' | 'domain' | 'default' | 'first';
 }
 
+function getInstanceMatchTarget(gitInfo: ReturnType<typeof detectGitRemote>): string | null {
+	if (!gitInfo) {
+		return null;
+	}
+
+	return gitInfo.instanceUrl ?? gitInfo.remoteHost;
+}
+
 /**
  * Get Forgejo configuration from VS Code settings
  */
@@ -41,7 +49,8 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 	if (instances.length > 0) {
 		// Try to match instance to git remote
 		if (gitInfo && autoDetectFromRemote) {
-			const match = findBestInstanceMatch(instances, gitInfo.instanceUrl);
+			const matchTarget = getInstanceMatchTarget(gitInfo);
+			const match = findBestInstanceMatch(instances, matchTarget);
 			if (match) {
 				selectedInstance = match.instance;
 				confidence = match.confidence;
@@ -66,10 +75,15 @@ export async function getForgejoConfig(): Promise<ForgejoConfig | null> {
 		return null;
 	}
 
-	// If no instance matched but we have git remote info, try unauthenticated access
-	// This enables zero-config browsing of public repos
+	// If no instance matched but we have an explicit HTTP(S) remote, try unauthenticated access.
+	// For SSH-based remotes we intentionally avoid guessing the web/API URL from the git transport.
 	if (!selectedInstance) {
-		logInfo('No instances configured, using git remote for unauthenticated access');
+		if (!gitInfo.instanceUrl) {
+			logInfo('Git remote is SSH-based and no configured Forgejo instance matched; cannot infer API URL safely');
+			return null;
+		}
+
+		logInfo('No instances configured, using HTTP(S) git remote for unauthenticated access');
 		const finalConfig: ForgejoConfig = {
 			instanceUrl: normalizeUrl(gitInfo.instanceUrl),
 			token: '',

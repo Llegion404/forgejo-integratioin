@@ -48,6 +48,7 @@ describe('detectAllGitRemotes', () => {
     expect(result.size).toBe(1);
     expect(result.get('origin')).toEqual({
       instanceUrl: 'https://codeberg.org',
+      remoteHost: 'codeberg.org',
       owner: 'owner',
       repo: 'repo'
     });
@@ -74,11 +75,12 @@ describe('detectAllGitRemotes', () => {
     expect(result.size).toBe(2);
     expect(result.get('origin')).toEqual({
       instanceUrl: 'https://codeberg.org',
+      remoteHost: 'codeberg.org',
       owner: 'owner',
       repo: 'repo'
     });
     expect(result.get('upstream')).toEqual({
-      instanceUrl: 'https://github.com',
+      remoteHost: 'github.com',
       owner: 'upstream-owner',
       repo: 'repo'
     });
