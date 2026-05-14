@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
 import { PullRequest, CommitStatus } from '../../models/pullRequest';
+import { Reaction } from '../../models/comment';
 import { executeCommand } from '../../commands/registry';
 import { logDebug, logInfo, logError } from '../../utils/logger';
 
@@ -17,7 +18,13 @@ export type WebviewMessage =
   | { type: 'viewCommit'; sha: string }
   | { type: 'viewFile'; filename: string }
   | { type: 'updateBody'; body: string }
-  | { type: 'openCIStatus'; url: string };
+  | { type: 'openCIStatus'; url: string }
+  | { type: 'addReaction'; commentId: number; reaction: string }
+  | { type: 'removeReaction'; commentId: number; reaction: string }
+  | { type: 'openUserProfile'; username: string }
+  | { type: 'openInBrowserFromUrl'; url: string }
+  | { type: 'editComment'; commentId: number; body: string }
+  | { type: 'replyToComment'; body: string; replyToUser: string; originalBody: string };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
@@ -44,6 +51,7 @@ export interface PRActivity {
   event?: string;
   commit_id?: string;
   html_url?: string;
+  reactions?: Reaction[];
 }
 
 export interface PRDetailViewData {
@@ -202,9 +210,18 @@ export class PRDetailWebviewProvider {
 
   private async _fetchActivities(client: ForgejoClient, owner: string, repo: string, number: number): Promise<PRActivity[]> {
     const activities: PRActivity[] = [];
+    let comments: PRActivity[] = [];
     try {
-      const comments = await client.getIssueComments(owner, repo, number);
-      activities.push(...(comments as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const })));
+      const rawComments = await client.getIssueComments(owner, repo, number);
+      comments = (rawComments as PRActivity[]).map((c) => ({ ...c, type: 'comment' as const }));
+      // Fetch reactions for each comment
+      await Promise.all(comments.map(async (c) => {
+        try {
+          const reactions = await client.getCommentReactions(owner, repo, c.id);
+          c.reactions = reactions;
+        } catch (e) { logDebug('Could not fetch reactions for comment:', c.id, e); }
+      }));
+      activities.push(...comments);
     } catch (e) { logDebug('Could not fetch comments:', e); }
     try {
       const reviews = await client.getPullRequestReviews(owner, repo, number);
@@ -259,6 +276,24 @@ export class PRDetailWebviewProvider {
           await this._openCIStatus(message.url, owner, repo);
         }
         break;
+      case 'addReaction':
+        await this._handleReaction(owner, repo, message.commentId, message.reaction, 'add', panelKey);
+        break;
+      case 'removeReaction':
+        await this._handleReaction(owner, repo, message.commentId, message.reaction, 'remove', panelKey);
+        break;
+      case 'openUserProfile':
+        await this._openUserProfile(message.username);
+        break;
+      case 'openInBrowserFromUrl':
+        this._openUrl(message.url);
+        break;
+      case 'editComment':
+        await this._handleEditComment(owner, repo, message.commentId, message.body, panelKey);
+        break;
+      case 'replyToComment':
+        // Reply just populates the comment input with a quoted reply
+        break;
       case 'viewCommit': break;
       case 'viewFile': break;
     }
@@ -301,6 +336,61 @@ export class PRDetailWebviewProvider {
       void vscode.env.openExternal(vscode.Uri.parse(fullUrl));
     } catch (error) {
       logError('Failed to open CI status URL:', error);
+    }
+  }
+
+  private async _handleReaction(owner: string, repo: string, commentId: number, reaction: string, action: 'add' | 'remove', panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      if (action === 'add') {
+        await client.addCommentReaction(owner, repo, commentId, reaction);
+      } else {
+        await client.deleteCommentReaction(owner, repo, commentId, reaction);
+      }
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to ${action} reaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _openUserProfile(username: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const url = `${config.instanceUrl}/${encodeURIComponent(username)}`;
+      void vscode.env.openExternal(vscode.Uri.parse(url));
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to open profile: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private _openUrl(url: string): void {
+    try {
+      void vscode.env.openExternal(vscode.Uri.parse(url));
+    } catch (error) {
+      logError('Failed to open URL:', error);
+    }
+  }
+
+  private async _handleEditComment(owner: string, repo: string, commentId: number, body: string, panelKey?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.updateComment(owner, repo, commentId, body);
+      void vscode.window.showInformationMessage('Comment updated');
+      if (panelState) {
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editComment', success: true });
+      }
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to update comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) {
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editComment', success: false });
+      }
     }
   }
 
@@ -447,11 +537,29 @@ export class PRDetailWebviewProvider {
 </head>
 <body>
   <div id="loading" class="loading">
-    <div class="spinner"></div>
-    <p>Loading pull request details...</p>
+    <div class="skeleton skeleton-title"></div>
+    <div class="skeleton skeleton-subtitle"></div>
+    <div class="skeleton skeleton-line"></div>
+    <div class="skeleton skeleton-line short"></div>
+    <div class="skeleton skeleton-line short"></div>
+    <div class="skeleton-activity">
+      <div class="skeleton skeleton-avatar"></div>
+      <div class="skeleton-body">
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </div>
+    </div>
+    <div class="skeleton-activity">
+      <div class="skeleton skeleton-avatar"></div>
+      <div class="skeleton-body">
+        <div class="skeleton skeleton-line"></div>
+        <div class="skeleton skeleton-line short"></div>
+      </div>
+    </div>
   </div>
 
   <div id="error" class="error" style="display: none;">
+    <div class="error-icon">&#x26A0;&#xFE0F;</div>
     <h3>Error</h3>
     <p id="error-message"></p>
     <button id="retry-btn" class="btn btn-primary">Retry</button>
@@ -468,8 +576,8 @@ export class PRDetailWebviewProvider {
       <div class="pr-meta">
         <span id="pr-status-badge" class="status-badge"></span>
         <span class="pr-author">
-          by <img id="author-avatar" src="" alt="" class="avatar" style="display:none">
-          <span id="author-name"></span>
+          by <a class="user-link" id="author-avatar-link" href="#" style="display:none"><img id="author-avatar" src="" alt="" class="avatar"></a>
+          <a class="user-link" id="author-name" href="#"></a>
         </span>
         <span class="pr-branch">
           <span id="base-branch"></span>
@@ -514,7 +622,9 @@ export class PRDetailWebviewProvider {
 
     <section class="activity-section">
       <h2>Activity <span id="activity-count"></span></h2>
-      <div id="activity-timeline"></div>
+      <div id="activity-timeline">
+        <div class="activity-timeline-line"></div>
+      </div>
     </section>
 
     <div id="comment-input-container" class="comment-input-container" style="display: none;">
@@ -551,6 +661,17 @@ export class PRDetailWebviewProvider {
         <button id="confirm-merge-btn" class="btn btn-success">Merge</button>
         <button id="cancel-merge-btn" class="btn btn-secondary">Cancel</button>
       </div>
+    </div>
+
+    <div id="emoji-picker" class="emoji-picker" style="display: none;">
+      <span class="emoji-option" data-emoji="+1">\u{1F44D}</span>
+      <span class="emoji-option" data-emoji="-1">\u{1F44E}</span>
+      <span class="emoji-option" data-emoji="laugh">\u{1F604}</span>
+      <span class="emoji-option" data-emoji="hooray">\u{1F389}</span>
+      <span class="emoji-option" data-emoji="confused">\u{1F615}</span>
+      <span class="emoji-option" data-emoji="heart">\u2764\uFE0F</span>
+      <span class="emoji-option" data-emoji="rocket">\u{1F680}</span>
+      <span class="emoji-option" data-emoji="eyes">\u{1F440}</span>
     </div>
   </div>
 

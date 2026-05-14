@@ -3,6 +3,7 @@ import { ForgejoClient } from '../api/forgejoClient';
 import { getForgejoConfig } from '../utils/config';
 import { PRContext, PullReview, ReviewComment } from '../models/comment';
 import { PR_DIFF_SCHEME } from './prDiffContentProvider';
+import { pendingReviewManager } from './pendingReviewManager';
 
 /**
  * Manages inline PR comments using the VS Code Comment Controller API.
@@ -200,6 +201,12 @@ export class ForgejoCommentController implements vscode.Disposable {
 
   /**
    * Handle creating a new inline comment (called when user submits from gutter).
+   *
+   * Forgejo-style workflow:
+   * - First comment: prompts user to "Start a Review" or "Comment directly"
+   * - If "Start Review": all pending comments batch into a single review on submit
+   * - If "Comment directly": submits immediately as a single-comment review
+   * - Subsequent comments during pending review: add to pending automatically
    */
   async handleCreateComment(reply: vscode.CommentReply): Promise<void> {
     const uri = reply.thread.uri;
@@ -232,6 +239,37 @@ export class ForgejoCommentController implements vscode.Disposable {
     // Determine if this is on the head (new) or base (old) side
     const isHead = this.isHeadSide(uri);
 
+    // If a pending review is already active, add to pending
+    if (pendingReviewManager.hasPendingReview(ctx.owner, ctx.repo, ctx.prNumber)) {
+      this._addToPendingReview(reply, ctx, line, isHead);
+      return;
+    }
+
+    // First comment — prompt user: Start Review or Comment Directly
+    const choice = await vscode.window.showQuickPick(
+      [
+        { label: '$(git-pull-request) Start a Review', description: 'Batch this and future comments into a single review' },
+        { label: '$(comment) Comment directly', description: 'Submit this comment immediately' },
+        { label: '$(circle-slash) Cancel', description: 'Discard this comment' },
+      ],
+      { placeHolder: 'How would you like to comment?' }
+    );
+
+    if (!choice || choice.label.includes('Cancel')) {
+      return;
+    }
+
+    if (choice.label.includes('Start a Review')) {
+      // Add to pending review
+      pendingReviewManager.startOrGetReview(ctx.owner, ctx.repo, ctx.prNumber);
+      this._addToPendingReview(reply, ctx, line, isHead);
+      void vscode.window.showInformationMessage(
+        'Review started. Add more comments or click the review status bar item to submit.'
+      );
+      return;
+    }
+
+    // Comment directly — submit immediately
     try {
       const client = new ForgejoClient(config.instanceUrl, config.token);
 
@@ -254,13 +292,9 @@ export class ForgejoCommentController implements vscode.Disposable {
         ctx.owner,
         ctx.repo,
         ctx.prNumber,
-        {
-          event: 'COMMENT',
-          comments: [commentPayload],
-        }
+        { event: 'COMMENT', comments: [commentPayload] }
       );
 
-      // Add the comment to the thread in the UI
       const newComment: vscode.Comment = {
         body: new vscode.MarkdownString(reply.text),
         author: { name: 'You' },
@@ -276,6 +310,20 @@ export class ForgejoCommentController implements vscode.Disposable {
         `Failed to create comment: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  }
+
+  private _addToPendingReview(reply: vscode.CommentReply, ctx: PRContext, line: number, isHead: boolean): void {
+    pendingReviewManager.startOrGetReview(ctx.owner, ctx.repo, ctx.prNumber);
+    pendingReviewManager.addComment(ctx.owner, ctx.repo, ctx.prNumber, ctx.filePath, line, reply.text, isHead);
+
+    const pendingComment: vscode.Comment = {
+      body: new vscode.MarkdownString(`_Pending review comment:_\n\n${reply.text}`),
+      author: { name: 'You (pending)' },
+      mode: vscode.CommentMode.Preview,
+    };
+
+    reply.thread.comments = [...reply.thread.comments, pendingComment];
+    reply.thread.label = `Pending (review)`;
   }
 
   dispose(): void {

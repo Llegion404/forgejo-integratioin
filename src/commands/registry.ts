@@ -125,6 +125,11 @@ export interface CommandMap {
   'forgejo.rerunAction': [item: WorkflowRunTreeItem | JobTreeItem];
 
   'forgejo.viewStepLogs': [args: StepLogArgs];
+
+  // Pending review commands
+  'forgejo.managePendingReview': [];
+  'forgejo.submitPendingReview': [];
+  'forgejo.cancelPendingReview': [];
 }
 
 // ---------------------------------------------------------------------------

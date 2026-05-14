@@ -10,6 +10,7 @@ import { PRDetailWebviewProvider } from './webview/prDetail/provider';
 import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
 import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
 import { ForgejoCommentController } from './providers/prCommentController';
+import { pendingReviewManager } from './providers/pendingReviewManager';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
 import { configureInstanceUrlCommand, setAuthTokenCommand } from './commands/legacyConfig';
 import { migrateToMultiInstance } from './utils/migration';
@@ -102,10 +103,47 @@ export async function activate(context: vscode.ExtensionContext) {
   const commentController = new ForgejoCommentController();
   context.subscriptions.push(commentController);
 
+  // Create pending review manager
+  context.subscriptions.push(pendingReviewManager);
+
   // Register submit inline comment command
   context.subscriptions.push(
     registerCommand('forgejo.submitInlineComment', async (reply: vscode.CommentReply) => {
       await commentController.handleCreateComment(reply);
+    })
+  );
+
+  // Register pending review commands
+  context.subscriptions.push(
+    registerCommand('forgejo.managePendingReview', async () => {
+      const items: vscode.QuickPickItem[] = [
+        { label: '$(check) Submit Review', description: 'Submit all pending comments as a review' },
+        { label: '$(x) Cancel Review', description: 'Discard all pending comments' },
+      ];
+      const result = await vscode.window.showQuickPick(items, { placeHolder: 'Manage pending review' });
+      if (!result) return;
+
+      if (result.label.includes('Submit')) {
+        await vscode.commands.executeCommand('forgejo.submitPendingReview');
+      } else {
+        await vscode.commands.executeCommand('forgejo.cancelPendingReview');
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.submitPendingReview', () => {
+      void vscode.window.showWarningMessage(
+        'Submit review from the PR detail webview inline comment section.'
+      );
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.cancelPendingReview', () => {
+      void vscode.window.showWarningMessage(
+        'Cancel review from the PR detail webview inline comment section.'
+      );
     })
   );
 

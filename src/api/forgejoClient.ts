@@ -57,4 +57,34 @@ export class ForgejoClient extends BaseClient {
   async updateIssueBody(owner: string, repo: string, number: number, body: string): Promise<Issue> {
     return this.updateIssue(owner, repo, number, { body });
   }
+
+  // Reaction API methods
+  async getCommentReactions(owner: string, repo: string, commentId: number): Promise<{ id: number; user: { login: string; avatar_url?: string }; reaction: string }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`);
+  }
+
+  async addCommentReaction(owner: string, repo: string, commentId: number, reaction: string): Promise<unknown> {
+    return this.rawRequest('POST', `/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`, { reaction });
+  }
+
+  async deleteCommentReaction(owner: string, repo: string, commentId: number, reaction: string): Promise<unknown> {
+    return this.rawRequest('DELETE', `/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`, { reaction });
+  }
+
+  async getIssueReactions(owner: string, repo: string, issueId: number): Promise<{ id: number; user: { login: string; avatar_url?: string }; reaction: string }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/issues/${issueId}/reactions`);
+  }
+
+  async addIssueReaction(owner: string, repo: string, issueId: number, reaction: string): Promise<unknown> {
+    return this.rawRequest('POST', `/repos/${owner}/${repo}/issues/${issueId}/reactions`, { reaction });
+  }
+
+  async deleteIssueReaction(owner: string, repo: string, issueId: number, reaction: string): Promise<unknown> {
+    return this.rawRequest('DELETE', `/repos/${owner}/${repo}/issues/${issueId}/reactions`, { reaction });
+  }
+
+  // Comment editing
+  async updateComment(owner: string, repo: string, commentId: number, body: string): Promise<unknown> {
+    return this.rawRequest('PATCH', `/repos/${owner}/${repo}/issues/comments/${commentId}`, { body });
+  }
 }

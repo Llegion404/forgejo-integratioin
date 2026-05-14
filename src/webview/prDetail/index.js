@@ -191,6 +191,13 @@
       }
     });
 
+    // Auto-resize comment textarea
+    function autoResize(textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, 300) + 'px';
+    }
+    commentInput.addEventListener('input', function() { autoResize(this); });
+
     submitReviewBtn.addEventListener('click', () => {
       const state = reviewState.value;
       const body = reviewBody.value.trim();
@@ -245,6 +252,167 @@
       const item = e.target.closest('.ci-status-item');
       if (item && item.dataset.targetUrl) {
         vscode.postMessage({ type: 'openCIStatus', url: item.dataset.targetUrl });
+      }
+    });
+
+    // Delegated click handler for activity timeline interactions
+    activityTimeline.addEventListener('click', function(e) {
+      // User link clicks -> open profile
+      var userLink = e.target.closest('.user-link');
+      if (userLink && userLink.dataset.username) {
+        e.preventDefault();
+        vscode.postMessage({ type: 'openUserProfile', username: userLink.dataset.username });
+        return;
+      }
+
+      // Reaction badge clicks -> toggle reaction
+      var reactionBadge = e.target.closest('.reaction-badge');
+      if (reactionBadge && reactionBadge.dataset.reaction) {
+        var activityItem = reactionBadge.closest('[data-comment-id]');
+        if (activityItem && activityItem.dataset.commentId) {
+          var commentId = parseInt(activityItem.dataset.commentId, 10);
+          var userId = 'currentUser';
+          // Toggle: if we can detect user already reacted, remove it
+          var reacted = reactionBadge.classList.contains('reacted-by-me');
+          if (reacted) {
+            vscode.postMessage({ type: 'removeReaction', commentId: commentId, reaction: reactionBadge.dataset.reaction });
+          } else {
+            vscode.postMessage({ type: 'addReaction', commentId: commentId, reaction: reactionBadge.dataset.reaction });
+          }
+        }
+        return;
+      }
+
+      // Reaction add button -> show emoji picker
+      var addBtn = e.target.closest('.reaction-add-btn');
+      if (addBtn) {
+        var picker = document.getElementById('emoji-picker');
+        var rect = addBtn.getBoundingClientRect();
+        picker.style.display = 'flex';
+        picker.style.position = 'fixed';
+        picker.style.left = rect.left + 'px';
+        picker.style.top = (rect.bottom + 2) + 'px';
+        picker.dataset.parentCommentId = addBtn.closest('[data-comment-id]')?.dataset.commentId || '';
+        return;
+      }
+
+      // Copy comment button
+      var copyBtn = e.target.closest('.copy-comment-btn');
+      if (copyBtn) {
+        var commentBody = copyBtn.closest('.activity-content')?.querySelector('.activity-body');
+        if (commentBody) {
+          navigator.clipboard.writeText(commentBody.textContent || '');
+          copyBtn.textContent = '\u2713';
+          setTimeout(function() { copyBtn.textContent = '\u{1F4CB}'; }, 2000);
+        }
+        return;
+      }
+
+      // Reply to comment button
+      var replyBtn = e.target.closest('.reply-comment-btn');
+      if (replyBtn) {
+        var activityItem = replyBtn.closest('[data-comment-id]');
+        var originalBodyEl = activityItem?.querySelector('.activity-body');
+        var originalUser = activityItem?.querySelector('.user-link')?.textContent || 'User';
+        var originalText = originalBodyEl?.textContent || '';
+        var quotedText = originalText.split('\n').map(function(l) { return '> ' + l; }).join('\n');
+        commentInput.value = quotedText + '\n\n';
+        commentInputContainer.style.display = 'block';
+        commentInput.focus();
+        return;
+      }
+
+      // Edit comment button
+      var editBtn = e.target.closest('.edit-comment-btn');
+      if (editBtn) {
+        var contentEl = editBtn.closest('.activity-content');
+        if (contentEl) {
+          var bodyEl = contentEl.querySelector('.activity-body');
+          var editorEl = contentEl.querySelector('.edit-comment-editor');
+          if (bodyEl && editorEl) {
+            bodyEl.style.display = 'none';
+            editorEl.style.display = 'block';
+            editorEl.querySelector('.edit-comment-textarea').focus();
+          }
+        }
+        return;
+      }
+
+      // Save edit button
+      var saveEditBtn = e.target.closest('.save-edit-btn');
+      if (saveEditBtn) {
+        var editorEl = saveEditBtn.closest('.edit-comment-editor');
+        var commentId = parseInt((editorEl?.closest('[data-comment-id]')?.dataset.commentId || '0'), 10);
+        if (editorEl && commentId > 0) {
+          var newBody = editorEl.querySelector('.edit-comment-textarea').value;
+          vscode.postMessage({ type: 'editComment', commentId: commentId, body: newBody });
+          editorEl.style.display = 'none';
+          var bodyEl = editorEl.closest('.activity-content')?.querySelector('.activity-body');
+          if (bodyEl) bodyEl.style.display = 'block';
+        }
+        return;
+      }
+
+      // Cancel edit button
+      var cancelEditBtn = e.target.closest('.cancel-edit-btn');
+      if (cancelEditBtn) {
+        var editorEl = cancelEditBtn.closest('.edit-comment-editor');
+        if (editorEl) {
+          editorEl.style.display = 'none';
+          var bodyEl = editorEl.closest('.activity-content')?.querySelector('.activity-body');
+          if (bodyEl) bodyEl.style.display = 'block';
+        }
+        return;
+      }
+
+      // Expand collapsed comment
+      var expandBtn = e.target.closest('.activity-expand-btn');
+      if (expandBtn) {
+        var bodyEl = expandBtn.closest('.activity-item')?.querySelector('.activity-body.collapsed');
+        if (bodyEl) {
+          bodyEl.classList.remove('collapsed');
+          expandBtn.remove();
+        }
+        return;
+      }
+    });
+
+    // Emoji picker
+    document.getElementById('emoji-picker').addEventListener('click', function(e) {
+      var emojiOption = e.target.closest('.emoji-option');
+      if (emojiOption && emojiOption.dataset.emoji) {
+        var commentId = parseInt(this.dataset.parentCommentId || '0', 10);
+        if (commentId > 0) {
+          vscode.postMessage({ type: 'addReaction', commentId: commentId, reaction: emojiOption.dataset.emoji });
+        }
+        this.style.display = 'none';
+      }
+    });
+
+    // Close emoji picker on click outside
+    document.addEventListener('click', function(e) {
+      var picker = document.getElementById('emoji-picker');
+      if (picker && !e.target.closest('.emoji-picker') && !e.target.closest('.reaction-add-btn')) {
+        picker.style.display = 'none';
+      }
+    });
+
+    // Document-level click handler for user links (header author etc)
+    document.addEventListener('click', function(e) {
+      var userLink = e.target.closest('.user-link');
+      if (userLink && userLink.dataset.username) {
+        e.preventDefault();
+        vscode.postMessage({ type: 'openUserProfile', username: userLink.dataset.username });
+      }
+    });
+
+    // Image click -> open in browser (lightbox)
+    prDescriptionEl.addEventListener('click', function(e) {
+      var img = e.target.closest('img');
+      if (img && img.src && img.src.startsWith('http')) {
+        e.preventDefault();
+        vscode.postMessage({ type: 'openInBrowserFromUrl', url: img.src });
+        return;
       }
     });
   }
@@ -376,20 +544,24 @@
     prStatusBadge.className = 'status-badge ' + statusClass;
 
     // Update author
+    var authorLogin = pr.user ? pr.user.login : 'Unknown';
     if (pr.user && pr.user.avatar_url) {
       authorAvatar.src = pr.user.avatar_url;
-      authorAvatar.style.display = 'inline-block';
+      var avatarLink = document.getElementById('author-avatar-link');
+      avatarLink.style.display = 'inline-block';
+      avatarLink.dataset.username = authorLogin;
     } else {
-      authorAvatar.style.display = 'none';
+      document.getElementById('author-avatar-link').style.display = 'none';
     }
-    authorName.textContent = pr.user ? pr.user.login : 'Unknown';
+    authorName.textContent = authorLogin;
+    authorName.dataset.username = authorLogin;
 
     // Update branches
     if (pr.base) {
-      baseBranch.textContent = pr.base.ref || 'unknown';
+      baseBranch.innerHTML = '<code>' + escapeHtml(pr.base.ref || 'unknown') + '</code>';
     }
     if (pr.head) {
-      headBranch.textContent = pr.head.ref || 'unknown';
+      headBranch.innerHTML = '<code>' + escapeHtml(pr.head.ref || 'unknown') + '</code>';
     }
 
     // Update description with Markdown rendering
@@ -448,9 +620,17 @@
     activityCountEl.textContent = `(${activityCount} events)`;
 
     if (activities && activities.length > 0) {
-      activityTimeline.innerHTML = activities.map(activity => renderActivity(activity, owner, repo)).join('');
+      activityTimeline.querySelectorAll('.activity-item').forEach(function(el) { el.remove(); });
+      var html = activities.map(activity => renderActivity(activity, owner, repo)).join('');
+      var line = activityTimeline.querySelector('.activity-timeline-line');
+      if (line) {
+        line.insertAdjacentHTML('afterend', html);
+      } else {
+        activityTimeline.innerHTML += html;
+      }
     } else {
-      activityTimeline.innerHTML = '<p style="color: var(--vscode-descriptionForeground); padding: 16px;">No activity yet.</p>';
+      activityTimeline.querySelectorAll('.activity-item').forEach(function(el) { el.remove(); });
+      activityTimeline.innerHTML += '<div class="empty-state"><div class="empty-state-icon">&#x1F4AD;</div><p class="empty-state-text">No activity yet</p></div>';
     }
 
     // Show content
@@ -490,6 +670,39 @@
     });
   }
 
+  function makeUserLink(login) {
+    return `<a class="user-link" href="#" data-username="${escapeHtml(login)}">${escapeHtml(login)}</a>`;
+  }
+
+  function makeAvatarLink(avatarUrl, login) {
+    if (!avatarUrl) return '';
+    return `<a class="user-link" href="#" data-username="${escapeHtml(login)}"><img class="activity-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'"></a>`;
+  }
+
+  function renderReactions(reactions) {
+    if (!reactions || reactions.length === 0) return '';
+    var counts = {};
+    var userReactions = {};
+    reactions.forEach(function(r) {
+      counts[r.reaction] = (counts[r.reaction] || 0) + 1;
+      if (!userReactions[r.reaction]) userReactions[r.reaction] = [];
+      userReactions[r.reaction].push(r.user.login);
+    });
+    var html = '<div class="reactions-bar">';
+    var emojiMap = {
+      '+1': '\u{1F44D}', '-1': '\u{1F44E}', 'laugh': '\u{1F604}',
+      'hooray': '\u{1F389}', 'confused': '\u{1F615}', 'heart': '\u2764\uFE0F',
+      'rocket': '\u{1F680}', 'eyes': '\u{1F440}'
+    };
+    Object.keys(counts).sort().forEach(function(r) {
+      var emoji = emojiMap[r] || r;
+      html += `<span class="reaction-badge" data-reaction="${escapeHtml(r)}" title="${escapeHtml(userReactions[r].join(', '))}">${emoji} ${counts[r]}</span>`;
+    });
+    html += '<span class="reaction-add-btn" title="Add reaction">\u{1F60A}+</span>';
+    html += '</div>';
+    return html;
+  }
+
   function renderActivity(activity, owner, repo) {
     const timeAgo = formatTimeAgo(activity.created_at || activity.submitted_at || activity.committed_at);
     const userAvatar = activity.user ? activity.user.avatar_url : '';
@@ -497,15 +710,32 @@
 
     if (activity.type === 'comment') {
       return `
-        <div class="activity-item">
-          <img class="activity-avatar" src="${userAvatar}" alt="" onerror="this.style.display='none'">
+        <div class="activity-item" data-comment-id="${activity.id}">
+          <div class="activity-type-marker comment" title="Comment">\u{1F4AC}</div>
+          ${makeAvatarLink(userAvatar, userLogin)}
           <div class="activity-content">
             <div class="activity-header">
-              <span class="activity-user">${escapeHtml(userLogin)}</span>
+              ${makeUserLink(userLogin)}
               <span class="activity-action">commented</span>
-              <span class="activity-time">${timeAgo}</span>
+              <span class="activity-time" title="${escapeHtml(activity.created_at || '')}">${timeAgo}</span>
+              <span class="activity-actions">
+                <button class="icon-btn-small reply-comment-btn" title="Reply to comment">\u{1F5E8}\uFE0F</button>
+                <button class="icon-btn-small edit-comment-btn" title="Edit comment">\u270F\uFE0F</button>
+                <button class="icon-btn-small copy-comment-btn" title="Copy comment">\u{1F4CB}</button>
+              </span>
             </div>
-            ${activity.body ? `<div class="activity-body markdown-body">${renderMarkdown(activity.body)}</div>` : ''}
+            ${activity.body ? `
+              <div class="activity-body markdown-body${activity.body.length > 800 ? ' collapsed' : ''}">${renderMarkdown(activity.body)}</div>
+              ${activity.body.length > 800 ? '<button class="activity-expand-btn">Show more</button>' : ''}
+            ` : ''}
+            <div class="edit-comment-editor" style="display:none;">
+              <textarea class="edit-comment-textarea">${escapeHtml(activity.body || '')}</textarea>
+              <div class="edit-comment-actions">
+                <button class="btn btn-primary btn-small save-edit-btn">Save</button>
+                <button class="btn btn-secondary btn-small cancel-edit-btn">Cancel</button>
+              </div>
+            </div>
+            ${activity.reactions ? renderReactions(activity.reactions) : ''}
           </div>
         </div>
       `;
@@ -515,14 +745,19 @@
       const reviewClass = activity.state === 'APPROVED' ? 'approved' :
                          activity.state === 'REQUEST_CHANGES' ? 'changes_requested' : 'commented';
       const reviewState = activity.state ? activity.state.toLowerCase().replace(/_/g, ' ') : 'commented';
+      const markerClass = activity.state === 'APPROVED' ? 'approved' :
+                         activity.state === 'REQUEST_CHANGES' ? 'changes' : 'review';
+      const markerEmoji = activity.state === 'APPROVED' ? '\u2705' :
+                         activity.state === 'REQUEST_CHANGES' ? '\u274C' : '\u{1F4AC}';
       return `
         <div class="activity-item activity-review ${reviewClass}">
-          <img class="activity-avatar" src="${userAvatar}" alt="" onerror="this.style.display='none'">
+          <div class="activity-type-marker ${markerClass}" title="${reviewState}">${markerEmoji}</div>
+          ${makeAvatarLink(userAvatar, userLogin)}
           <div class="activity-content">
             <div class="activity-header">
-              <span class="activity-user">${escapeHtml(userLogin)}</span>
+              ${makeUserLink(userLogin)}
               <span class="activity-action">reviewed: ${reviewState}</span>
-              <span class="activity-time">${timeAgo}</span>
+              <span class="activity-time" title="${escapeHtml(activity.submitted_at || '')}">${timeAgo}</span>
             </div>
             ${activity.body ? `<div class="activity-body markdown-body">${renderMarkdown(activity.body)}</div>` : ''}
           </div>
@@ -533,12 +768,13 @@
     if (activity.type === 'commit') {
       return `
         <div class="activity-item">
-          <img class="activity-avatar" src="${userAvatar}" alt="" onerror="this.style.display='none'">
+          <div class="activity-type-marker commit" title="Commit">\u{1F4DD}</div>
+          ${makeAvatarLink(userAvatar, userLogin)}
           <div class="activity-content">
             <div class="activity-header">
-              <span class="activity-user">${escapeHtml(userLogin)}</span>
+              ${makeUserLink(userLogin)}
               <span class="activity-action">committed</span>
-              <span class="activity-time">${timeAgo}</span>
+              <span class="activity-time" title="${escapeHtml(activity.committed_at || '')}">${timeAgo}</span>
             </div>
             ${activity.sha ? `
               <div class="activity-commit">
@@ -554,12 +790,13 @@
     if (activity.type === 'timeline') {
       return `
         <div class="activity-item">
-          <img class="activity-avatar" src="${userAvatar}" alt="" onerror="this.style.display='none'">
+          <div class="activity-type-marker timeline" title="Event">\u{1F504}</div>
+          ${makeAvatarLink(userAvatar, userLogin)}
           <div class="activity-content">
             <div class="activity-header">
-              <span class="activity-user">${escapeHtml(userLogin)}</span>
+              ${makeUserLink(userLogin)}
               <span class="activity-event">${renderTimelineEvent(activity)}</span>
-              <span class="activity-time">${timeAgo}</span>
+              <span class="activity-time" title="${escapeHtml(activity.created_at || '')}">${timeAgo}</span>
             </div>
           </div>
         </div>

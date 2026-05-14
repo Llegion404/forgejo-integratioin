@@ -1,0 +1,43 @@
+Build, package, and install the Forgejo VS Code extension:
+
+1. Compile:
+   npm run compile
+
+2. Package:
+   npx vsce package --allow-missing-repository --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master
+
+3. Install globally:
+   code --install-extension forgejo-vscode-0.3.18.vsix --force
+
+4. Add to active VS Code profile (required!):
+   python3 -c "
+   import json
+   p = '$(ls ~/.config/Code/User/profiles/*/extensions.json 2>/dev/null | head -1)'
+   if not p:
+     p = '$(ls ~/.config/Code/User/extensions.json 2>/dev/null)'
+   with open(p) as f:
+     data = json.load(f)
+   ids = [e['identifier']['id'] for e in data]
+   if 'maxking.forgejo-vscode' not in ids:
+     data.append({
+       'identifier': {'id': 'maxking.forgejo-vscode'},
+       'version': '$(jq -r .version package.json)',
+       'location': {
+         '\$mid': 1,
+         'fsPath': '$(readlink -f forgejo-vscode-*.vsix | sed 's/.vsix$//')',
+         'external': 'file://$(readlink -f forgejo-vscode-*.vsix | sed 's/.vsix$//')',
+         'path': '$(readlink -f forgejo-vscode-*.vsix | sed 's/.vsix$//')',
+         'scheme': 'file'
+       },
+       'relativeLocation': 'maxking.forgejo-vscode-$(jq -r .version package.json)',
+       'metadata': {'installedTimestamp': $(date +%s%3N), 'pinned': True, 'source': 'vsix'}
+     })
+     with open(p, 'w') as f:
+       json.dump(data, f, indent=2)
+     print('Added to profile')
+   else:
+     print('Already in profile')
+   "
+
+5. Reload VS Code:
+   Ctrl+Shift+P -> Developer: Reload Window
