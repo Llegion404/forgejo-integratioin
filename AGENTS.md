@@ -1,5 +1,7 @@
 # Agent Instructions
 
+**Codebase Index:** Read `CODEBASE_INDEX.md` first for a complete file-by-file map, architectural overview, and cross-file data flows.
+
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
 ## Quick Reference

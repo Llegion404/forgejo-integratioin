@@ -1,5 +1,7 @@
 # CLAUDE.md - Guide for AI Agents
 
+**ALWAYS read `CODEBASE_INDEX.md` first** for the full file map, architecture diagram, command index, and cross-file data flows. This file provides high-level guidance; the index has the detailed structure.
+
 This document provides context and guidance for AI agents working on the Forgejo VS Code Extension.
 
 ## Project Overview
