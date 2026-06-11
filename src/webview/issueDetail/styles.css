@@ -214,6 +214,64 @@ section h2 {
 .description-editor-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
 #issue-description { word-wrap: break-word; overflow-wrap: break-word; }
 
+/* ======== Labels and Assignees ======== */
+.labels-container, .assignees-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.label, .assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+.label {
+  border: 1px solid var(--vscode-badge-border);
+}
+.assignee {
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border: 1px solid var(--vscode-badge-border);
+}
+.assignees-label {
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+}
+.label-remove-btn, .assignee-remove-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 1.1em;
+  line-height: 1;
+  opacity: 0.7;
+}
+.label-remove-btn:hover, .assignee-remove-btn:hover {
+  opacity: 1;
+}
+.icon-btn-small {
+  background: none;
+  border: 1px dashed var(--vscode-badge-border);
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  line-height: 1;
+  opacity: 0.7;
+}
+.icon-btn-small:hover {
+  opacity: 1;
+  border-color: var(--vscode-focusBorder);
+}
+
 /* ======== Activity Timeline ======== */
 .activity-section { margin-bottom: 60px; }
 #activity-timeline { position: relative; display: flex; flex-direction: column; }

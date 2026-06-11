@@ -28,7 +28,13 @@ export type WebviewMessage =
   | { type: 'reopenPR' }
   | { type: 'toggleDraft' }
   | { type: 'updateTitle'; title: string }
-  | { type: 'deleteComment'; commentId: number };
+  | { type: 'deleteComment'; commentId: number }
+  | { type: 'addLabels'; labels: string[] }
+  | { type: 'removeLabel'; label: string }
+  | { type: 'addAssignees'; assignees: string[] }
+  | { type: 'removeAssignees'; assignees: string[] }
+  | { type: 'requestReview'; reviewer: string }
+  | { type: 'removeReview'; reviewer: string };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
@@ -308,6 +314,12 @@ export class PRDetailWebviewProvider {
       case 'toggleDraft': await this._toggleDraft(owner, repo, number, panelKey); break;
       case 'updateTitle': await this._updateTitle(owner, repo, number, message.title, panelKey); break;
       case 'deleteComment': await this._deleteComment(owner, repo, message.commentId, panelKey); break;
+      case 'addLabels': await this._addPRLabels(owner, repo, number, message.labels, panelKey); break;
+      case 'removeLabel': await this._removePRLabel(owner, repo, number, message.label, panelKey); break;
+      case 'addAssignees': await this._addPRAssignees(owner, repo, number, message.assignees, panelKey); break;
+      case 'removeAssignees': await this._removePRAssignees(owner, repo, number, message.assignees, panelKey); break;
+      case 'requestReview': await this._requestPRReview(owner, repo, number, message.reviewer, panelKey); break;
+      case 'removeReview': await this._removePRReview(owner, repo, number, message.reviewer, panelKey); break;
       case 'viewCommit': break;
       case 'viewFile': break;
     }
@@ -568,6 +580,84 @@ export class PRDetailWebviewProvider {
     }
   }
 
+  private async _addPRLabels(owner: string, repo: string, number: number, labels: string[], panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.addPRLabels(owner, repo, number, labels);
+      void vscode.window.showInformationMessage(`Added label: ${labels.join(', ')}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to add label: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _removePRLabel(owner: string, repo: string, number: number, label: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.removePRLabel(owner, repo, number, label);
+      void vscode.window.showInformationMessage(`Removed label: ${label}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to remove label: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _addPRAssignees(owner: string, repo: string, number: number, assignees: string[], panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.addPRAssignees(owner, repo, number, assignees);
+      void vscode.window.showInformationMessage(`Added assignee: ${assignees.join(', ')}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to add assignee: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _removePRAssignees(owner: string, repo: string, number: number, assignees: string[], panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.removePRAssignees(owner, repo, number, assignees);
+      void vscode.window.showInformationMessage(`Removed assignee: ${assignees.join(', ')}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to remove assignee: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _requestPRReview(owner: string, repo: string, number: number, reviewer: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.requestPRReview(owner, repo, number, reviewer);
+      void vscode.window.showInformationMessage(`Requested review from ${reviewer}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to request review: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _removePRReview(owner: string, repo: string, number: number, reviewer: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.removePRReview(owner, repo, number, reviewer);
+      void vscode.window.showInformationMessage(`Removed reviewer ${reviewer}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to remove reviewer: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   private async _openInBrowser(owner: string, repo: string, number: number): Promise<void> {
     try {
       const config = await getForgejoConfig();
@@ -658,7 +748,15 @@ export class PRDetailWebviewProvider {
         </span>
       </div>
 
-      <div id="labels-container" class="labels-container" style="display: none;"></div>
+      <div id="labels-container" class="labels-container" style="display: none;">
+        <button id="add-label-btn" class="icon-btn-small" title="Add label">+</button>
+      </div>
+      <div id="assignees-container" class="assignees-container" style="display: none;">
+        <button id="add-assignee-btn" class="icon-btn-small" title="Add assignee">+</button>
+      </div>
+      <div id="reviewers-container" class="reviewers-container" style="display: none;">
+        <button id="add-reviewer-btn" class="icon-btn-small" title="Request review">+</button>
+      </div>
     </header>
 
     <nav class="action-bar">

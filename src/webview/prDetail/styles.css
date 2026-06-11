@@ -226,17 +226,93 @@ body {
 .labels-container {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   margin-top: 8px;
 }
 
 .label {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
   border-radius: 12px;
   font-size: 0.8em;
   font-weight: 500;
   line-height: 1.4;
+}
+
+.label-remove-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 1.1em;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.label-remove-btn:hover {
+  opacity: 1;
+}
+
+.assignees-container, .reviewers-container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  border: 1px solid var(--vscode-badge-border);
+}
+
+.assignees-label {
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+}
+
+.assignee-remove-btn, .reviewer-remove-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 1.1em;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.assignee-remove-btn:hover, .reviewer-remove-btn:hover {
+  opacity: 1;
+}
+
+.icon-btn-small {
+  background: none;
+  border: 1px dashed var(--vscode-badge-border);
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.icon-btn-small:hover {
+  opacity: 1;
+  border-color: var(--vscode-focusBorder);
 }
 
 .pr-author {

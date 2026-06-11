@@ -103,4 +103,99 @@ export class ForgejoClient extends BaseClient {
   async updateComment(owner: string, repo: string, commentId: number, body: string): Promise<unknown> {
     return this.rawRequest('PATCH', `/repos/${owner}/${repo}/issues/comments/${commentId}`, { body });
   }
+
+  // Label management
+  async listRepoLabels(owner: string, repo: string): Promise<{ id: number; name: string; color: string }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/labels`);
+  }
+
+  async addIssueLabel(owner: string, repo: string, number: number, labels: string[]): Promise<unknown> {
+    return this.rawRequest('POST', `/repos/${owner}/${repo}/issues/${number}/labels`, { labels });
+  }
+
+  async removeIssueLabel(owner: string, repo: string, number: number, label: string): Promise<unknown> {
+    return this.rawRequest('DELETE', `/repos/${owner}/${repo}/issues/${number}/labels/${encodeURIComponent(label)}`);
+  }
+
+  async addPullRequestLabel(owner: string, repo: string, number: number, labels: string[]): Promise<unknown> {
+    return this.rawRequest('POST', `/repos/${owner}/${repo}/pulls/${number}/labels`, { labels });
+  }
+
+  async removePullRequestLabel(owner: string, repo: string, number: number, label: string): Promise<unknown> {
+    return this.rawRequest('DELETE', `/repos/${owner}/${repo}/pulls/${number}/labels/${encodeURIComponent(label)}`);
+  }
+
+  // Assignee management
+  async listRepoAssignees(owner: string, repo: string): Promise<{ login: string; avatar_url: string }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/assignees`);
+  }
+
+  async addIssueAssignees(owner: string, repo: string, number: number, assignees: string[]): Promise<unknown> {
+    return this.rawRequest('POST', `/repos/${owner}/${repo}/issues/${number}/assignees`, { assignees });
+  }
+
+  async removeIssueAssignees(owner: string, repo: string, number: number, assignees: string[]): Promise<unknown> {
+    return this.rawRequest('DELETE', `/repos/${owner}/${repo}/issues/${number}/assignees`, { assignees });
+  }
+
+  // Reviewer management
+  async addPullRequestReviewers(owner: string, repo: string, number: number, reviewers: string[]): Promise<unknown> {
+    return this.rawRequest('POST', `/repos/${owner}/${repo}/pulls/${number}/requested_reviewers`, { reviewers });
+  }
+
+  async removePullRequestReviewers(owner: string, repo: string, number: number, reviewers: string[]): Promise<unknown> {
+    return this.rawRequest('DELETE', `/repos/${owner}/${repo}/pulls/${number}/requested_reviewers`, { reviewers });
+  }
+
+  // Lock/unlock
+  async lockIssue(owner: string, repo: string, number: number, reason?: string): Promise<unknown> {
+    return this.rawRequest('POST', `/repos/${owner}/${repo}/issues/${number}/lock`, { reason: reason || '' });
+  }
+
+  async unlockIssue(owner: string, repo: string, number: number): Promise<unknown> {
+    return this.rawRequest('DELETE', `/repos/${owner}/${repo}/issues/${number}/lock`);
+  }
+
+  async lockPullRequest(owner: string, repo: string, number: number, reason?: string): Promise<unknown> {
+    return this.rawRequest('POST', `/repos/${owner}/${repo}/pulls/${number}/lock`, { reason: reason || '' });
+  }
+
+  async unlockPullRequest(owner: string, repo: string, number: number): Promise<unknown> {
+    return this.rawRequest('DELETE', `/repos/${owner}/${repo}/pulls/${number}/lock`);
+  }
+
+  // Milestone management
+  async listMilestones(owner: string, repo: string): Promise<{ id: number; title: string; state: string; open_issues: number; closed_issues: number }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/milestones`);
+  }
+
+  // PR management
+  async addPRLabels(owner: string, repo: string, prIndex: number, labels: string[]): Promise<void> {
+    await this.rawRequest('POST', `/repos/${owner}/${repo}/pulls/${prIndex}/labels`, { labels });
+  }
+
+  async removePRLabel(owner: string, repo: string, prIndex: number, label: string): Promise<void> {
+    await this.rawRequest('DELETE', `/repos/${owner}/${repo}/pulls/${prIndex}/labels/${encodeURIComponent(label)}`);
+  }
+
+  async addPRAssignees(owner: string, repo: string, prIndex: number, assignees: string[]): Promise<void> {
+    await this.rawRequest('POST', `/repos/${owner}/${repo}/pulls/${prIndex}/assignees`, { assignees });
+  }
+
+  async removePRAssignees(owner: string, repo: string, prIndex: number, assignees: string[]): Promise<void> {
+    await this.rawRequest('DELETE', `/repos/${owner}/${repo}/pulls/${prIndex}/assignees`, { assignees });
+  }
+
+  async requestPRReview(owner: string, repo: string, prIndex: number, reviewer: string): Promise<void> {
+    await this.rawRequest('POST', `/repos/${owner}/${repo}/pulls/${prIndex}/requested_reviewers`, { reviewers: [reviewer] });
+  }
+
+  async removePRReview(owner: string, repo: string, prIndex: number, reviewer: string): Promise<void> {
+    await this.rawRequest('DELETE', `/repos/${owner}/${repo}/pulls/${prIndex}/requested_reviewers`, { reviewers: [reviewer] });
+  }
+
+  // Release management
+  async deleteRelease(owner: string, repo: string, releaseId: number): Promise<void> {
+    await this.rawRequest('DELETE', `/repos/${owner}/${repo}/releases/${releaseId}`);
+  }
 }

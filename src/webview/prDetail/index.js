@@ -36,6 +36,8 @@
   const activityCountEl = document.getElementById('activity-count');
   const activityTimeline = document.getElementById('activity-timeline');
   const labelsContainer = document.getElementById('labels-container');
+  const assigneesContainer = document.getElementById('assignees-container');
+  const reviewersContainer = document.getElementById('reviewers-container');
   const prCreatedEl = document.getElementById('pr-created');
   const prCommentCountEl = document.getElementById('pr-comment-count');
   const mergeableBadge = document.getElementById('pr-mergeable-badge');
@@ -487,6 +489,74 @@
     });
   }
 
+  function setupDynamicButtonListeners() {
+    // Label remove buttons
+    document.querySelectorAll('.label-remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const label = btn.dataset.label;
+        if (confirm(`Remove label "${label}"?`)) {
+          vscode.postMessage({ type: 'removeLabel', label });
+        }
+      });
+    });
+
+    // Assignee remove buttons
+    document.querySelectorAll('.assignee-remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const assignee = btn.dataset.assignee;
+        if (confirm(`Remove assignee "${assignee}"?`)) {
+          vscode.postMessage({ type: 'removeAssignees', assignees: [assignee] });
+        }
+      });
+    });
+
+    // Reviewer remove buttons
+    document.querySelectorAll('.reviewer-remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const reviewer = btn.dataset.reviewer;
+        if (confirm(`Remove reviewer "${reviewer}"?`)) {
+          vscode.postMessage({ type: 'removeReview', reviewer });
+        }
+      });
+    });
+
+    // Add label button
+    const addLabelBtn = document.getElementById('add-label-btn');
+    if (addLabelBtn) {
+      addLabelBtn.addEventListener('click', () => {
+        var label = prompt('Enter label name:');
+        if (label && label.trim()) {
+          vscode.postMessage({ type: 'addLabels', labels: [label.trim()] });
+        }
+      });
+    }
+
+    // Add assignee button
+    const addAssigneeBtn = document.getElementById('add-assignee-btn');
+    if (addAssigneeBtn) {
+      addAssigneeBtn.addEventListener('click', () => {
+        var assignee = prompt('Enter username:');
+        if (assignee && assignee.trim()) {
+          vscode.postMessage({ type: 'addAssignees', assignees: [assignee.trim()] });
+        }
+      });
+    }
+
+    // Add reviewer button
+    const addReviewerBtn = document.getElementById('add-reviewer-btn');
+    if (addReviewerBtn) {
+      addReviewerBtn.addEventListener('click', () => {
+        var reviewer = prompt('Enter reviewer username:');
+        if (reviewer && reviewer.trim()) {
+          vscode.postMessage({ type: 'requestReview', reviewer: reviewer.trim() });
+        }
+      });
+    }
+  }
+
   function setupMessageHandler() {
     console.log('[Forgejo Webview] Setting up message handler');
 
@@ -499,6 +569,7 @@
           console.log('[Forgejo Webview] Update received, PR:', message.data?.pr?.title);
           currentData = message.data;
           updatePRDetails(currentData);
+          setupDynamicButtonListeners();
           break;
         case 'loading':
           console.log('[Forgejo Webview] Loading state:', message.show);
@@ -639,10 +710,37 @@
         labelsContainer.innerHTML = pr.labels.map(label => {
           const bgColor = label.color ? `#${label.color}` : 'var(--vscode-badge-background)';
           const textColor = getContrastColor(label.color || '000000');
-          return `<span class="label" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(label.name)}</span>`;
-        }).join('');
+          return `<span class="label" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(label.name)}<button class="label-remove-btn" data-label="${escapeHtml(label.name)}" title="Remove label">&times;</button></span>`;
+        }).join('') + '<button id="add-label-btn" class="icon-btn-small" title="Add label">+</button>';
       } else {
-        labelsContainer.style.display = 'none';
+        labelsContainer.innerHTML = '<button id="add-label-btn" class="icon-btn-small" title="Add label">+</button>';
+        labelsContainer.style.display = 'flex';
+      }
+    }
+
+    // Update assignees
+    if (assigneesContainer) {
+      if (pr.assignees && pr.assignees.length > 0) {
+        assigneesContainer.style.display = 'flex';
+        assigneesContainer.innerHTML = '<span class="assignees-label">Assignees:</span> ' +
+          pr.assignees.map(a => `<span class="assignee">${escapeHtml(a.login)}<button class="assignee-remove-btn" data-assignee="${escapeHtml(a.login)}" title="Remove assignee">&times;</button></span>`).join(', ') +
+          '<button id="add-assignee-btn" class="icon-btn-small" title="Add assignee">+</button>';
+      } else {
+        assigneesContainer.innerHTML = '<span class="assignees-label">No assignees</span> <button id="add-assignee-btn" class="icon-btn-small" title="Add assignee">+</button>';
+        assigneesContainer.style.display = 'flex';
+      }
+    }
+
+    // Update reviewers
+    if (reviewersContainer) {
+      if (pr.requested_reviewers && pr.requested_reviewers.length > 0) {
+        reviewersContainer.style.display = 'flex';
+        reviewersContainer.innerHTML = '<span class="assignees-label">Reviewers:</span> ' +
+          pr.requested_reviewers.map(r => `<span class="assignee">${escapeHtml(r.login)}<button class="reviewer-remove-btn" data-reviewer="${escapeHtml(r.login)}" title="Remove reviewer">&times;</button></span>`).join(', ') +
+          '<button id="add-reviewer-btn" class="icon-btn-small" title="Request review">+</button>';
+      } else {
+        reviewersContainer.innerHTML = '<span class="assignees-label">No reviewers</span> <button id="add-reviewer-btn" class="icon-btn-small" title="Request review">+</button>';
+        reviewersContainer.style.display = 'flex';
       }
     }
 

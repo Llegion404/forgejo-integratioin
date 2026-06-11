@@ -27,6 +27,8 @@
   const addCommentBtn = document.getElementById('add-comment-btn');
   const closeIssueBtn = document.getElementById('close-issue-btn');
   const reopenIssueBtn = document.getElementById('reopen-issue-btn');
+  const lockIssueBtn = document.getElementById('lock-issue-btn');
+  const unlockIssueBtn = document.getElementById('unlock-issue-btn');
 
   const issueDescriptionEl = document.getElementById('issue-description');
   const editDescriptionBtn = document.getElementById('edit-description-btn');
@@ -99,6 +101,18 @@
       console.log('[Forgejo Issue Webview] Reopen issue clicked');
       vscode.postMessage({ type: 'reopenIssue' });
     });
+
+    if (lockIssueBtn) {
+      lockIssueBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'lockIssue' });
+      });
+    }
+
+    if (unlockIssueBtn) {
+      unlockIssueBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'unlockIssue' });
+      });
+    }
 
     editDescriptionBtn.addEventListener('click', () => {
       console.log('[Forgejo Issue Webview] Edit description clicked');
@@ -392,6 +406,52 @@
     });
   }
 
+  function setupDynamicButtonListeners() {
+    // Label remove buttons
+    document.querySelectorAll('.label-remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const label = btn.dataset.label;
+        if (confirm(`Remove label "${label}"?`)) {
+          vscode.postMessage({ type: 'removeLabel', label });
+        }
+      });
+    });
+
+    // Assignee remove buttons
+    document.querySelectorAll('.assignee-remove-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const assignee = btn.dataset.assignee;
+        if (confirm(`Remove assignee "${assignee}"?`)) {
+          vscode.postMessage({ type: 'removeAssignees', assignees: [assignee] });
+        }
+      });
+    });
+
+    // Add label button
+    const addLabelBtn = document.getElementById('add-label-btn');
+    if (addLabelBtn) {
+      addLabelBtn.addEventListener('click', () => {
+        var label = prompt('Enter label name:');
+        if (label && label.trim()) {
+          vscode.postMessage({ type: 'addLabels', labels: [label.trim()] });
+        }
+      });
+    }
+
+    // Add assignee button
+    const addAssigneeBtn = document.getElementById('add-assignee-btn');
+    if (addAssigneeBtn) {
+      addAssigneeBtn.addEventListener('click', () => {
+        var assignee = prompt('Enter username:');
+        if (assignee && assignee.trim()) {
+          vscode.postMessage({ type: 'addAssignees', assignees: [assignee.trim()] });
+        }
+      });
+    }
+  }
+
   function setupMessageHandler() {
     console.log('[Forgejo Issue Webview] Setting up message handler');
 
@@ -404,6 +464,7 @@
           console.log('[Forgejo Issue Webview] Update received, Issue:', message.data?.issue?.title);
           currentData = message.data;
           updateIssueDetails(currentData);
+          setupDynamicButtonListeners();
           break;
         case 'loading':
           console.log('[Forgejo Issue Webview] Loading state:', message.show);
@@ -516,19 +577,33 @@
       labelsContainer.innerHTML = issue.labels.map(label => {
         const bgColor = label.color ? `#${label.color}` : 'var(--vscode-badge-background)';
         const textColor = getContrastColor(label.color || '000000');
-        return `<span class="label" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(label.name)}</span>`;
-      }).join('');
+        return `<span class="label" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(label.name)}<button class="label-remove-btn" data-label="${escapeHtml(label.name)}" title="Remove label">&times;</button></span>`;
+      }).join('') + '<button id="add-label-btn" class="icon-btn-small" title="Add label">+</button>';
     } else {
-      labelsContainer.style.display = 'none';
+      labelsContainer.innerHTML = '<button id="add-label-btn" class="icon-btn-small" title="Add label">+</button>';
+      labelsContainer.style.display = 'flex';
     }
 
     // Update assignees
     if (issue.assignees && issue.assignees.length > 0) {
       assigneesContainer.style.display = 'flex';
       assigneesContainer.innerHTML = '<span class="assignees-label">Assignees:</span> ' +
-        issue.assignees.map(a => `<span class="assignee">${escapeHtml(a.login)}</span>`).join(', ');
+        issue.assignees.map(a => `<span class="assignee">${escapeHtml(a.login)}<button class="assignee-remove-btn" data-assignee="${escapeHtml(a.login)}" title="Remove assignee">&times;</button></span>`).join(', ') +
+        '<button id="add-assignee-btn" class="icon-btn-small" title="Add assignee">+</button>';
     } else {
-      assigneesContainer.style.display = 'none';
+      assigneesContainer.innerHTML = '<span class="assignees-label">No assignees</span> <button id="add-assignee-btn" class="icon-btn-small" title="Add assignee">+</button>';
+      assigneesContainer.style.display = 'flex';
+    }
+
+    // Update lock/unlock buttons
+    if (lockIssueBtn && unlockIssueBtn) {
+      if (issue.locked) {
+        lockIssueBtn.style.display = 'none';
+        unlockIssueBtn.style.display = 'inline-flex';
+      } else {
+        lockIssueBtn.style.display = 'inline-flex';
+        unlockIssueBtn.style.display = 'none';
+      }
     }
 
     // Update description with Markdown rendering

@@ -22,7 +22,13 @@ export type WebviewMessage =
   | { type: 'updateTitle'; title: string }
   | { type: 'deleteComment'; commentId: number }
   | { type: 'addIssueReaction'; reaction: string }
-  | { type: 'removeIssueReaction'; reaction: string };
+  | { type: 'removeIssueReaction'; reaction: string }
+  | { type: 'addLabels'; labels: string[] }
+  | { type: 'removeLabel'; label: string }
+  | { type: 'addAssignees'; assignees: string[] }
+  | { type: 'removeAssignees'; assignees: string[] }
+  | { type: 'lockIssue'; reason?: string }
+  | { type: 'unlockIssue' };
 
 export interface IssueActivity {
   type: 'comment' | 'timeline';
@@ -255,6 +261,24 @@ export class IssueDetailWebviewProvider {
       case 'removeIssueReaction':
         await this._handleIssueReaction(owner, repo, state.number, message.reaction, 'remove', panelKey);
         break;
+      case 'addLabels':
+        await this._addLabels(owner, repo, number, message.labels, panelKey);
+        break;
+      case 'removeLabel':
+        await this._removeLabel(owner, repo, number, message.label, panelKey);
+        break;
+      case 'addAssignees':
+        await this._addAssignees(owner, repo, number, message.assignees, panelKey);
+        break;
+      case 'removeAssignees':
+        await this._removeAssignees(owner, repo, number, message.assignees, panelKey);
+        break;
+      case 'lockIssue':
+        await this._lockIssue(owner, repo, number, message.reason, panelKey);
+        break;
+      case 'unlockIssue':
+        await this._unlockIssue(owner, repo, number, panelKey);
+        break;
     }
   }
 
@@ -425,6 +449,84 @@ export class IssueDetailWebviewProvider {
     }
   }
 
+  private async _addLabels(owner: string, repo: string, number: number, labels: string[], panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.addIssueLabel(owner, repo, number, labels);
+      void vscode.window.showInformationMessage(`Added label: ${labels.join(', ')}`);
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to add label: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _removeLabel(owner: string, repo: string, number: number, label: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.removeIssueLabel(owner, repo, number, label);
+      void vscode.window.showInformationMessage(`Removed label: ${label}`);
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to remove label: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _addAssignees(owner: string, repo: string, number: number, assignees: string[], panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.addIssueAssignees(owner, repo, number, assignees);
+      void vscode.window.showInformationMessage(`Added assignee: ${assignees.join(', ')}`);
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to add assignee: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _removeAssignees(owner: string, repo: string, number: number, assignees: string[], panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.removeIssueAssignees(owner, repo, number, assignees);
+      void vscode.window.showInformationMessage(`Removed assignee: ${assignees.join(', ')}`);
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to remove assignee: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _lockIssue(owner: string, repo: string, number: number, reason?: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.lockIssue(owner, repo, number, reason);
+      void vscode.window.showInformationMessage(`Issue #${String(number)} locked`);
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to lock issue: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _unlockIssue(owner: string, repo: string, number: number, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.unlockIssue(owner, repo, number);
+      void vscode.window.showInformationMessage(`Issue #${String(number)} unlocked`);
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to unlock issue: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   private async _openInBrowser(owner: string, repo: string, number: number): Promise<void> {
     try {
       const config = await getForgejoConfig();
@@ -506,14 +608,20 @@ export class IssueDetailWebviewProvider {
         <span id="issue-created" class="issue-date"></span>
       </div>
 
-      <div id="labels-container" class="labels-container" style="display: none;"></div>
-      <div id="assignees-container" class="assignees-container" style="display: none;"></div>
+      <div id="labels-container" class="labels-container" style="display: none;">
+        <button id="add-label-btn" class="icon-btn-small" title="Add label">+</button>
+      </div>
+      <div id="assignees-container" class="assignees-container" style="display: none;">
+        <button id="add-assignee-btn" class="icon-btn-small" title="Add assignee">+</button>
+      </div>
     </header>
 
     <nav class="action-bar">
       <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
       <button id="open-web-btn" class="btn btn-secondary">Open in Web</button>
       <button id="add-comment-btn" class="btn btn-secondary">+ Comment</button>
+      <button id="lock-issue-btn" class="btn btn-secondary" style="display: none;">Lock</button>
+      <button id="unlock-issue-btn" class="btn btn-secondary" style="display: none;">Unlock</button>
       <div id="state-actions" class="state-actions">
         <button id="close-issue-btn" class="btn btn-danger" style="display: none;">Close Issue</button>
         <button id="reopen-issue-btn" class="btn btn-success" style="display: none;">Reopen Issue</button>
