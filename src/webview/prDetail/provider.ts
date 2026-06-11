@@ -24,7 +24,11 @@ export type WebviewMessage =
   | { type: 'openUserProfile'; username: string }
   | { type: 'openInBrowserFromUrl'; url: string }
   | { type: 'editComment'; commentId: number; body: string }
-  | { type: 'replyToComment'; body: string; replyToUser: string; originalBody: string };
+  | { type: 'replyToComment'; body: string; replyToUser: string; originalBody: string }
+  | { type: 'reopenPR' }
+  | { type: 'toggleDraft' }
+  | { type: 'updateTitle'; title: string }
+  | { type: 'deleteComment'; commentId: number };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
@@ -299,8 +303,11 @@ export class PRDetailWebviewProvider {
         await this._handleEditComment(owner, repo, message.commentId, message.body, panelKey);
         break;
       case 'replyToComment':
-        // Reply just populates the comment input with a quoted reply
         break;
+      case 'reopenPR': await this._reopenPR(owner, repo, number, panelKey); break;
+      case 'toggleDraft': await this._toggleDraft(owner, repo, number, panelKey); break;
+      case 'updateTitle': await this._updateTitle(owner, repo, number, message.title, panelKey); break;
+      case 'deleteComment': await this._deleteComment(owner, repo, message.commentId, panelKey); break;
       case 'viewCommit': break;
       case 'viewFile': break;
     }
@@ -507,6 +514,60 @@ export class PRDetailWebviewProvider {
     }
   }
 
+  private async _reopenPR(owner: string, repo: string, number: number, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.updatePullRequestState(owner, repo, number, 'open');
+      void vscode.window.showInformationMessage(`PR #${String(number)} reopened`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to reopen PR: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _toggleDraft(owner: string, repo: string, number: number, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const state = this._panels.get(panelKey ?? '');
+      const isDraft = state?.pendingData?.pr.draft ?? true;
+      await client.togglePullRequestDraft(owner, repo, number, !isDraft);
+      void vscode.window.showInformationMessage(isDraft ? 'PR marked as ready for review' : 'PR converted to draft');
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to toggle draft: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _updateTitle(owner: string, repo: string, number: number, title: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.updatePullRequest(owner, repo, number, { title });
+      void vscode.window.showInformationMessage('Title updated');
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to update title: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _deleteComment(owner: string, repo: string, commentId: number, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.deleteComment(owner, repo, commentId);
+      void vscode.window.showInformationMessage('Comment deleted');
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to delete comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   private async _openInBrowser(owner: string, repo: string, number: number): Promise<void> {
     try {
       const config = await getForgejoConfig();
@@ -582,16 +643,22 @@ export class PRDetailWebviewProvider {
 
       <div class="pr-meta">
         <span id="pr-status-badge" class="status-badge"></span>
+        <span id="pr-mergeable-badge" class="mergeable-badge" style="display: none;"></span>
         <span class="pr-author">
           by <a class="user-link" id="author-avatar-link" href="#" style="display:none"><img id="author-avatar" src="" alt="" class="avatar"></a>
           <a class="user-link" id="author-name" href="#"></a>
         </span>
+        <span id="pr-created" class="pr-date"></span>
+        <span id="pr-comment-count" class="pr-comment-count" style="display: none;"></span>
         <span class="pr-branch">
           <span id="base-branch"></span>
           <span class="branch-arrow">←</span>
           <span id="head-branch"></span>
+          <span id="cross-repo-badge" class="cross-repo-badge" style="display: none;">from fork</span>
         </span>
       </div>
+
+      <div id="labels-container" class="labels-container" style="display: none;"></div>
     </header>
 
     <nav class="action-bar">
@@ -605,6 +672,8 @@ export class PRDetailWebviewProvider {
       <div id="revert-actions" class="revert-actions" style="display: none;">
         <button id="revert-btn" class="btn btn-danger">Revert</button>
       </div>
+      <button id="reopen-pr-btn" class="btn btn-success" style="display: none;">Reopen</button>
+      <button id="toggle-draft-btn" class="btn btn-secondary" style="display: none;">Ready for Review</button>
     </nav>
 
     <section class="description-section">

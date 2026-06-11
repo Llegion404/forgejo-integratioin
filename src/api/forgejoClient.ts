@@ -58,6 +58,22 @@ export class ForgejoClient extends BaseClient {
     return this.updateIssue(owner, repo, number, { body });
   }
 
+  async updatePullRequestState(owner: string, repo: string, number: number, state: 'open' | 'closed'): Promise<PullRequest> {
+    return this.updatePullRequest(owner, repo, number, { state });
+  }
+
+  async togglePullRequestDraft(owner: string, repo: string, number: number, draft: boolean): Promise<PullRequest> {
+    return this.rawRequest('PATCH', `/repos/${owner}/${repo}/pulls/${number}`, { draft });
+  }
+
+  async deleteComment(owner: string, repo: string, commentId: number): Promise<unknown> {
+    return this.rawRequest('DELETE', `/repos/${owner}/${repo}/issues/comments/${commentId}`);
+  }
+
+  async cancelWorkflowRun(owner: string, repo: string, runId: number): Promise<unknown> {
+    return this.rawRequest('POST', `/repos/${owner}/${repo}/actions/runs/${runId}/cancel`);
+  }
+
   // Reaction API methods
   async getCommentReactions(owner: string, repo: string, commentId: number): Promise<{ id: number; user: { login: string; avatar_url?: string }; reaction: string }[]> {
     return this.rawRequest('GET', `/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`);

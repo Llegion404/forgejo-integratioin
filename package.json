@@ -184,6 +184,11 @@
         "icon": "$(debug-rerun)"
       },
       {
+        "command": "forgejo.cancelAction",
+        "title": "Cancel Workflow",
+        "icon": "$(debug-stop)"
+      },
+      {
         "command": "forgejo.viewActionLogs",
         "title": "View Logs",
         "icon": "$(output)"
@@ -337,9 +342,14 @@
           "group": "navigation@2"
         },
         {
+          "command": "forgejo.cancelAction",
+          "when": "viewItem == workflowRun || viewItem == workflowJob",
+          "group": "navigation@3"
+        },
+        {
           "command": "forgejo.viewActionLogs",
           "when": "viewItem == workflowRun || viewItem == workflowJob || viewItem == workflowStep",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "forgejo.openReleaseInBrowser",

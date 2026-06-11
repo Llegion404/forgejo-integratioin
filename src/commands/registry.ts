@@ -123,6 +123,7 @@ export interface CommandMap {
 
   'forgejo.openActionInBrowser': [item: WorkflowRunTreeItem | JobTreeItem | StepTreeItem];
   'forgejo.rerunAction': [item: WorkflowRunTreeItem | JobTreeItem];
+  'forgejo.cancelAction': [item: WorkflowRunTreeItem | JobTreeItem];
 
   'forgejo.viewStepLogs': [args: StepLogArgs];
 

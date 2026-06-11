@@ -18,7 +18,11 @@ export type WebviewMessage =
   | { type: 'openUserProfile'; username: string }
   | { type: 'openInBrowserFromUrl'; url: string }
   | { type: 'editComment'; commentId: number; body: string }
-  | { type: 'replyToComment'; body: string; replyToUser: string; originalBody: string };
+  | { type: 'replyToComment'; body: string; replyToUser: string; originalBody: string }
+  | { type: 'updateTitle'; title: string }
+  | { type: 'deleteComment'; commentId: number }
+  | { type: 'addIssueReaction'; reaction: string }
+  | { type: 'removeIssueReaction'; reaction: string };
 
 export interface IssueActivity {
   type: 'comment' | 'timeline';
@@ -37,6 +41,7 @@ export interface IssueActivity {
 export interface IssueDetailViewData {
   issue: Issue;
   activities: IssueActivity[];
+  issueReactions: Reaction[];
   owner: string;
   repo: string;
 }
@@ -128,7 +133,12 @@ export class IssueDetailWebviewProvider {
       const activities = await this._fetchActivities(client, owner, repo, number);
       logInfo('Activities fetched:', { activities: activities.length });
 
-      state.pendingData = { issue: issueDetails, activities, owner, repo };
+      let issueReactions: Reaction[] = [];
+      try {
+        issueReactions = await client.getIssueReactions(owner, repo, issueDetails.id);
+      } catch (e) { logDebug('Could not fetch issue reactions:', e); }
+
+      state.pendingData = { issue: issueDetails, activities, issueReactions, owner, repo };
       logInfo('pendingData set, isReady:', state.isReady);
 
       if (state.isReady) {
@@ -236,6 +246,14 @@ export class IssueDetailWebviewProvider {
         await this._handleEditComment(owner, repo, message.commentId, message.body, panelKey);
         break;
       case 'replyToComment':
+        break;
+      case 'updateTitle': await this._updateTitle(owner, repo, number, message.title, panelKey); break;
+      case 'deleteComment': await this._deleteComment(owner, repo, message.commentId, panelKey); break;
+      case 'addIssueReaction':
+        await this._handleIssueReaction(owner, repo, state.number, message.reaction, 'add', panelKey);
+        break;
+      case 'removeIssueReaction':
+        await this._handleIssueReaction(owner, repo, state.number, message.reaction, 'remove', panelKey);
         break;
     }
   }
@@ -365,6 +383,48 @@ export class IssueDetailWebviewProvider {
     }
   }
 
+  private async _updateTitle(owner: string, repo: string, number: number, title: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.updateIssue(owner, repo, number, { title });
+      void vscode.window.showInformationMessage('Title updated');
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to update title: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _deleteComment(owner: string, repo: string, commentId: number, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.deleteComment(owner, repo, commentId);
+      void vscode.window.showInformationMessage('Comment deleted');
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to delete comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _handleIssueReaction(owner: string, repo: string, number: number, reaction: string, action: 'add' | 'remove', panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      if (action === 'add') {
+        await client.addIssueReaction(owner, repo, number, reaction);
+      } else {
+        await client.deleteIssueReaction(owner, repo, number, reaction);
+      }
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to ${action} reaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   private async _openInBrowser(owner: string, repo: string, number: number): Promise<void> {
     try {
       const config = await getForgejoConfig();
@@ -466,6 +526,7 @@ export class IssueDetailWebviewProvider {
         <button id="edit-description-btn" class="btn btn-secondary btn-small">Edit</button>
       </div>
       <div id="issue-description" class="markdown-body"></div>
+      <div id="issue-reactions-bar" class="reactions-bar" style="display: none;"></div>
       <div id="issue-description-editor" class="description-editor" style="display: none;">
         <textarea id="description-textarea" class="description-textarea"></textarea>
         <div class="description-editor-actions">

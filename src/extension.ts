@@ -554,6 +554,53 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  context.subscriptions.push(
+    registerCommand(
+      'forgejo.cancelAction',
+      async (item: WorkflowRunTreeItem | JobTreeItem) => {
+        let run: WorkflowRunListItem | WorkflowJob | undefined;
+        if (item instanceof WorkflowRunTreeItem) {
+          run = item.jobs.length > 0 ? item.jobs[0] : undefined;
+        } else {
+          run = item.job;
+        }
+        if (!run) {
+          void vscode.window.showErrorMessage('Cannot cancel this workflow: no run information available.');
+          return;
+        }
+
+        try {
+          const confirm = await vscode.window.showWarningMessage(
+            `Cancel workflow "${run.name}"?`,
+            { modal: true },
+            'Cancel Workflow'
+          );
+
+          if (confirm !== 'Cancel Workflow') {
+            return;
+          }
+
+          const config = await getForgejoConfig();
+          if (!config) {
+            void vscode.window.showErrorMessage('Forgejo configuration not found');
+            return;
+          }
+
+          const client = new ForgejoClient(config.instanceUrl, config.token);
+          await client.cancelWorkflowRun(item.owner, item.repo, run.id);
+
+          void vscode.window.showInformationMessage('Workflow cancelled!');
+          actionsTreeProvider.refresh();
+        } catch (error) {
+          console.error('[Forgejo] Error cancelling workflow:', error);
+          void vscode.window.showErrorMessage(
+            `Failed to cancel workflow: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
+      }
+    )
+  );
+
   // Register Action details viewer command
   // Handles both direct invocation (args: run, owner, repo) and
   // context menu invocation (args: WorkflowRunTreeItem or JobTreeItem)

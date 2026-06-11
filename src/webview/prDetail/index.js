@@ -35,6 +35,13 @@
   const ciStatusList = document.getElementById('ci-status-list');
   const activityCountEl = document.getElementById('activity-count');
   const activityTimeline = document.getElementById('activity-timeline');
+  const labelsContainer = document.getElementById('labels-container');
+  const prCreatedEl = document.getElementById('pr-created');
+  const prCommentCountEl = document.getElementById('pr-comment-count');
+  const mergeableBadge = document.getElementById('pr-mergeable-badge');
+  const crossRepoBadge = document.getElementById('cross-repo-badge');
+  const reopenPRBtn = document.getElementById('reopen-pr-btn');
+  const toggleDraftBtn = document.getElementById('toggle-draft-btn');
 
   const editDescriptionBtn = document.getElementById('edit-description-btn');
   const descriptionEditor = document.getElementById('pr-description-editor');
@@ -127,6 +134,18 @@
       });
     }
 
+    if (reopenPRBtn) {
+      reopenPRBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'reopenPR' });
+      });
+    }
+
+    if (toggleDraftBtn) {
+      toggleDraftBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'toggleDraft' });
+      });
+    }
+
     editDescriptionBtn.addEventListener('click', () => {
       console.log('[Forgejo Webview] Edit description clicked');
       if (currentData && currentData.pr) {
@@ -135,6 +154,44 @@
         descriptionEditor.style.display = 'block';
         editDescriptionBtn.style.display = 'none';
         descriptionTextarea.focus();
+      }
+    });
+
+    prTitleEl.addEventListener('dblclick', () => {
+      if (!currentData || !currentData.pr) return;
+      var currentTitle = currentData.pr.title || '';
+      prTitleEl.contentEditable = 'true';
+      prTitleEl.focus();
+      var range = document.createRange();
+      range.selectNodeContents(prTitleEl);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+
+    prTitleEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        prTitleEl.contentEditable = 'false';
+        var newTitle = prTitleEl.textContent.trim();
+        if (newTitle && currentData && currentData.pr && newTitle !== currentData.pr.title) {
+          vscode.postMessage({ type: 'updateTitle', title: newTitle });
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        prTitleEl.contentEditable = 'false';
+        if (currentData && currentData.pr) {
+          prTitleEl.textContent = currentData.pr.title;
+        }
+      }
+    });
+
+    prTitleEl.addEventListener('blur', () => {
+      if (prTitleEl.contentEditable === 'true') {
+        prTitleEl.contentEditable = 'false';
+        if (currentData && currentData.pr) {
+          prTitleEl.textContent = currentData.pr.title;
+        }
       }
     });
 
@@ -375,6 +432,19 @@
         }
         return;
       }
+
+      // Delete comment button
+      var deleteBtn = e.target.closest('.delete-comment-btn');
+      if (deleteBtn) {
+        var activityItem = deleteBtn.closest('[data-comment-id]');
+        if (activityItem && activityItem.dataset.commentId) {
+          var commentId = parseInt(activityItem.dataset.commentId, 10);
+          if (confirm('Delete this comment?')) {
+            vscode.postMessage({ type: 'deleteComment', commentId: commentId });
+          }
+        }
+        return;
+      }
     });
 
     // Emoji picker
@@ -543,6 +613,52 @@
     prStatusBadge.textContent = statusText;
     prStatusBadge.className = 'status-badge ' + statusClass;
 
+    // Update mergeable status
+    if (mergeableBadge) {
+      if (pr.state === 'open' && !pr.draft) {
+        if (pr.mergeable === true) {
+          mergeableBadge.textContent = 'Mergeable';
+          mergeableBadge.className = 'mergeable-badge mergeable-yes';
+          mergeableBadge.style.display = 'inline';
+        } else if (pr.mergeable === false) {
+          mergeableBadge.textContent = 'Conflicts';
+          mergeableBadge.className = 'mergeable-badge mergeable-no';
+          mergeableBadge.style.display = 'inline';
+        } else {
+          mergeableBadge.style.display = 'none';
+        }
+      } else {
+        mergeableBadge.style.display = 'none';
+      }
+    }
+
+    // Update labels
+    if (labelsContainer) {
+      if (pr.labels && pr.labels.length > 0) {
+        labelsContainer.style.display = 'flex';
+        labelsContainer.innerHTML = pr.labels.map(label => {
+          const bgColor = label.color ? `#${label.color}` : 'var(--vscode-badge-background)';
+          const textColor = getContrastColor(label.color || '000000');
+          return `<span class="label" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(label.name)}</span>`;
+        }).join('');
+      } else {
+        labelsContainer.style.display = 'none';
+      }
+    }
+
+    // Update created date
+    if (prCreatedEl && pr.created_at) {
+      prCreatedEl.textContent = 'opened ' + formatTimeAgo(pr.created_at);
+    }
+
+    // Update comment count
+    if (prCommentCountEl && pr.comments !== undefined && pr.comments > 0) {
+      prCommentCountEl.textContent = pr.comments + ' comment' + (pr.comments !== 1 ? 's' : '');
+      prCommentCountEl.style.display = 'inline';
+    } else if (prCommentCountEl) {
+      prCommentCountEl.style.display = 'none';
+    }
+
     // Update author
     var authorLogin = pr.user ? pr.user.login : 'Unknown';
     if (pr.user && pr.user.avatar_url) {
@@ -562,6 +678,12 @@
     }
     if (pr.head) {
       headBranch.innerHTML = '<code>' + escapeHtml(pr.head.ref || 'unknown') + '</code>';
+      if (crossRepoBadge && pr.head.repo && pr.head.repo.full_name && !pr.head.repo.full_name.startsWith(owner + '/' + repo)) {
+        crossRepoBadge.textContent = 'from ' + pr.head.repo.full_name;
+        crossRepoBadge.style.display = 'inline';
+      } else if (crossRepoBadge) {
+        crossRepoBadge.style.display = 'none';
+      }
     }
 
     // Update description with Markdown rendering
@@ -606,12 +728,26 @@
     if (pr.state === 'open' && !pr.draft) {
       mergeActionsEl.style.display = 'flex';
       revertActionsEl.style.display = 'none';
+      if (reopenPRBtn) reopenPRBtn.style.display = 'none';
+      if (toggleDraftBtn) toggleDraftBtn.style.display = 'inline-flex';
+    } else if (pr.state === 'open' && pr.draft) {
+      mergeActionsEl.style.display = 'none';
+      revertActionsEl.style.display = 'none';
+      if (reopenPRBtn) reopenPRBtn.style.display = 'none';
+      if (toggleDraftBtn) {
+        toggleDraftBtn.textContent = 'Ready for Review';
+        toggleDraftBtn.style.display = 'inline-flex';
+      }
     } else if (pr.merged) {
       mergeActionsEl.style.display = 'none';
       revertActionsEl.style.display = 'flex';
+      if (reopenPRBtn) reopenPRBtn.style.display = 'none';
+      if (toggleDraftBtn) toggleDraftBtn.style.display = 'none';
     } else {
       mergeActionsEl.style.display = 'none';
       revertActionsEl.style.display = 'none';
+      if (reopenPRBtn) reopenPRBtn.style.display = 'inline-flex';
+      if (toggleDraftBtn) toggleDraftBtn.style.display = 'none';
     }
 
     // Update activity timeline
@@ -722,6 +858,7 @@
                 <button class="icon-btn-small reply-comment-btn" title="Reply to comment">\u{1F5E8}\uFE0F</button>
                 <button class="icon-btn-small edit-comment-btn" title="Edit comment">\u270F\uFE0F</button>
                 <button class="icon-btn-small copy-comment-btn" title="Copy comment">\u{1F4CB}</button>
+                <button class="icon-btn-small delete-comment-btn" title="Delete comment">\u{1F5D1}\uFE0F</button>
               </span>
             </div>
             ${activity.body ? `
@@ -902,6 +1039,16 @@
       'warning': '\u26A0\uFE0F'
     };
     return icons[status] || icons['pending'];
+  }
+
+  function getContrastColor(hexColor) {
+    var hex = hexColor.replace('#', '');
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    var r = parseInt(hex.substring(0, 2), 16);
+    var g = parseInt(hex.substring(2, 4), 16);
+    var b = parseInt(hex.substring(4, 6), 16);
+    var luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5 ? '#000000' : '#ffffff';
   }
 
   function formatTimeAgo(dateString) {

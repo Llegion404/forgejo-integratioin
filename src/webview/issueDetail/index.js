@@ -36,6 +36,7 @@
   const cancelDescriptionBtn = document.getElementById('cancel-description-btn');
   const activityCountEl = document.getElementById('activity-count');
   const activityTimeline = document.getElementById('activity-timeline');
+  const issueReactionsBar = document.getElementById('issue-reactions-bar');
 
   const commentInputContainer = document.getElementById('comment-input-container');
   const commentInput = document.getElementById('comment-input');
@@ -110,6 +111,43 @@
       }
     });
 
+    issueTitleEl.addEventListener('dblclick', () => {
+      if (!currentData || !currentData.issue) return;
+      issueTitleEl.contentEditable = 'true';
+      issueTitleEl.focus();
+      var range = document.createRange();
+      range.selectNodeContents(issueTitleEl);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+
+    issueTitleEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        issueTitleEl.contentEditable = 'false';
+        var newTitle = issueTitleEl.textContent.trim();
+        if (newTitle && currentData && currentData.issue && newTitle !== currentData.issue.title) {
+          vscode.postMessage({ type: 'updateTitle', title: newTitle });
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        issueTitleEl.contentEditable = 'false';
+        if (currentData && currentData.issue) {
+          issueTitleEl.textContent = currentData.issue.title;
+        }
+      }
+    });
+
+    issueTitleEl.addEventListener('blur', () => {
+      if (issueTitleEl.contentEditable === 'true') {
+        issueTitleEl.contentEditable = 'false';
+        if (currentData && currentData.issue) {
+          issueTitleEl.textContent = currentData.issue.title;
+        }
+      }
+    });
+
     saveDescriptionBtn.addEventListener('click', () => {
       var body = descriptionTextarea.value;
       console.log('[Forgejo Issue Webview] Save description clicked');
@@ -180,16 +218,31 @@
 
       var reactionBadge = e.target.closest('.reaction-badge');
       if (reactionBadge && reactionBadge.dataset.reaction) {
-        var activityItem = reactionBadge.closest('[data-comment-id]');
-        if (activityItem && activityItem.dataset.commentId) {
-          var commentId = parseInt(activityItem.dataset.commentId, 10);
-          vscode.postMessage({ type: 'addReaction', commentId: commentId, reaction: reactionBadge.dataset.reaction });
+        if (reactionBadge.dataset.issueReaction) {
+          vscode.postMessage({ type: 'addIssueReaction', reaction: reactionBadge.dataset.reaction });
+        } else {
+          var activityItem = reactionBadge.closest('[data-comment-id]');
+          if (activityItem && activityItem.dataset.commentId) {
+            var commentId = parseInt(activityItem.dataset.commentId, 10);
+            vscode.postMessage({ type: 'addReaction', commentId: commentId, reaction: reactionBadge.dataset.reaction });
+          }
         }
         return;
       }
 
       var addBtn = e.target.closest('.reaction-add-btn');
       if (addBtn) {
+        if (addBtn.dataset.issueReaction) {
+          var picker = document.getElementById('emoji-picker');
+          var rect = addBtn.getBoundingClientRect();
+          picker.style.display = 'flex';
+          picker.style.position = 'fixed';
+          picker.style.left = rect.left + 'px';
+          picker.style.top = (rect.bottom + 2) + 'px';
+          picker.dataset.parentCommentId = '';
+          picker.dataset.isIssueReaction = 'true';
+          return;
+        }
         var picker = document.getElementById('emoji-picker');
         var rect = addBtn.getBoundingClientRect();
         picker.style.display = 'flex';
@@ -197,7 +250,9 @@
         picker.style.left = rect.left + 'px';
         picker.style.top = (rect.bottom + 2) + 'px';
         picker.dataset.parentCommentId = addBtn.closest('[data-comment-id]')?.dataset.commentId || '';
+        picker.dataset.isIssueReaction = '';
         return;
+      }
       }
 
       var copyBtn = e.target.closest('.copy-comment-btn');
@@ -278,17 +333,35 @@
         }
         return;
       }
+
+      // Delete comment button
+      var deleteBtn = e.target.closest('.delete-comment-btn');
+      if (deleteBtn) {
+        var activityItem = deleteBtn.closest('[data-comment-id]');
+        if (activityItem && activityItem.dataset.commentId) {
+          var commentId = parseInt(activityItem.dataset.commentId, 10);
+          if (confirm('Delete this comment?')) {
+            vscode.postMessage({ type: 'deleteComment', commentId: commentId });
+          }
+        }
+        return;
+      }
     });
 
     // Emoji picker
     document.getElementById('emoji-picker').addEventListener('click', function(e) {
       var emojiOption = e.target.closest('.emoji-option');
       if (emojiOption && emojiOption.dataset.emoji) {
-        var commentId = parseInt(this.dataset.parentCommentId || '0', 10);
-        if (commentId > 0) {
-          vscode.postMessage({ type: 'addReaction', commentId: commentId, reaction: emojiOption.dataset.emoji });
+        if (this.dataset.isIssueReaction === 'true') {
+          vscode.postMessage({ type: 'addIssueReaction', reaction: emojiOption.dataset.emoji });
+        } else {
+          var commentId = parseInt(this.dataset.parentCommentId || '0', 10);
+          if (commentId > 0) {
+            vscode.postMessage({ type: 'addReaction', commentId: commentId, reaction: emojiOption.dataset.emoji });
+          }
         }
         this.style.display = 'none';
+        this.dataset.isIssueReaction = '';
       }
     });
 
@@ -469,6 +542,33 @@
     descriptionEditor.style.display = 'none';
     issueDescriptionEl.style.display = 'block';
     editDescriptionBtn.style.display = 'inline-flex';
+
+    // Update issue-level reactions
+    if (issueReactionsBar && data.issueReactions && data.issueReactions.length > 0) {
+      var issueEmojiMap = {
+        '+1': '\u{1F44D}', '-1': '\u{1F44E}', 'laugh': '\u{1F604}',
+        'hooray': '\u{1F389}', 'confused': '\u{1F615}', 'heart': '\u2764\uFE0F',
+        'rocket': '\u{1F680}', 'eyes': '\u{1F440}'
+      };
+      var issueCounts = {};
+      var issueUsers = {};
+      data.issueReactions.forEach(function(r) {
+        issueCounts[r.reaction] = (issueCounts[r.reaction] || 0) + 1;
+        if (!issueUsers[r.reaction]) issueUsers[r.reaction] = [];
+        issueUsers[r.reaction].push(r.user.login);
+      });
+      var issueReactionsHtml = '';
+      Object.keys(issueCounts).sort().forEach(function(r) {
+        var emoji = issueEmojiMap[r] || r;
+        issueReactionsHtml += '<span class="reaction-badge" data-reaction="' + escapeHtml(r) + '" data-issue-reaction="true" title="' + escapeHtml(issueUsers[r].join(', ')) + '">' + emoji + ' ' + issueCounts[r] + '</span>';
+      });
+      issueReactionsHtml += '<span class="reaction-add-btn" data-issue-reaction="true" title="Add reaction">\u{1F60A}+</span>';
+      issueReactionsBar.innerHTML = issueReactionsHtml;
+      issueReactionsBar.style.display = 'flex';
+    } else if (issueReactionsBar) {
+      issueReactionsBar.innerHTML = '<span class="reaction-add-btn" data-issue-reaction="true" title="Add reaction">\u{1F60A}+</span>';
+      issueReactionsBar.style.display = 'flex';
+    }
 
     // Update action buttons
     console.log('[Forgejo Issue Webview] Issue state:', issue.state);
@@ -802,6 +902,7 @@
                 <button class="icon-btn-small reply-comment-btn" title="Reply to comment">\u{1F5E8}\uFE0F</button>
                 <button class="icon-btn-small edit-comment-btn" title="Edit comment">\u270F\uFE0F</button>
                 <button class="icon-btn-small copy-comment-btn" title="Copy comment">\u{1F4CB}</button>
+                <button class="icon-btn-small delete-comment-btn" title="Delete comment">\u{1F5D1}\uFE0F</button>
               </span>
             </div>
             ${activity.body ? `
