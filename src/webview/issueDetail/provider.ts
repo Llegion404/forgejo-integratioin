@@ -185,13 +185,13 @@ export class IssueDetailWebviewProvider {
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);
       // Filter out comment events to avoid duplicating entries already fetched via getIssueComments.
-      // Also, do not override `event` with `t.type` (which doesn't exist on TimelineEvent).
-      activities.push(...(timeline as IssueActivity[]).filter((t) => t.event !== 'comment').map((t) => ({ ...t, type: 'timeline' as const })));
+      // Forgejo API returns event type as `type`; map it to `event` for the webview before overwriting `type`.
+      activities.push(...(timeline as any[]).filter((t) => (t.type || t.event) !== 'comment').map((t) => ({ ...t, event: t.type || t.event, type: 'timeline' as const })));
     } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? 0);
       const dateB = new Date(b.created_at ?? 0);
-      return dateB.getTime() - dateA.getTime();
+      return dateA.getTime() - dateB.getTime();
     });
   }
 

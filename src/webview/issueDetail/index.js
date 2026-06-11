@@ -844,6 +844,35 @@
     if (!activity.event) return 'performed an action';
 
     const events = {
+      // Forgejo API timeline type values
+      'close': 'closed this issue',
+      'reopen': 'reopened this issue',
+      'label': 'changed a label',
+      'milestone': 'changed the milestone',
+      'assignees': 'changed assignees',
+      'change_title': 'changed the title',
+      'delete_branch': 'deleted a branch',
+      'lock': 'locked this issue',
+      'unlock': 'unlocked this issue',
+      'pin': 'pinned this issue',
+      'unpin': 'unpinned this issue',
+      'commit_ref': 'referenced this issue',
+      'issue_ref': 'referenced this issue',
+      'comment_ref': 'referenced this issue',
+      'pull_ref': 'referenced this issue',
+      'project': 'changed the project',
+      'project_board': 'moved in project board',
+      'added_deadline': 'added a deadline',
+      'modified_deadline': 'modified the deadline',
+      'removed_deadline': 'removed the deadline',
+      'add_dependency': 'added a dependency',
+      'remove_dependency': 'removed a dependency',
+      'start_tracking': 'started time tracking',
+      'stop_tracking': 'stopped time tracking',
+      'add_time_manual': 'added tracked time',
+      'cancel_tracking': 'cancelled time tracking',
+      'delete_time_manual': 'removed tracked time',
+      // GitHub-style event names (fallback compatibility)
       'closed': 'closed this issue',
       'reopened': 'reopened this issue',
       'commented': 'commented',
@@ -859,11 +888,25 @@
       'pinned': 'pinned this issue',
       'unpinned': 'unpinned this issue',
       'renamed': 'changed the title',
-      'change_title': 'changed the title',
       'transferred': 'transferred this issue'
     };
 
-    return events[activity.event] || activity.event;
+    var eventText = events[activity.event] || activity.event;
+
+    if (activity.event === 'label' && activity.label) {
+      eventText = 'changed label <strong>' + escapeHtml(activity.label.name || '') + '</strong>';
+    }
+    if (activity.event === 'change_title' && activity.old_title && activity.new_title) {
+      eventText = 'changed title from <del>' + escapeHtml(activity.old_title) + '</del> to <strong>' + escapeHtml(activity.new_title) + '</strong>';
+    }
+    if (activity.event === 'assignees' && activity.assignee) {
+      eventText = (activity.removed_assignee ? 'unassigned ' : 'assigned ') + '<strong>' + escapeHtml(activity.assignee.login || '') + '</strong>';
+    }
+    if (activity.event === 'milestone' && activity.milestone) {
+      eventText = 'set milestone to <strong>' + escapeHtml(activity.milestone.title || '') + '</strong>';
+    }
+
+    return eventText;
   }
 
   function formatTimeAgo(dateString) {

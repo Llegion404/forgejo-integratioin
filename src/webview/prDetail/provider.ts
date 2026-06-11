@@ -229,18 +229,25 @@ export class PRDetailWebviewProvider {
     } catch (e) { logDebug('Could not fetch reviews:', e); }
     try {
       const commits = await client.getPullRequestCommits(owner, repo, number);
-      activities.push(...(commits as unknown as PRActivity[]).map((c) => ({ ...c, type: 'commit' as const })));
+      activities.push(...(commits as any[]).map((c) => ({
+        ...c,
+        type: 'commit' as const,
+        user: c.author || { login: 'Unknown' },
+        message: c.commit?.message || '',
+        committed_at: c.commit?.author?.date,
+        created_at: c.commit?.author?.date,
+      })));
     } catch (e) { logDebug('Could not fetch commits:', e); }
     try {
       const timeline = await client.getIssueTimeline(owner, repo, number);
       // Filter out comment events to avoid duplicating entries already fetched via getIssueComments.
-      // Also, do not override `event` with `t.type` (which doesn't exist on TimelineEvent).
-      activities.push(...(timeline as PRActivity[]).filter((t) => t.event !== 'comment').map((t) => ({ ...t, type: 'timeline' as const })));
+      // Forgejo API returns event type as `type`; map it to `event` for the webview before overwriting `type`.
+      activities.push(...(timeline as any[]).filter((t) => (t.type || t.event) !== 'comment').map((t) => ({ ...t, event: t.type || t.event, type: 'timeline' as const })));
     } catch (e) { logDebug('Could not fetch timeline:', e); }
     return activities.sort((a, b) => {
       const dateA = new Date(a.created_at ?? a.submitted_at ?? a.committed_at ?? 0);
       const dateB = new Date(b.created_at ?? b.submitted_at ?? b.committed_at ?? 0);
-      return dateB.getTime() - dateA.getTime();
+      return dateA.getTime() - dateB.getTime();
     });
   }
 
