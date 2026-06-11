@@ -451,7 +451,7 @@
   "scripts": {
     "postinstall": "patch-package",
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/",
+    "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/ && mkdir -p out/webview/releaseDetail && cp src/webview/releaseDetail/index.js src/webview/releaseDetail/styles.css out/webview/releaseDetail/",
     "watch": "tsc -watch -p ./",
     "package": "vsce package --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master",
     "publish-vscode": "vsce publish --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master",

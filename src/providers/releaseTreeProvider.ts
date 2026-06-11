@@ -25,9 +25,9 @@ export class ReleaseTreeItem extends vscode.TreeItem {
     }
 
     this.command = {
-      command: 'forgejo.openReleaseInBrowser',
-      title: 'Open Release in Browser',
-      arguments: [release.html_url]
+      command: 'forgejo.showReleaseDetails',
+      title: 'Show Release Details',
+      arguments: [this]
     };
   }
 }

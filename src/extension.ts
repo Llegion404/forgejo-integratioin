@@ -9,6 +9,7 @@ import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetai
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
 import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
 import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
+import { ReleaseDetailWebviewProvider } from './webview/releaseDetail/provider';
 import { ForgejoCommentController } from './providers/prCommentController';
 import { pendingReviewManager } from './providers/pendingReviewManager';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
@@ -780,6 +781,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // Create Action detail webview provider
   const actionDetailWebviewProvider = new ActionDetailWebviewProvider(context.extensionUri);
 
+  // Create Release detail webview provider
+  const releaseDetailWebviewProvider = new ReleaseDetailWebviewProvider(context.extensionUri);
+
   // Register Issue details viewer command
   // Handles both direct tree item click (args: issue, owner, repo) and
   // context menu invocation (args: IssueTreeItem)
@@ -837,6 +841,19 @@ export async function activate(context: vscode.ExtensionContext) {
     registerCommand('forgejo.openReleaseInBrowser', (url: string) => {
       if (url) {
         void vscode.env.openExternal(vscode.Uri.parse(url));
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.showReleaseDetails', async (item: import('./providers/releaseTreeProvider').ReleaseTreeItem) => {
+      try {
+        await releaseDetailWebviewProvider.showReleaseDetails(item.owner, item.repo, item.release);
+      } catch (error) {
+        console.error('[Forgejo] Error opening Release details:', error);
+        void vscode.window.showErrorMessage(
+          `Failed to open Release details: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
       }
     })
   );

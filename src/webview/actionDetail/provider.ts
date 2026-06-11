@@ -8,6 +8,7 @@ export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'refresh' }
   | { type: 'rerun' }
+  | { type: 'cancel' }
   | { type: 'openInBrowser' }
   | { type: 'viewLogs'; jobRef: WorkflowJobRef };
 
@@ -216,6 +217,9 @@ export class ActionDetailWebviewProvider {
       case 'rerun':
         await this._rerunWorkflow(owner, repo, runId, panelKey);
         break;
+      case 'cancel':
+        await this._cancelWorkflow(owner, repo, runId, panelKey);
+        break;
       case 'openInBrowser':
         await this._openInBrowser(owner, repo, runId);
         break;
@@ -239,6 +243,19 @@ export class ActionDetailWebviewProvider {
       await this._fetchActionData(panelKey);
     } catch (error) {
       void vscode.window.showErrorMessage(`Failed to re-run workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _cancelWorkflow(owner: string, repo: string, runId: number, panelKey: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.cancelWorkflowRun(owner, repo, runId);
+      void vscode.window.showInformationMessage('Workflow cancelled');
+      await this._fetchActionData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to cancel workflow: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -371,6 +388,7 @@ export class ActionDetailWebviewProvider {
     <nav class="action-bar">
       <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
       <button id="rerun-btn" class="btn btn-primary">Re-run Workflow</button>
+      <button id="cancel-btn" class="btn btn-danger" style="display: none;">Cancel Workflow</button>
       <button id="open-web-btn" class="btn btn-secondary">Open in Browser</button>
     </nav>
 

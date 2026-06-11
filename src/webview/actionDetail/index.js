@@ -23,6 +23,7 @@
 
   const refreshBtn = document.getElementById('refresh-btn');
   const rerunBtn = document.getElementById('rerun-btn');
+  const cancelBtn = document.getElementById('cancel-btn');
   const openWebBtn = document.getElementById('open-web-btn');
 
   const jobsCount = document.getElementById('jobs-count');
@@ -58,6 +59,11 @@
     rerunBtn.addEventListener('click', () => {
       console.log('[Forgejo Action Webview] Re-run clicked');
       vscode.postMessage({ type: 'rerun' });
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      console.log('[Forgejo Action Webview] Cancel clicked');
+      vscode.postMessage({ type: 'cancel' });
     });
 
     openWebBtn.addEventListener('click', () => {
@@ -144,6 +150,15 @@
 
     // Update duration
     durationEl.textContent = formatDuration(run.started_at || run.run_started_at, run.stopped_at);
+
+    // Show/hide cancel button based on status
+    if (run.status === 'in_progress' || run.status === 'queued' || run.status === 'waiting') {
+      cancelBtn.style.display = 'inline-flex';
+      rerunBtn.style.display = 'none';
+    } else {
+      cancelBtn.style.display = 'none';
+      rerunBtn.style.display = 'inline-flex';
+    }
 
     // Render jobs list
     renderJobsList(jobs);

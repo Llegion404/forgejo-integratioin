@@ -12,8 +12,12 @@ export class IssueTreeItem extends vscode.TreeItem {
   ) {
     super(`#${issue.number}: ${issue.title}`, vscode.TreeItemCollapsibleState.None);
 
+    var descriptionParts = [`by ${issue.user.login}`];
+    if (issue.comments > 0) {
+      descriptionParts.push(`${issue.comments} comment${issue.comments !== 1 ? 's' : ''}`);
+    }
+    this.description = descriptionParts.join(' \u2022 ');
     this.tooltip = `${issue.title}\nby ${issue.user.login}\nState: ${issue.state}\nComments: ${issue.comments}\n\nClick to view details`;
-    this.description = `by ${issue.user.login}`;
     this.contextValue = 'issue';
 
     // Set icon based on state

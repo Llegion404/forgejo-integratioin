@@ -17,8 +17,12 @@ export class PRTreeItem extends vscode.TreeItem {
   ) {
     super(`#${pr.number}: ${pr.title}`, vscode.TreeItemCollapsibleState.Collapsed);
 
-    this.tooltip = `${pr.title}\nby ${pr.user.login}\nState: ${pr.state}${pr.merged ? ' (merged)' : ''}${pr.draft ? ' (draft)' : ''}`;
-    this.description = `by ${pr.user.login}`;
+    var descriptionParts = [`by ${pr.user.login}`];
+    if (pr.comments > 0) {
+      descriptionParts.push(`${pr.comments} comment${pr.comments !== 1 ? 's' : ''}`);
+    }
+    this.description = descriptionParts.join(' \u2022 ');
+    this.tooltip = `${pr.title}\nby ${pr.user.login}\nState: ${pr.state}${pr.merged ? ' (merged)' : ''}${pr.draft ? ' (draft)' : ''}${pr.comments > 0 ? '\nComments: ' + String(pr.comments) : ''}`;
     this.contextValue = 'pullRequest';
 
     // Set icon based on state

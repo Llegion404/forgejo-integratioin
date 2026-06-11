@@ -135,8 +135,8 @@ describe('ReleaseTreeProvider', () => {
       const url = 'https://git.example.com/owner/repo/releases/tag/v1.0.0';
       const release = makeRelease({ html_url: url });
       const item = new ReleaseTreeItem(release, owner, repo);
-      expect(item.command?.command).toBe('forgejo.openReleaseInBrowser');
-      expect(item.command?.arguments).toEqual([url]);
+      expect(item.command?.command).toBe('forgejo.showReleaseDetails');
+      expect(item.command?.arguments).toEqual([item]);
     });
   });
 

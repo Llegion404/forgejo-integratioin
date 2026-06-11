@@ -20,6 +20,7 @@ import type { IssueListItem } from '../models/issue';
 import type { IssueTreeItem } from '../providers/issueTreeProvider';
 import type { PRTreeItem, PROverviewItem, PRFileItem } from '../providers/prTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
+import type { ReleaseTreeItem } from '../providers/releaseTreeProvider';
 
 // ---------------------------------------------------------------------------
 // Command argument map
@@ -54,6 +55,7 @@ export interface CommandMap {
   'forgejo.openIssueInBrowser': [url: string];
   'forgejo.openReleaseInBrowser': [url: string];
   'forgejo.openActionInBrowserDirect': [url: string];
+  'forgejo.showReleaseDetails': [item: ReleaseTreeItem];
 
   // -- Inline comment ------------------------------------------------------
   'forgejo.submitInlineComment': [reply: vscode.CommentReply];
