@@ -64,22 +64,6 @@
         }
       ]
     },
-    "webviews": {
-      "viewContainers": [
-        {
-          "id": "forgejo.prDetail",
-          "name": "PR Details"
-        },
-        {
-          "id": "forgejo.issueDetail",
-          "name": "Issue Details"
-        },
-        {
-          "id": "forgejo.actionDetail",
-          "name": "Action Details"
-        }
-      ]
-    },
     "commands": [
       {
         "command": "forgejo.addInstance",
