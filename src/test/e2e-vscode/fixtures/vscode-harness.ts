@@ -1,7 +1,7 @@
 import { test as base, expect } from '@mshanemc/vscode-test-playwright';
 import type { Page } from '@playwright/test';
 
-const EXTENSION_ID = 'maxking.forgejo-vscode';
+const EXTENSION_ID = 'localdev.forgejo-vscode';
 
 /**
  * VSCodeHarness encapsulates common VS Code UI interactions

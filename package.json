@@ -1,9 +1,9 @@
 {
   "name": "forgejo-vscode",
-  "displayName": "Forgejo Integration",
+  "displayName": "Forgejo Integration (local)",
   "description": "Browse Pull Requests, Issues, and Actions from Forgejo, Gitea, and Codeberg directly in VS Code",
   "version": "0.3.18",
-  "publisher": "maxking",
+  "publisher": "localdev",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -11,7 +11,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://codeberg.org/maxking/forgejo-vscode.git"
+    "url": "https://github.com/Llegion404/forgejo-integratioin.git"
   },
   "keywords": [
     "forgejo",
@@ -437,8 +437,8 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/ && mkdir -p out/webview/releaseDetail && cp src/webview/releaseDetail/index.js src/webview/releaseDetail/styles.css out/webview/releaseDetail/",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master",
-    "publish-vscode": "vsce publish --baseContentUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master --baseImagesUrl https://codeberg.org/maxking/forgejo-vscode/raw/branch/master",
+    "package": "vsce package",
+    "publish-vscode": "echo 'Use: vsce publish -p <PAT>'",
     "lint": "eslint src --ext ts",
     "test:unit": "jest",
     "test:unit:watch": "jest --watch",
