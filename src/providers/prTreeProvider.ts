@@ -2,6 +2,10 @@ import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { PullRequestListItem, PullRequestFile } from '../models/pullRequest';
 import { getForgejoConfig } from '../utils/config';
+import { createScmBadge } from '../utils/scmBadges';
+import { getCached, setCache } from '../utils/cacheStore';
+
+const CACHE_KEY = 'pr-list';
 
 export class PRTreeItem extends vscode.TreeItem {
   public files?: PullRequestFile[];
@@ -25,7 +29,6 @@ export class PRTreeItem extends vscode.TreeItem {
     this.tooltip = `${pr.title}\nby ${pr.user.login}\nState: ${pr.state}${pr.merged ? ' (merged)' : ''}${pr.draft ? ' (draft)' : ''}${pr.comments > 0 ? '\nComments: ' + String(pr.comments) : ''}`;
     this.contextValue = 'pullRequest';
 
-    // Set icon based on state
     if (pr.merged) {
       this.iconPath = new vscode.ThemeIcon('git-merge', new vscode.ThemeColor('gitDecoration.addedResourceForeground'));
     } else if (pr.draft) {
@@ -36,8 +39,6 @@ export class PRTreeItem extends vscode.TreeItem {
       this.iconPath = new vscode.ThemeIcon('git-pull-request', new vscode.ThemeColor('gitDecoration.modifiedResourceForeground'));
     }
 
-    // Remove command - expand/collapse instead of opening browser
-    // Users can right-click to open in browser via context menu
     this.command = undefined;
   }
 }
@@ -67,9 +68,6 @@ class PRMessageItem extends vscode.TreeItem {
   }
 }
 
-/**
- * Represents a file changed in a PR
- */
 export class PRFileItem extends vscode.TreeItem {
   constructor(
     public readonly file: PullRequestFile,
@@ -85,26 +83,8 @@ export class PRFileItem extends vscode.TreeItem {
     this.tooltip = `${file.filename}\nStatus: ${file.status}\n+${file.additions} -${file.deletions}`;
     this.contextValue = 'prFile';
 
-    // Set icon based on file status
-    switch (file.status) {
-      case 'added':
-        this.iconPath = new vscode.ThemeIcon('diff-added', new vscode.ThemeColor('gitDecoration.addedResourceForeground'));
-        break;
-      case 'removed':
-        this.iconPath = new vscode.ThemeIcon('diff-removed', new vscode.ThemeColor('gitDecoration.deletedResourceForeground'));
-        break;
-      case 'modified':
-      case 'changed':
-        this.iconPath = new vscode.ThemeIcon('diff-modified', new vscode.ThemeColor('gitDecoration.modifiedResourceForeground'));
-        break;
-      case 'renamed':
-        this.iconPath = new vscode.ThemeIcon('diff-renamed', new vscode.ThemeColor('gitDecoration.renamedResourceForeground'));
-        break;
-      default:
-        this.iconPath = new vscode.ThemeIcon('file');
-    }
+    this.iconPath = createScmBadge(file.status);
 
-    // Command to open diff view
     this.command = {
       command: 'forgejo.showPrFileDiff',
       title: 'Show Diff',
@@ -113,9 +93,6 @@ export class PRFileItem extends vscode.TreeItem {
   }
 }
 
-/**
- * Loading indicator item
- */
 class PRLoadingItem extends vscode.TreeItem {
   constructor() {
     super('Loading files...', vscode.TreeItemCollapsibleState.None);
@@ -124,9 +101,6 @@ class PRLoadingItem extends vscode.TreeItem {
   }
 }
 
-/**
- * Overview item for PR details
- */
 export class PROverviewItem extends vscode.TreeItem {
   constructor(
     public readonly pr: PullRequestListItem,
@@ -144,7 +118,37 @@ export class PROverviewItem extends vscode.TreeItem {
   }
 }
 
-type PRTreeElement = PRTreeItem | PRGroupItem | PRMessageItem | PRFileItem | PRLoadingItem | PROverviewItem;
+export class PRReviewAllItem extends vscode.TreeItem {
+  constructor(
+    public readonly pr: PullRequestListItem,
+    public readonly owner: string,
+    public readonly repo: string
+  ) {
+    super('Review all changes', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('book');
+    this.contextValue = 'prReviewAll';
+    this.command = {
+      command: 'forgejo.reviewPrChanges',
+      title: 'Review All Changes',
+      arguments: [pr, owner, repo]
+    };
+  }
+
+  setFileCount(count: number) {
+    this.label = `Review all changes (${count} file${count !== 1 ? 's' : ''})`;
+  }
+}
+
+class PRSyncingItem extends vscode.TreeItem {
+  constructor() {
+    super('Syncing...', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('sync~spin');
+    this.description = 'Fetching latest changes';
+    this.contextValue = 'syncing';
+  }
+}
+
+type PRTreeElement = PRTreeItem | PRGroupItem | PRMessageItem | PRFileItem | PRLoadingItem | PROverviewItem | PRReviewAllItem | PRSyncingItem;
 
 export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<PRTreeElement | undefined | null | void> = new vscode.EventEmitter<PRTreeElement | undefined | null | void>();
@@ -152,12 +156,36 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
   private pullRequests: PullRequestListItem[] = [];
   private error: string | null = null;
+  private isSyncing = false;
+  private syncPromise: Promise<void> | null = null;
 
   constructor() {
+    const cached = getCached<PullRequestListItem[]>(CACHE_KEY);
+    if (cached && cached.length > 0) {
+      this.pullRequests = cached;
+    }
     this.refresh();
   }
 
   refresh(): void {
+    this._onDidChangeTreeData.fire();
+    void this.syncInBackground();
+  }
+
+  private async syncInBackground(): Promise<void> {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+
+    try {
+      await this.fetchPullRequests();
+      if (this.pullRequests.length > 0) {
+        setCache(CACHE_KEY, this.pullRequests);
+      }
+    } catch {
+      // error already stored in this.error by fetchPullRequests
+    }
+
+    this.isSyncing = false;
     this._onDidChangeTreeData.fire();
   }
 
@@ -167,86 +195,84 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
 
   async getChildren(element?: PRTreeElement): Promise<PRTreeElement[]> {
     if (!element) {
-      // Root level - fetch PRs and group them
-      try {
-        await this.fetchPullRequests();
+      const result: PRTreeElement[] = [];
 
-        if (this.error) {
-          console.error('Forgejo PR fetch error:', this.error);
-          return [new PRMessageItem(this.error, true)];
-        }
+      if (this.isSyncing && this.pullRequests.length === 0) {
+        return [new PRSyncingItem()];
+      }
 
-        if (this.pullRequests.length === 0) {
-          return [new PRMessageItem('No pull requests found', false)];
-        }
-
-        // Group by state
-        const openPRs = this.pullRequests.filter(pr => pr.state === 'open' && !pr.draft);
-        const draftPRs = this.pullRequests.filter(pr => pr.draft);
-        const closedPRs = this.pullRequests.filter(pr => pr.state === 'closed' && !pr.merged);
-        const mergedPRs = this.pullRequests.filter(pr => pr.merged);
-
-        const groups: PRGroupItem[] = [];
-
-        if (openPRs.length > 0) {
-          groups.push(new PRGroupItem('Open', openPRs));
-        }
-        if (draftPRs.length > 0) {
-          groups.push(new PRGroupItem('Draft', draftPRs));
-        }
-        if (mergedPRs.length > 0) {
-          groups.push(new PRGroupItem('Merged', mergedPRs));
-        }
-        if (closedPRs.length > 0) {
-          groups.push(new PRGroupItem('Closed', closedPRs));
-        }
-
-        return groups;
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : 'Unknown error';
+      if (this.error) {
+        console.error('Forgejo PR fetch error:', this.error);
         return [new PRMessageItem(this.error, true)];
       }
+
+      if (this.isSyncing) {
+        result.push(new PRSyncingItem());
+      }
+
+      if (this.pullRequests.length === 0) {
+        if (!this.isSyncing) {
+          return [new PRMessageItem('No pull requests found', false)];
+        }
+        return result;
+      }
+
+      const openPRs = this.pullRequests.filter(pr => pr.state === 'open' && !pr.draft);
+      const draftPRs = this.pullRequests.filter(pr => pr.draft);
+      const closedPRs = this.pullRequests.filter(pr => pr.state === 'closed' && !pr.merged);
+      const mergedPRs = this.pullRequests.filter(pr => pr.merged);
+
+      if (openPRs.length > 0) {
+        result.push(new PRGroupItem('Open', openPRs));
+      }
+      if (draftPRs.length > 0) {
+        result.push(new PRGroupItem('Draft', draftPRs));
+      }
+      if (mergedPRs.length > 0) {
+        result.push(new PRGroupItem('Merged', mergedPRs));
+      }
+      if (closedPRs.length > 0) {
+        result.push(new PRGroupItem('Closed', closedPRs));
+      }
+
+      return result;
     } else if (element instanceof PRGroupItem) {
-      // Show PRs in this group
       const config = await getForgejoConfig();
       if (!config) {
         return [];
       }
       return element.pullRequests.map(pr => new PRTreeItem(pr, pr.html_url, config.owner, config.repo));
     } else if (element instanceof PRTreeItem) {
-      // Fetch and show files for this PR
       return this.getPRFiles(element);
-    } else if (element instanceof PRMessageItem || element instanceof PRLoadingItem) {
-      // Message items have no children
+    } else if (element instanceof PRMessageItem || element instanceof PRLoadingItem || element instanceof PRReviewAllItem || element instanceof PRSyncingItem) {
       return [];
     }
 
     return [];
   }
 
-  /**
-   * Fetch files for a PR (lazy loading with caching)
-   */
   private async getPRFiles(prItem: PRTreeItem): Promise<PRTreeElement[]> {
-    // Create overview item (always shown first)
     const overviewItem = new PROverviewItem(prItem.pr, prItem.owner, prItem.repo);
+    const reviewAllItem = new PRReviewAllItem(prItem.pr, prItem.owner, prItem.repo);
 
-    // Return cached files if available
+    const makeReviewAll = (fileCount: number): PRReviewAllItem => {
+      reviewAllItem.setFileCount(fileCount);
+      return reviewAllItem;
+    };
+
     if (prItem.files && prItem.baseRef && prItem.headRef) {
       const baseRef = prItem.baseRef;
       const headRef = prItem.headRef;
       const fileItems = prItem.files.map(file =>
         new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, baseRef, headRef)
       );
-      return [overviewItem, ...fileItems];
+      return [overviewItem, makeReviewAll(prItem.files.length), ...fileItems];
     }
 
-    // Return error if previous fetch failed
     if (prItem.filesError) {
       return [overviewItem, new PRMessageItem(prItem.filesError, true)];
     }
 
-    // Fetch files from API
     try {
       const config = await getForgejoConfig();
       if (!config) {
@@ -256,13 +282,11 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       console.log(`[Forgejo] Fetching files for PR #${prItem.pr.number}...`);
 
-      // Fetch both files and PR details (for refs)
       const [files, refs] = await Promise.all([
         client.getPullRequestFiles(prItem.owner, prItem.repo, prItem.pr.number),
         client.getPullRequestRefs(prItem.owner, prItem.repo, prItem.pr.number)
       ]);
 
-      // Cache the results
       prItem.files = files;
       prItem.baseRef = refs.base;
       prItem.headRef = refs.head;
@@ -273,7 +297,6 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
         return [overviewItem, new PRMessageItem('No files changed', false)];
       }
 
-      // Sort files: added, modified, renamed, removed
       const statusOrder: Record<string, number> = { added: 0, modified: 1, changed: 1, renamed: 2, removed: 3 };
       const getStatusPriority = (status: string): number => statusOrder[status] ?? 99;
       const sortedFiles = files.sort((a, b) => getStatusPriority(a.status) - getStatusPriority(b.status));
@@ -281,7 +304,7 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const fileItems = sortedFiles.map(file =>
         new PRFileItem(file, prItem.pr, prItem.owner, prItem.repo, refs.base, refs.head)
       );
-      return [overviewItem, ...fileItems];
+      return [overviewItem, makeReviewAll(files.length), ...fileItems];
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to fetch files';
       prItem.filesError = errorMsg;

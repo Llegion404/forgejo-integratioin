@@ -70,6 +70,13 @@ export interface CommandMap {
     headRef: string,
   ];
 
+  // -- Review all PR changes -------------------------------------------------
+  'forgejo.reviewPrChanges': [
+    pr: PullRequestListItem,
+    owner: string,
+    repo: string,
+  ];
+
   // -- Context menu commands -----------------------------------------------
   // Commands in package.json `view/item/context` receive the tree item as
   // arg 0. Union types below ensure handlers accept both the context-menu

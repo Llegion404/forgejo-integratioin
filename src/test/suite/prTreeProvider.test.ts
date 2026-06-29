@@ -124,14 +124,12 @@ suite('PR Tree Expansion and Files Test Suite', () => {
     }
   });
 
-  test('File items should have correct ThemeIcon for added status', async function() {
+  test('File items should have letter badge for added status', async function() {
     this.timeout(10000);
 
-    // Create a mock PRTreeItem with cached files
     const mockPRItem = new vscode.TreeItem('Test PR', vscode.TreeItemCollapsibleState.Collapsed);
     mockPRItem.contextValue = 'pullRequest';
 
-    // Add mock file data
     (mockPRItem as any).files = [{
       filename: 'test.ts',
       status: 'added',
@@ -154,17 +152,17 @@ suite('PR Tree Expansion and Files Test Suite', () => {
       const fileItem = files[0];
       assert.ok(fileItem.iconPath, 'File should have icon');
 
-      if (fileItem.iconPath && typeof fileItem.iconPath === 'object' && 'id' in fileItem.iconPath) {
-        assert.strictEqual(
-          (fileItem.iconPath as vscode.ThemeIcon).id,
-          'diff-added',
-          'Added file should have diff-added icon'
-        );
+      const iconPath = fileItem.iconPath as any;
+      if (iconPath && iconPath.light && iconPath.dark) {
+        assert.ok(iconPath.light instanceof vscode.Uri, 'Light icon should be a Uri');
+        assert.ok(iconPath.dark instanceof vscode.Uri, 'Dark icon should be a Uri');
+        assert.ok(iconPath.light.toString().includes('data:image/svg+xml'), 'Light icon should be SVG data URI');
+        assert.ok(iconPath.light.toString().includes('A'), 'Added file icon should contain letter A');
       }
     }
   });
 
-  test('File items should have correct ThemeIcon for modified status', async function() {
+  test('File items should have letter badge for modified status', async function() {
     this.timeout(10000);
 
     const mockPRItem = new vscode.TreeItem('Test PR', vscode.TreeItemCollapsibleState.Collapsed);
@@ -191,17 +189,15 @@ suite('PR Tree Expansion and Files Test Suite', () => {
     if (files.length > 0 && files[0].contextValue === 'prFile') {
       const fileItem = files[0];
 
-      if (fileItem.iconPath && typeof fileItem.iconPath === 'object' && 'id' in fileItem.iconPath) {
-        assert.strictEqual(
-          (fileItem.iconPath as vscode.ThemeIcon).id,
-          'diff-modified',
-          'Modified file should have diff-modified icon'
-        );
+      const iconPath = fileItem.iconPath as any;
+      if (iconPath && iconPath.light && iconPath.dark) {
+        assert.ok(iconPath.light instanceof vscode.Uri, 'Light icon should be a Uri');
+        assert.ok(iconPath.light.toString().includes('M'), 'Modified file icon should contain letter M');
       }
     }
   });
 
-  test('File items should have correct ThemeIcon for removed status', async function() {
+  test('File items should have letter badge for removed status', async function() {
     this.timeout(10000);
 
     const mockPRItem = new vscode.TreeItem('Test PR', vscode.TreeItemCollapsibleState.Collapsed);
@@ -228,17 +224,15 @@ suite('PR Tree Expansion and Files Test Suite', () => {
     if (files.length > 0 && files[0].contextValue === 'prFile') {
       const fileItem = files[0];
 
-      if (fileItem.iconPath && typeof fileItem.iconPath === 'object' && 'id' in fileItem.iconPath) {
-        assert.strictEqual(
-          (fileItem.iconPath as vscode.ThemeIcon).id,
-          'diff-removed',
-          'Removed file should have diff-removed icon'
-        );
+      const iconPath = fileItem.iconPath as any;
+      if (iconPath && iconPath.light && iconPath.dark) {
+        assert.ok(iconPath.light instanceof vscode.Uri, 'Light icon should be a Uri');
+        assert.ok(iconPath.light.toString().includes('D'), 'Removed file icon should contain letter D');
       }
     }
   });
 
-  test('File items should have correct ThemeIcon for renamed status', async function() {
+  test('File items should have letter badge for renamed status', async function() {
     this.timeout(10000);
 
     const mockPRItem = new vscode.TreeItem('Test PR', vscode.TreeItemCollapsibleState.Collapsed);
@@ -266,12 +260,10 @@ suite('PR Tree Expansion and Files Test Suite', () => {
     if (files.length > 0 && files[0].contextValue === 'prFile') {
       const fileItem = files[0];
 
-      if (fileItem.iconPath && typeof fileItem.iconPath === 'object' && 'id' in fileItem.iconPath) {
-        assert.strictEqual(
-          (fileItem.iconPath as vscode.ThemeIcon).id,
-          'diff-renamed',
-          'Renamed file should have diff-renamed icon'
-        );
+      const iconPath = fileItem.iconPath as any;
+      if (iconPath && iconPath.light && iconPath.dark) {
+        assert.ok(iconPath.light instanceof vscode.Uri, 'Light icon should be a Uri');
+        assert.ok(iconPath.light.toString().includes('R'), 'Renamed file icon should contain letter R');
       }
     }
   });

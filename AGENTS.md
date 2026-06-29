@@ -62,7 +62,7 @@ vsce package --allow-missing-repository
 
 **Install command (run only if user says yes):**
 ```bash
-code --install-extension forgejo-vscode-0.1.0.vsix --force
+code --install-extension forgejo-vscode-0.1.0.vsix --force --user-data-dir ~/.config/Code/Profile/paradox
 ```
 
 **Why?**

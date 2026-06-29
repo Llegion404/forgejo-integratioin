@@ -13,6 +13,20 @@ import { getForgejoConfig } from '../utils/config';
 export const PR_DIFF_SCHEME = 'forgejo-pr';
 
 /**
+ * Sentinel path used to request an empty read-only document. Useful as the
+ * left ("before") side of a diff for files that are newly added in a PR, where
+ * there is no base-ref content to fetch.
+ */
+const EMPTY_PATH = '__empty__';
+
+/**
+ * Helper to create an empty forgejo-pr: document URI (renders as blank content).
+ */
+export function createEmptyPRFileUri(): vscode.Uri {
+  return vscode.Uri.parse(`${PR_DIFF_SCHEME}:/${EMPTY_PATH}`);
+}
+
+/**
  * Provides virtual document content for PR diffs
  */
 export class PRDiffContentProvider implements vscode.TextDocumentContentProvider {
@@ -33,6 +47,11 @@ export class PRDiffContentProvider implements vscode.TextDocumentContentProvider
 
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     console.log('[Forgejo] Providing content for:', uri.toString());
+
+    // Empty sentinel document (blank content)
+    if (uri.path === `/${EMPTY_PATH}`) {
+      return '';
+    }
 
     // Check cache first
     const cached = this.cache.get(uri.toString());

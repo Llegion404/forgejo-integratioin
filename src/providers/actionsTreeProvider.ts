@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { WorkflowRunListItem, WorkflowJobRef } from '../models/action';
 import { getForgejoConfig } from '../utils/config';
+import { getCached, setCache } from '../utils/cacheStore';
+
+const CACHE_KEY = 'action-list';
 
 /**
  * Step data scraped from Forgejo's web page.
@@ -195,7 +198,16 @@ class ActionMessageItem extends vscode.TreeItem {
   }
 }
 
-type ActionTreeElement = WorkflowRunTreeItem | JobTreeItem | StepTreeItem | ActionMessageItem;
+class ActionSyncingItem extends vscode.TreeItem {
+  constructor() {
+    super('Syncing...', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('sync~spin');
+    this.description = 'Fetching latest runs';
+    this.contextValue = 'syncing';
+  }
+}
+
+type ActionTreeElement = WorkflowRunTreeItem | JobTreeItem | StepTreeItem | ActionMessageItem | ActionSyncingItem;
 
 export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ActionTreeElement | undefined | null | void> = new vscode.EventEmitter<ActionTreeElement | undefined | null | void>();
@@ -205,12 +217,35 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
   private error: string | null = null;
   private owner = '';
   private repo = '';
+  private isSyncing = false;
 
   constructor() {
+    const cached = getCached<WorkflowRunListItem[]>(CACHE_KEY);
+    if (cached && cached.length > 0) {
+      this.workflowRuns = cached;
+    }
     this.refresh();
   }
 
   refresh(): void {
+    this._onDidChangeTreeData.fire();
+    void this.syncInBackground();
+  }
+
+  private async syncInBackground(): Promise<void> {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+
+    try {
+      await this.fetchWorkflowRuns();
+      if (this.workflowRuns.length > 0) {
+        setCache(CACHE_KEY, this.workflowRuns);
+      }
+    } catch {
+      //
+    }
+
+    this.isSyncing = false;
     this._onDidChangeTreeData.fire();
   }
 
@@ -220,36 +255,41 @@ export class ActionsTreeProvider implements vscode.TreeDataProvider<ActionTreeEl
 
   async getChildren(element?: ActionTreeElement): Promise<ActionTreeElement[]> {
     if (!element) {
-      // Root level - fetch workflow runs and list chronologically (newest first)
-      try {
-        await this.fetchWorkflowRuns();
+      const result: ActionTreeElement[] = [];
 
-        if (this.error) {
-          console.error('[Forgejo] Actions fetch error:', this.error);
-          return [new ActionMessageItem(this.error, true)];
-        }
+      if (this.isSyncing && this.workflowRuns.length === 0) {
+        return [new ActionSyncingItem()];
+      }
 
-        if (this.workflowRuns.length === 0) {
-          return [new ActionMessageItem('No workflow runs found', false)];
-        }
-
-        // Group jobs by run_number
-        const runsByNumber = new Map<number, WorkflowRunListItem[]>();
-        for (const job of this.workflowRuns) {
-          const existing = runsByNumber.get(job.run_number) ?? [];
-          existing.push(job);
-          runsByNumber.set(job.run_number, existing);
-        }
-
-        // Sort by run_number descending (newest first)
-        const sortedRuns = Array.from(runsByNumber.entries()).sort((a, b) => b[0] - a[0]);
-        return sortedRuns.map(([runNumber, jobs]) =>
-          new WorkflowRunTreeItem(runNumber, jobs, this.owner, this.repo)
-        );
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : 'Unknown error';
+      if (this.error) {
+        console.error('[Forgejo] Actions fetch error:', this.error);
         return [new ActionMessageItem(this.error, true)];
       }
+
+      if (this.isSyncing) {
+        result.push(new ActionSyncingItem());
+      }
+
+      if (this.workflowRuns.length === 0) {
+        if (!this.isSyncing) {
+          return [new ActionMessageItem('No workflow runs found', false)];
+        }
+        return result;
+      }
+
+      const runsByNumber = new Map<number, WorkflowRunListItem[]>();
+      for (const job of this.workflowRuns) {
+        const existing = runsByNumber.get(job.run_number) ?? [];
+        existing.push(job);
+        runsByNumber.set(job.run_number, existing);
+      }
+
+      const sortedRuns = Array.from(runsByNumber.entries()).sort((a, b) => b[0] - a[0]);
+      const items = sortedRuns.map(([runNumber, jobs]) =>
+        new WorkflowRunTreeItem(runNumber, jobs, this.owner, this.repo)
+      );
+      result.push(...items);
+      return result;
     } else if (element instanceof WorkflowRunTreeItem) {
       // Show jobs within this run (data already available from /actions/tasks)
       return element.jobs.map((job, index) =>

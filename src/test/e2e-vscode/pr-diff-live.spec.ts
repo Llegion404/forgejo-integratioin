@@ -155,28 +155,35 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
         // Wait for content to load from API
         await new Promise(r => setTimeout(r, 5000));
 
-        // Check the active editor — for added files, it's a single editor;
-        // for modified, it's a diff editor and activeTextEditor may point to
-        // either side. Check all visible editors.
-        const editors = vscode.window.visibleTextEditors.filter(
+        // The diff editor renders two sides:
+        //   - LEFT (original): forgejo-pr: virtual doc (PR base-ref content,
+        //     or the empty sentinel for added files)
+        //   - RIGHT (modified): the user's actual local working file
+        const editors = vscode.window.visibleTextEditors;
+
+        const forgejoEditors = editors.filter(
           e => e.document.uri.scheme === 'forgejo-pr'
         );
+        const localEditors = editors.filter(
+          e => e.document.uri.scheme === 'file'
+        );
 
-        if (editors.length === 0) {
-          // Diff editor: activeTextEditor might still have it
-          const ae = vscode.window.activeTextEditor;
-          if (ae && ae.document.uri.scheme === 'forgejo-pr') {
-            editors.push(ae);
-          }
-        }
+        const activeTab = vscode.window.tabGroups.all
+          .flatMap(g => g.tabs)
+          .find(t => t.isActive);
+        const tabInput = activeTab?.input as any;
 
         return {
           opened: true,
-          editorCount: editors.length,
-          editors: editors.map(e => ({
+          totalEditors: editors.length,
+          forgejoEditorCount: forgejoEditors.length,
+          localEditorCount: localEditors.length,
+          isDiffTab: !!(tabInput?.original && tabInput?.modified),
+          originalScheme: tabInput?.original?.scheme || '',
+          modifiedScheme: tabInput?.modified?.scheme || '',
+          forgejoEditors: forgejoEditors.map(e => ({
             uriString: e.document.uri.toString(),
             uriScheme: e.document.uri.scheme,
-            uriPath: e.document.uri.path,
             uriQuery: e.document.uri.query,
             contentLength: e.document.getText().length,
             contentSnippet: e.document.getText().substring(0, 200),
@@ -185,7 +192,7 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
           })),
         };
       } catch (e: any) {
-        return { opened: false, editorCount: 0, editors: [], error: e.message };
+        return { opened: false, totalEditors: 0, error: e.message };
       }
     }, {
       prNumber: prInfo!.number,
@@ -198,20 +205,22 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
     console.log('Diff result:', JSON.stringify(diffResult, null, 2));
 
     expect(diffResult.opened).toBe(true);
-    expect(diffResult.editorCount).toBeGreaterThan(0);
+    // A diff tab should be open with a forgejo-pr original (before) and a
+    // local-file modified (after) side.
+    expect(diffResult.isDiffTab).toBe(true);
+    expect(diffResult.originalScheme).toBe('forgejo-pr');
+    expect(diffResult.modifiedScheme).toBe('file');
+    expect(diffResult.forgejoEditorCount).toBeGreaterThan(0);
 
-    for (const editor of diffResult.editors) {
-      // URI format: no query params, base64url ref in path
+    for (const editor of diffResult.forgejoEditors) {
+      // URI format: no query params, base64url ref in path (or the empty sentinel).
       expect(editor.uriScheme).toBe('forgejo-pr');
       expect(editor.uriQuery).toBe('');
 
-      // Content should NOT be the "could not be restored" fallback
+      // Content should NOT be the "could not be restored" fallback.
       expect(editor.hasRestoreMessage).toBe(false);
 
-      // Content should have loaded (non-trivial length)
-      expect(editor.contentLength).toBeGreaterThan(0);
-
-      // Content should NOT be an error (if API is reachable)
+      // Content should NOT be an error (if API is reachable).
       if (editor.hasError) {
         console.warn('Editor has error content:', editor.contentSnippet);
       }
@@ -303,9 +312,10 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
       file: prInfo!.file,
     });
 
-    // Inspect all open tabs
+    // Inspect all open tabs — the diff's "before" side is a forgejo-pr doc.
     const tabs = await evaluateInVSCode(async (vscode) => {
       const allTabs = vscode.window.tabGroups.all.flatMap(g => g.tabs);
+      const isForgejoSide = (u: any) => !!u && u.scheme === 'forgejo-pr';
       return allTabs
         .filter(t => {
           const input = t.input as any;
@@ -315,7 +325,11 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
         })
         .map(t => {
           const input = t.input as any;
-          const uri = input?.uri || input?.modified || input?.original;
+          // Prefer the forgejo-pr "original" (before) side of a diff tab;
+          // fall back to the tab's own / modified URI.
+          const uri = isForgejoSide(input?.original) ? input.original
+            : isForgejoSide(input?.modified) ? input.modified
+            : input?.uri;
           return {
             label: t.label,
             scheme: uri?.scheme || '',
@@ -328,18 +342,26 @@ test.describe('PR Diff Viewer - Live Forgejo', () => {
     console.log('Tabs:', JSON.stringify(tabs, null, 2));
     expect(tabs.length).toBeGreaterThan(0);
 
-    for (const tab of tabs) {
+    // At least one forgejo-pr tab whose ref decodes to head/base (the empty
+    // sentinel used for added files is intentionally skipped here).
+    const refTabs = tabs.filter(t => {
+      const parts = t.path.split('/').filter((p: string) => p);
+      return t.scheme === 'forgejo-pr' && parts.length >= 4;
+    });
+    expect(refTabs.length).toBeGreaterThan(0);
+
+    for (const tab of refTabs) {
       expect(tab.query).toBe('');
       expect(tab.scheme).toBe('forgejo-pr');
 
-      // Decode the base64url ref segment
+      // Decode the base64url ref segment.
       const parts = tab.path.split('/').filter((p: string) => p);
       expect(parts.length).toBeGreaterThanOrEqual(4);
 
       const decodedRef = Buffer.from(parts[2], 'base64url').toString();
       console.log(`Tab "${tab.label}": ref="${decodedRef}"`);
       expect(decodedRef.length).toBeGreaterThan(0);
-      // The decoded ref should match either the head or base ref
+      // The decoded ref should match either the head or base ref.
       expect([prInfo!.headRef, prInfo!.baseRef]).toContain(decodedRef);
     }
 

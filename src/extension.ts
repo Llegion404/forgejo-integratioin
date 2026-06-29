@@ -4,12 +4,13 @@ import { IssueTreeProvider, IssueTreeItem } from './providers/issueTreeProvider'
 import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from './providers/actionsTreeProvider';
 import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
 import { WorkflowRunListItem, WorkflowJob } from './models/action';
-import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri } from './providers/prDiffContentProvider';
+import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri, createEmptyPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
 import { PRDetailWebviewProvider } from './webview/prDetail/provider';
 import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
 import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
 import { ReleaseDetailWebviewProvider } from './webview/releaseDetail/provider';
+import { ReviewProvider } from './webview/review/provider';
 import { ForgejoCommentController } from './providers/prCommentController';
 import { pendingReviewManager } from './providers/pendingReviewManager';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
@@ -31,11 +32,14 @@ import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
 import { initializeSecretStorage } from './utils/secretStorage';
 import { migrateTokensToSecretStorage } from './utils/migration';
+import { initCacheStore } from './utils/cacheStore';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
   logInfo('VS Code version:', vscode.version);
   logInfo('Workspace folders:', vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath));
+
+  initCacheStore(context);
 
   // Initialize SecretStorage before any migration or config reads
   initializeSecretStorage(context.secrets);
@@ -260,6 +264,13 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Register PR file diff viewer
+  //
+  // Opens the PR file diff in VS Code's built-in diff editor where the RIGHT
+  // pane is the user's actual local working file (editable — typing live-updates
+  // the diff highlighting) and the LEFT pane is the read-only "before" content
+  // fetched at the PR base ref (rendered via the forgejo-pr: virtual document
+  // provider). This requires the PR branch to be checked out locally so the
+  // working file reflects the PR's changes.
   context.subscriptions.push(
     registerCommand(
       'forgejo.showPrFileDiff',
@@ -274,61 +285,81 @@ export async function activate(context: vscode.ExtensionContext) {
         console.log('[Forgejo] Opening diff for file:', file.filename);
 
         try {
-          // Handle deleted files (no "after" version)
+          const folder = vscode.workspace.workspaceFolders?.[0];
+          if (!folder) {
+            void vscode.window.showErrorMessage(
+              'Open a workspace folder to diff PR file changes against your local working copy.'
+            );
+            return;
+          }
+
+          const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
+          const title = `PR #${pr.number}: ${file.filename}`;
+
+          // Build the read-only "before" side of the diff (fetch happens lazily
+          // via the forgejo-pr: content provider when the diff opens).
+          let beforeUri: vscode.Uri;
+          let beforeFilePath = file.filename;
+          if (file.status === 'added') {
+            beforeUri = createEmptyPRFileUri();
+          } else {
+            beforeFilePath = file.previous_filename ?? file.filename;
+            beforeUri = createPRFileUri(owner, repo, baseRef, beforeFilePath);
+          }
+
           if (file.status === 'removed') {
-            const beforeUri = createPRFileUri(owner, repo, baseRef, file.filename);
+            // File was deleted in the PR: show base content (read-only) only.
             commentController.registerPRContext(beforeUri, {
-              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
+              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforeFilePath
             });
             const doc = await vscode.workspace.openTextDocument(beforeUri);
             await vscode.window.showTextDocument(doc, { preview: true });
-            const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
             if (showNotifications) {
-              void vscode.window.showInformationMessage(`File ${file.filename} was deleted in PR #${pr.number}`);
+              void vscode.window.showInformationMessage(
+                `File ${file.filename} was deleted in PR #${pr.number}`
+              );
             }
             return;
           }
 
-          // Handle added files (no "before" version)
-          if (file.status === 'added') {
-            const afterUri = createPRFileUri(owner, repo, headRef, file.filename);
-            commentController.registerPRContext(afterUri, {
-              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
-            });
-            const doc = await vscode.workspace.openTextDocument(afterUri);
-            await vscode.window.showTextDocument(doc, { preview: true });
-            const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
-            if (showNotifications) {
-              void vscode.window.showInformationMessage(`File ${file.filename} was added in PR #${pr.number}`);
+          // Resolve the actual local file (right pane, editable).
+          const localUri = vscode.Uri.joinPath(folder.uri, ...file.filename.split('/'));
+          const localExists = await vscode.workspace.fs.stat(localUri).then(
+            () => true,
+            () => false
+          );
+          if (!localExists) {
+            const action = await vscode.window.showWarningMessage(
+              `Local file "${file.filename}" not found. Check out the PR branch (#${pr.number}) to edit changes locally.`,
+              'Open PR in Browser'
+            );
+            if (action === 'Open PR in Browser' && pr.html_url) {
+              void vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
             }
             return;
           }
 
-          // For modified/renamed files, show diff
-          const beforePath = file.previous_filename ?? file.filename;
-          const afterPath = file.filename;
-
-          const beforeUri = createPRFileUri(owner, repo, baseRef, beforePath);
-          const afterUri = createPRFileUri(owner, repo, headRef, afterPath);
-
-          // Register PR context for both sides of the diff
+          // Register PR context on both sides so inline review comments work.
           commentController.registerPRContext(beforeUri, {
-            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforePath
+            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforeFilePath
           });
-          commentController.registerPRContext(afterUri, {
-            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: afterPath
+          commentController.registerPRContext(localUri, {
+            owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
           });
 
-          const title = `PR #${pr.number}: ${file.filename}`;
-
-          // Open VS Code's native diff viewer
           await vscode.commands.executeCommand(
             'vscode.diff',
             beforeUri,
-            afterUri,
+            localUri,
             title,
             { preview: true }
           );
+
+          if (showNotifications && file.status === 'added') {
+            void vscode.window.showInformationMessage(
+              `File ${file.filename} was added in PR #${pr.number}`
+            );
+          }
 
           console.log('[Forgejo] Diff opened successfully');
         } catch (error) {
@@ -444,6 +475,23 @@ export async function activate(context: vscode.ExtensionContext) {
         }
 
         await closePrCommand(pr, actualOwner, actualRepo, prTreeProvider);
+      }
+    )
+  );
+
+  // Register Review all PR changes command
+  context.subscriptions.push(
+    registerCommand(
+      'forgejo.reviewPrChanges',
+      async (pr, owner, repo) => {
+        try {
+          await reviewProvider.show(owner, repo, pr.number);
+        } catch (error) {
+          console.error('[Forgejo] Error opening PR review:', error);
+          void vscode.window.showErrorMessage(
+            `Failed to open PR review: ${error instanceof Error ? error.message : 'Unknown error'}`
+          );
+        }
       }
     )
   );
@@ -783,6 +831,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create Release detail webview provider
   const releaseDetailWebviewProvider = new ReleaseDetailWebviewProvider(context.extensionUri);
+
+  // Create Review provider
+  const reviewProvider = new ReviewProvider(context.extensionUri);
 
   // Register Issue details viewer command
   // Handles both direct tree item click (args: issue, owner, repo) and

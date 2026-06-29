@@ -214,6 +214,11 @@
         "command": "forgejo.openReleaseInBrowser",
         "title": "Open Release in Browser",
         "icon": "$(link-external)"
+      },
+      {
+        "command": "forgejo.reviewPrChanges",
+        "title": "Review All PR Changes",
+        "icon": "$(book)"
       }
     ],
     "menus": {
@@ -435,7 +440,7 @@
   "scripts": {
     "postinstall": "patch-package",
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/ && mkdir -p out/webview/releaseDetail && cp src/webview/releaseDetail/index.js src/webview/releaseDetail/styles.css out/webview/releaseDetail/",
+    "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/ && mkdir -p out/webview/releaseDetail && cp src/webview/releaseDetail/index.js src/webview/releaseDetail/styles.css out/webview/releaseDetail/ && mkdir -p out/webview/review && cp src/webview/review/index.js src/webview/review/styles.css out/webview/review/",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
     "publish-vscode": "echo 'Use: vsce publish -p <PAT>'",

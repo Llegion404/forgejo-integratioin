@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { getForgejoConfig } from '../utils/config';
+import { getCached, setCache } from '../utils/cacheStore';
+
+const CACHE_KEY = 'release-list';
 import { type Release } from 'forgejo-ts';
 
 export class ReleaseTreeItem extends vscode.TreeItem {
@@ -57,7 +60,16 @@ class ReleaseMessageItem extends vscode.TreeItem {
   }
 }
 
-type ReleaseTreeElement = ReleaseTreeItem | ReleaseGroupItem | ReleaseMessageItem;
+class ReleaseSyncingItem extends vscode.TreeItem {
+  constructor() {
+    super('Syncing...', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('sync~spin');
+    this.description = 'Fetching latest releases';
+    this.contextValue = 'syncing';
+  }
+}
+
+type ReleaseTreeElement = ReleaseTreeItem | ReleaseGroupItem | ReleaseMessageItem | ReleaseSyncingItem;
 
 export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<ReleaseTreeElement | undefined | null | void> = new vscode.EventEmitter<ReleaseTreeElement | undefined | null | void>();
@@ -67,12 +79,35 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
   private error: string | null = null;
   private owner = '';
   private repo = '';
+  private isSyncing = false;
 
   constructor() {
+    const cached = getCached<Release[]>(CACHE_KEY);
+    if (cached && cached.length > 0) {
+      this.releases = cached;
+    }
     this.refresh();
   }
 
   refresh(): void {
+    this._onDidChangeTreeData.fire();
+    void this.syncInBackground();
+  }
+
+  private async syncInBackground(): Promise<void> {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+
+    try {
+      await this._fetchReleases();
+      if (this.releases.length > 0) {
+        setCache(CACHE_KEY, this.releases);
+      }
+    } catch {
+      //
+    }
+
+    this.isSyncing = false;
     this._onDidChangeTreeData.fire();
   }
 
@@ -85,32 +120,37 @@ export class ReleaseTreeProvider implements vscode.TreeDataProvider<ReleaseTreeE
 
   async getChildren(element?: ReleaseTreeElement): Promise<ReleaseTreeElement[]> {
     if (!element) {
-      try {
-        await this._fetchReleases();
+      const result: ReleaseTreeElement[] = [];
 
-        if (this.error) {
-          console.error('[Forgejo] Release fetch error:', this.error);
-          return [new ReleaseMessageItem(this.error, true)];
-        }
+      if (this.isSyncing && this.releases.length === 0) {
+        return [new ReleaseSyncingItem()];
+      }
 
-        if (this.releases.length === 0) {
-          return [new ReleaseMessageItem('No releases found', false)];
-        }
-
-        const published = this.releases.filter(r => !r.draft && !r.prerelease);
-        const prereleases = this.releases.filter(r => !r.draft && r.prerelease);
-        const drafts = this.releases.filter(r => r.draft);
-
-        const groups: ReleaseGroupItem[] = [];
-        if (published.length > 0) groups.push(new ReleaseGroupItem('Released', published));
-        if (prereleases.length > 0) groups.push(new ReleaseGroupItem('Pre-releases', prereleases));
-        if (drafts.length > 0) groups.push(new ReleaseGroupItem('Drafts', drafts));
-
-        return groups;
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : 'Unknown error';
+      if (this.error) {
+        console.error('[Forgejo] Release fetch error:', this.error);
         return [new ReleaseMessageItem(this.error, true)];
       }
+
+      if (this.isSyncing) {
+        result.push(new ReleaseSyncingItem());
+      }
+
+      if (this.releases.length === 0) {
+        if (!this.isSyncing) {
+          return [new ReleaseMessageItem('No releases found', false)];
+        }
+        return result;
+      }
+
+      const published = this.releases.filter(r => !r.draft && !r.prerelease);
+      const prereleases = this.releases.filter(r => !r.draft && r.prerelease);
+      const drafts = this.releases.filter(r => r.draft);
+
+      if (published.length > 0) result.push(new ReleaseGroupItem('Released', published));
+      if (prereleases.length > 0) result.push(new ReleaseGroupItem('Pre-releases', prereleases));
+      if (drafts.length > 0) result.push(new ReleaseGroupItem('Drafts', drafts));
+
+      return result;
     } else if (element instanceof ReleaseGroupItem) {
       return element.releases.map(r => new ReleaseTreeItem(r, this.owner, this.repo));
     }

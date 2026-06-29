@@ -25,13 +25,14 @@ export class ForgejoCommentController implements vscode.Disposable {
       'Forgejo PR Comments'
     );
 
-    // Only allow commenting on forgejo-pr: scheme documents
+    // Allow commenting on forgejo-pr: virtual documents (the read-only "before"
+    // side of a diff) and on local workspace files that have a registered PR
+    // context (the editable "after" side of a diff).
     this.controller.commentingRangeProvider = {
       provideCommentingRanges: (document: vscode.TextDocument): vscode.Range[] => {
-        if (document.uri.scheme !== PR_DIFF_SCHEME) {
+        if (!this.isPRDocument(document.uri)) {
           return [];
         }
-        // Allow commenting on every line
         const lineCount = document.lineCount;
         return [new vscode.Range(0, 0, lineCount - 1, 0)];
       }
@@ -42,7 +43,7 @@ export class ForgejoCommentController implements vscode.Disposable {
     // Listen for document opens to load existing comments
     this.disposables.push(
       vscode.workspace.onDidOpenTextDocument((doc) => {
-        if (doc.uri.scheme === PR_DIFF_SCHEME) {
+        if (this.isPRDocument(doc.uri)) {
           void this.loadCommentsForDocument(doc);
         }
       })
@@ -71,6 +72,14 @@ export class ForgejoCommentController implements vscode.Disposable {
   }
 
   /**
+   * Whether a URI is a PR document: a forgejo-pr: virtual doc, or any local
+   * file that has a registered PR context (the editable side of a diff).
+   */
+  private isPRDocument(uri: vscode.Uri): boolean {
+    return uri.scheme === PR_DIFF_SCHEME || this.prContextMap.has(uri.toString());
+  }
+
+  /**
    * Parse a forgejo-pr: URI to extract the ref used.
    * URI format: forgejo-pr:/{owner}/{repo}/{base64url_ref}/{filepath}
    */
@@ -93,17 +102,18 @@ export class ForgejoCommentController implements vscode.Disposable {
    * Determine whether this URI represents the base (old) or head (new) side of the diff.
    */
   private isHeadSide(uri: vscode.Uri): boolean {
-    const parsed = this.parseUri(uri);
-    if (!parsed) {
-      return true; // default to head
-    }
-
     const ctx = this.prContextMap.get(uri.toString());
     if (!ctx) {
       return true;
     }
 
-    return parsed.ref === ctx.headRef;
+    const parsed = this.parseUri(uri);
+    if (parsed) {
+      return parsed.ref === ctx.headRef;
+    }
+
+    // Local workspace files are the editable "after" (head) side of the diff.
+    return true;
   }
 
   /**

@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import { ForgejoClient } from '../api/forgejoClient';
 import { IssueListItem } from '../models/issue';
 import { getForgejoConfig } from '../utils/config';
+import { getCached, setCache } from '../utils/cacheStore';
+
+const CACHE_KEY = 'issue-list';
 
 export class IssueTreeItem extends vscode.TreeItem {
   constructor(
@@ -20,14 +23,12 @@ export class IssueTreeItem extends vscode.TreeItem {
     this.tooltip = `${issue.title}\nby ${issue.user.login}\nState: ${issue.state}\nComments: ${issue.comments}\n\nClick to view details`;
     this.contextValue = 'issue';
 
-    // Set icon based on state
     if (issue.state === 'closed') {
       this.iconPath = new vscode.ThemeIcon('issue-closed', new vscode.ThemeColor('gitDecoration.deletedResourceForeground'));
     } else {
       this.iconPath = new vscode.ThemeIcon('issues', new vscode.ThemeColor('gitDecoration.addedResourceForeground'));
     }
 
-    // Make clickable - opens issue detail view
     this.command = {
       command: 'forgejo.showIssueDetails',
       title: 'Show Issue Details',
@@ -61,7 +62,16 @@ class IssueMessageItem extends vscode.TreeItem {
   }
 }
 
-type IssueTreeElement = IssueTreeItem | IssueGroupItem | IssueMessageItem;
+class IssueSyncingItem extends vscode.TreeItem {
+  constructor() {
+    super('Syncing...', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('sync~spin');
+    this.description = 'Fetching latest issues';
+    this.contextValue = 'syncing';
+  }
+}
+
+type IssueTreeElement = IssueTreeItem | IssueGroupItem | IssueMessageItem | IssueSyncingItem;
 
 export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeElement> {
   private _onDidChangeTreeData: vscode.EventEmitter<IssueTreeElement | undefined | null | void> = new vscode.EventEmitter<IssueTreeElement | undefined | null | void>();
@@ -71,12 +81,35 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
   private error: string | null = null;
   private owner = '';
   private repo = '';
+  private isSyncing = false;
 
   constructor() {
+    const cached = getCached<IssueListItem[]>(CACHE_KEY);
+    if (cached && cached.length > 0) {
+      this.issues = cached;
+    }
     this.refresh();
   }
 
   refresh(): void {
+    this._onDidChangeTreeData.fire();
+    void this.syncInBackground();
+  }
+
+  private async syncInBackground(): Promise<void> {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+
+    try {
+      await this.fetchIssues();
+      if (this.issues.length > 0) {
+        setCache(CACHE_KEY, this.issues);
+      }
+    } catch {
+      //
+    }
+
+    this.isSyncing = false;
     this._onDidChangeTreeData.fire();
   }
 
@@ -86,42 +119,42 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
 
   async getChildren(element?: IssueTreeElement): Promise<IssueTreeElement[]> {
     if (!element) {
-      // Root level - fetch issues and group them
-      try {
-        await this.fetchIssues();
+      const result: IssueTreeElement[] = [];
 
-        if (this.error) {
-          console.error('Forgejo Issue fetch error:', this.error);
-          return [new IssueMessageItem(this.error, true)];
-        }
+      if (this.isSyncing && this.issues.length === 0) {
+        return [new IssueSyncingItem()];
+      }
 
-        if (this.issues.length === 0) {
-          return [new IssueMessageItem('No issues found', false)];
-        }
-
-        // Group by state
-        const openIssues = this.issues.filter(issue => issue.state === 'open');
-        const closedIssues = this.issues.filter(issue => issue.state === 'closed');
-
-        const groups: IssueGroupItem[] = [];
-
-        if (openIssues.length > 0) {
-          groups.push(new IssueGroupItem('Open', openIssues));
-        }
-        if (closedIssues.length > 0) {
-          groups.push(new IssueGroupItem('Closed', closedIssues));
-        }
-
-        return groups;
-      } catch (error) {
-        this.error = error instanceof Error ? error.message : 'Unknown error';
+      if (this.error) {
+        console.error('Forgejo Issue fetch error:', this.error);
         return [new IssueMessageItem(this.error, true)];
       }
+
+      if (this.isSyncing) {
+        result.push(new IssueSyncingItem());
+      }
+
+      if (this.issues.length === 0) {
+        if (!this.isSyncing) {
+          return [new IssueMessageItem('No issues found', false)];
+        }
+        return result;
+      }
+
+      const openIssues = this.issues.filter(issue => issue.state === 'open');
+      const closedIssues = this.issues.filter(issue => issue.state === 'closed');
+
+      if (openIssues.length > 0) {
+        result.push(new IssueGroupItem('Open', openIssues));
+      }
+      if (closedIssues.length > 0) {
+        result.push(new IssueGroupItem('Closed', closedIssues));
+      }
+
+      return result;
     } else if (element instanceof IssueGroupItem) {
-      // Show issues in this group
       return element.issues.map(issue => new IssueTreeItem(issue, issue.html_url, this.owner, this.repo));
-    } else if (element instanceof IssueMessageItem) {
-      // Message items have no children
+    } else if (element instanceof IssueMessageItem || element instanceof IssueSyncingItem) {
       return [];
     }
 

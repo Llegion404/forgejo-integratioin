@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { PRDiffContentProvider, createPRFileUri, PR_DIFF_SCHEME } from '../../providers/prDiffContentProvider';
+import { PRDiffContentProvider, createPRFileUri, createEmptyPRFileUri, PR_DIFF_SCHEME } from '../../providers/prDiffContentProvider';
 import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
 import { mockPlainTextContent, mockModifiedContent } from '../fixtures/fileContents';
@@ -28,6 +28,16 @@ describe('PRDiffContentProvider', () => {
   });
 
   describe('URI Parsing', () => {
+    test('empty sentinel URI renders blank content without any API calls', async () => {
+      const uri = createEmptyPRFileUri();
+      expect(uri.scheme).toBe(PR_DIFF_SCHEME);
+
+      const content = await provider.provideTextDocumentContent(uri);
+
+      expect(content).toBe('');
+      expect(mockClient.getFileContents).not.toHaveBeenCalled();
+      expect(mockGetForgejoConfig).not.toHaveBeenCalled();
+    });
     test('should parse valid URI with simple filepath', async () => {
       const uri = createPRFileUri('owner', 'repo', 'main', 'src/file.ts');
       mockGetForgejoConfig.mockResolvedValue({
