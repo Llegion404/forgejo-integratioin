@@ -137,15 +137,14 @@ body {
 }
 
 .diff-line {
-  display: flex; min-height: 20px; white-space: pre;
+  display: flex; min-height: 18px; white-space: pre;
 }
 .diff-line-num {
-  width: 48px; min-width: 48px; text-align: right; padding: 0 8px;
+  min-width: 0; width: 20px; flex-shrink: 0; text-align: right; padding: 0 3px;
   color: var(--vscode-editorLineNumber-foreground); user-select: none;
-  font-size: 11px; border-right: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-editor-background);
+  font-size: 9px; opacity: 0.5;
 }
-.diff-line .content { flex: 1; padding: 0 8px; word-break: break-all; }
+.diff-line .content { flex: 1; padding: 0 4px; white-space: pre-wrap; word-break: break-word; }
 
 .diff-line.context { background: var(--vscode-editor-background); }
 .diff-line.context .diff-line-num { background: var(--vscode-editor-background); }

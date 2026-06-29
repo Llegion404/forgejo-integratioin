@@ -289,37 +289,31 @@
       if (!currentHunk) continue;
 
       var diffLine = document.createElement('div');
-      var numOld = document.createElement('span');
-      var numNew = document.createElement('span');
+      var lineNum = document.createElement('span');
       var content = document.createElement('span');
 
-      numOld.className = 'diff-line-num';
-      numNew.className = 'diff-line-num';
+      lineNum.className = 'diff-line-num';
       content.className = 'content';
 
       if (line.startsWith('+')) {
         diffLine.className = 'diff-line add';
-        numOld.textContent = '';
-        numNew.textContent = newLine;
-        content.textContent = line;
+        lineNum.textContent = newLine;
+        content.textContent = line.substring(1);
         newLine++;
       } else if (line.startsWith('-')) {
         diffLine.className = 'diff-line del';
-        numOld.textContent = oldLine;
-        numNew.textContent = '';
-        content.textContent = line;
+        lineNum.textContent = oldLine;
+        content.textContent = line.substring(1);
         oldLine++;
       } else {
         diffLine.className = 'diff-line context';
-        numOld.textContent = oldLine;
-        numNew.textContent = newLine;
-        content.textContent = line;
+        lineNum.textContent = newLine;
+        content.textContent = line.startsWith(' ') ? line.substring(1) : line;
         oldLine++;
         newLine++;
       }
 
-      diffLine.appendChild(numOld);
-      diffLine.appendChild(numNew);
+      diffLine.appendChild(lineNum);
       diffLine.appendChild(content);
       currentHunk.appendChild(diffLine);
     }
