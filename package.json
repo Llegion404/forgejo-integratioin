@@ -124,6 +124,11 @@
         "title": "Open File in Browser"
       },
       {
+        "command": "forgejo.openPrFileInEditor",
+        "title": "Open File in Editor",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "forgejo.showPrDetails",
         "title": "View PR Details",
         "icon": "$(info)"
@@ -306,6 +311,11 @@
           "group": "navigation"
         },
         {
+          "command": "forgejo.openPrFileInEditor",
+          "when": "viewItem == prFile",
+          "group": "inline"
+        },
+        {
           "command": "forgejo.showIssueDetails",
           "when": "viewItem == issue",
           "group": "navigation@1"
@@ -433,6 +443,16 @@
           "type": "string",
           "default": "",
           "description": "Preferred git remote name to use for Forgejo detection (default: auto-detect, falls back to origin)"
+        },
+        "forgejo.prDiffMode": {
+          "type": "string",
+          "enum": ["local", "remote"],
+          "default": "local",
+          "enumDescriptions": [
+            "Diff against your actual local working file (editable). Requires the PR branch to be checked out.",
+            "Diff base vs head content fetched from the API (read-only, no local checkout needed)."
+          ],
+          "description": "How PR file diffs are opened: 'local' diffs against your working copy (editable), 'remote' shows a read-only API-fetched diff."
         }
       }
     }

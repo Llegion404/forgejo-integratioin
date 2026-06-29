@@ -10,7 +10,7 @@ export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'checkout' }
   | { type: 'refresh' }
-  | { type: 'merge'; strategy: string; message?: string }
+  | { type: 'merge'; strategy: string; title?: string; message?: string }
   | { type: 'revert'; commitSha: string }
   | { type: 'addComment'; body: string }
   | { type: 'addReview'; state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; body: string }
@@ -29,12 +29,9 @@ export type WebviewMessage =
   | { type: 'toggleDraft' }
   | { type: 'updateTitle'; title: string }
   | { type: 'deleteComment'; commentId: number }
-  | { type: 'addLabels'; labels: string[] }
-  | { type: 'removeLabel'; label: string }
-  | { type: 'addAssignees'; assignees: string[] }
-  | { type: 'removeAssignees'; assignees: string[] }
-  | { type: 'requestReview'; reviewer: string }
-  | { type: 'removeReview'; reviewer: string };
+  | { type: 'manageLabels' }
+  | { type: 'manageAssignees' }
+  | { type: 'manageReviewers' };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
@@ -282,7 +279,7 @@ export class PRDetailWebviewProvider {
         break;
       case 'checkout': await this._checkoutBranch(owner, repo, number); break;
       case 'refresh': await this._fetchPRData(panelKey); break;
-      case 'merge': await this._mergePR(owner, repo, number, message.strategy, message.message, panelKey); break;
+      case 'merge': await this._mergePR(owner, repo, number, message.strategy, message.title, message.message, panelKey); break;
       case 'revert': this._revertCommit(message.commitSha); break;
       case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey); break;
       case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey); break;
@@ -308,20 +305,16 @@ export class PRDetailWebviewProvider {
       case 'editComment':
         await this._handleEditComment(owner, repo, message.commentId, message.body, panelKey);
         break;
-      case 'replyToComment':
-        break;
+      case 'replyToComment': await this._replyToComment(owner, repo, number, message.body, panelKey); break;
       case 'reopenPR': await this._reopenPR(owner, repo, number, panelKey); break;
       case 'toggleDraft': await this._toggleDraft(owner, repo, number, panelKey); break;
       case 'updateTitle': await this._updateTitle(owner, repo, number, message.title, panelKey); break;
       case 'deleteComment': await this._deleteComment(owner, repo, message.commentId, panelKey); break;
-      case 'addLabels': await this._addPRLabels(owner, repo, number, message.labels, panelKey); break;
-      case 'removeLabel': await this._removePRLabel(owner, repo, number, message.label, panelKey); break;
-      case 'addAssignees': await this._addPRAssignees(owner, repo, number, message.assignees, panelKey); break;
-      case 'removeAssignees': await this._removePRAssignees(owner, repo, number, message.assignees, panelKey); break;
-      case 'requestReview': await this._requestPRReview(owner, repo, number, message.reviewer, panelKey); break;
-      case 'removeReview': await this._removePRReview(owner, repo, number, message.reviewer, panelKey); break;
-      case 'viewCommit': break;
-      case 'viewFile': break;
+      case 'manageLabels': await this._manageLabels(owner, repo, number, panelKey); break;
+      case 'manageAssignees': await this._manageAssignees(owner, repo, number, panelKey); break;
+      case 'manageReviewers': await this._manageReviewers(owner, repo, number, panelKey); break;
+      case 'viewCommit': await this._viewCommit(owner, repo, message.sha); break;
+      case 'viewFile': await this._viewFile(owner, repo, number, message.filename); break;
     }
   }
 
@@ -436,13 +429,18 @@ export class PRDetailWebviewProvider {
     }
   }
 
-  private async _mergePR(owner: string, repo: string, number: number, strategy: string, message?: string, panelKey?: string): Promise<void> {
+  private async _mergePR(owner: string, repo: string, number: number, strategy: string, mergeTitle?: string, mergeMessage?: string, panelKey?: string): Promise<void> {
     const panelState = panelKey ? this._panels.get(panelKey) : undefined;
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.mergePullRequest(owner, repo, number, strategy as 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only', false);
+      await client.mergePullRequestWithMessage(
+        owner, repo, number,
+        strategy as 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only',
+        mergeTitle ?? '',
+        mergeMessage ?? ''
+      );
       void vscode.window.showInformationMessage('Pull request merged successfully');
       if (panelState) {
         void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'merge', success: true });
@@ -580,81 +578,156 @@ export class PRDetailWebviewProvider {
     }
   }
 
-  private async _addPRLabels(owner: string, repo: string, number: number, labels: string[], panelKey?: string): Promise<void> {
+  private async _replyToComment(owner: string, repo: string, number: number, body: string, panelKey?: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.addPRLabels(owner, repo, number, labels);
-      void vscode.window.showInformationMessage(`Added label: ${labels.join(', ')}`);
+      await client.createComment(owner, repo, number, body);
+      void vscode.window.showInformationMessage('Reply posted');
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
-      void vscode.window.showErrorMessage(`Failed to add label: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to post reply: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async _removePRLabel(owner: string, repo: string, number: number, label: string, panelKey?: string): Promise<void> {
+  private async _viewCommit(owner: string, repo: string, sha: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
-      const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.removePRLabel(owner, repo, number, label);
-      void vscode.window.showInformationMessage(`Removed label: ${label}`);
-      if (panelKey) await this._fetchPRData(panelKey);
+      const url = `${config.instanceUrl}/${owner}/${repo}/commit/${sha}`;
+      void vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (error) {
-      void vscode.window.showErrorMessage(`Failed to remove label: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to open commit: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async _addPRAssignees(owner: string, repo: string, number: number, assignees: string[], panelKey?: string): Promise<void> {
+  private async _viewFile(owner: string, repo: string, number: number, filename: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.addPRAssignees(owner, repo, number, assignees);
-      void vscode.window.showInformationMessage(`Added assignee: ${assignees.join(', ')}`);
-      if (panelKey) await this._fetchPRData(panelKey);
+      const pr = await client.getPullRequestDetails(owner, repo, number);
+      const url = `${config.instanceUrl}/${owner}/${repo}/src/${pr.head.sha}/${filename}`;
+      void vscode.env.openExternal(vscode.Uri.parse(url));
     } catch (error) {
-      void vscode.window.showErrorMessage(`Failed to add assignee: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to open file: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async _removePRAssignees(owner: string, repo: string, number: number, assignees: string[], panelKey?: string): Promise<void> {
+  private async _manageLabels(owner: string, repo: string, number: number, panelKey?: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.removePRAssignees(owner, repo, number, assignees);
-      void vscode.window.showInformationMessage(`Removed assignee: ${assignees.join(', ')}`);
+
+      const [repoLabels, prLabels] = await Promise.all([
+        client.listRepoLabels(owner, repo),
+        client.getPullRequestDetails(owner, repo, number).then(pr => (pr as any).labels ?? []).catch(() => [])
+      ]);
+      const currentLabelNames = new Set(prLabels.map((l: any) => l.name));
+
+      const items = repoLabels.map(l => ({
+        label: l.name,
+        picked: currentLabelNames.has(l.name),
+        description: `#${l.color}`,
+      }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        canPickMany: true,
+        placeHolder: 'Manage labels',
+        title: `Labels for PR #${number}`,
+      });
+      if (!selected) return;
+
+      const selectedNames = new Set(selected.map(s => s.label));
+      const toAdd = selected.filter(s => !currentLabelNames.has(s.label)).map(s => s.label);
+      const toRemove = prLabels.filter((l: any) => !selectedNames.has(l.name)).map((l: any) => l.name);
+
+      if (toAdd.length > 0) await client.addPRLabels(owner, repo, number, toAdd);
+      for (const label of toRemove) await client.removePRLabel(owner, repo, number, label);
+
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
-      void vscode.window.showErrorMessage(`Failed to remove assignee: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to manage labels: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async _requestPRReview(owner: string, repo: string, number: number, reviewer: string, panelKey?: string): Promise<void> {
+  private async _manageAssignees(owner: string, repo: string, number: number, panelKey?: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.requestPRReview(owner, repo, number, reviewer);
-      void vscode.window.showInformationMessage(`Requested review from ${reviewer}`);
+
+      const [assignees, pr] = await Promise.all([
+        client.listRepoAssignees(owner, repo),
+        client.getPullRequestDetails(owner, repo, number)
+      ]);
+      const currentAssignees = new Set<string>(((pr as any).assignees ?? []).map((a: any) => a.login as string));
+
+      const items = assignees.map(a => ({
+        label: a.login,
+        picked: currentAssignees.has(a.login),
+      }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        canPickMany: true,
+        placeHolder: 'Manage assignees',
+        title: `Assignees for PR #${number}`,
+      });
+      if (!selected) return;
+
+      const selectedNames = selected.map(s => s.label);
+      const toAdd = selectedNames.filter(n => !currentAssignees.has(n));
+      const toRemove = Array.from(currentAssignees).filter(n => !selectedNames.includes(n));
+
+      if (toAdd.length > 0) await client.addPRAssignees(owner, repo, number, toAdd);
+      if (toRemove.length > 0) await client.removePRAssignees(owner, repo, number, toRemove);
+
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
-      void vscode.window.showErrorMessage(`Failed to request review: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to manage assignees: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  private async _removePRReview(owner: string, repo: string, number: number, reviewer: string, panelKey?: string): Promise<void> {
+  private async _manageReviewers(owner: string, repo: string, number: number, panelKey?: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      await client.removePRReview(owner, repo, number, reviewer);
-      void vscode.window.showInformationMessage(`Removed reviewer ${reviewer}`);
+
+      const [assignees, pr] = await Promise.all([
+        client.listRepoAssignees(owner, repo),
+        client.getPullRequestDetails(owner, repo, number)
+      ]);
+      const currentReviewers = new Set<string>(((pr as any).requested_reviewers ?? []).map((r: any) => r.login as string));
+
+      const items = assignees.map(a => ({
+        label: a.login,
+        picked: currentReviewers.has(a.login),
+      }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        canPickMany: true,
+        placeHolder: 'Manage reviewers',
+        title: `Reviewers for PR #${number}`,
+      });
+      if (!selected) return;
+
+      const selectedNames = selected.map(s => s.label);
+      const toAdd = selectedNames.filter(n => !currentReviewers.has(n));
+      const toRemove = Array.from(currentReviewers).filter(n => !selectedNames.includes(n));
+
+      if (toAdd.length > 0) {
+        for (const reviewer of toAdd) await client.requestPRReview(owner, repo, number, reviewer);
+      }
+      if (toRemove.length > 0) {
+        for (const reviewer of toRemove) await client.removePRReview(owner, repo, number, reviewer);
+      }
+
       if (panelKey) await this._fetchPRData(panelKey);
     } catch (error) {
-      void vscode.window.showErrorMessage(`Failed to remove reviewer: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      void vscode.window.showErrorMessage(`Failed to manage reviewers: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -724,119 +797,155 @@ export class PRDetailWebviewProvider {
   </div>
 
   <div id="content" style="display: none;">
+    <!-- Header: status + title + branch info + actions -->
     <header class="pr-header">
-      <div class="pr-title-row">
-        <h1 id="pr-title"></h1>
-        <span id="pr-number"></span>
-        <button id="copy-url-btn" class="icon-btn" title="Copy URL">📋</button>
+      <div class="header-top">
+        <div class="header-left">
+          <span id="pr-status-badge" class="status-badge"></span>
+          <h1 id="pr-title" class="pr-title" tabindex="0"></h1>
+          <span id="pr-number" class="pr-number"></span>
+        </div>
+        <div class="header-right">
+          <button id="refresh-btn" class="icon-btn" title="Refresh">&#x21bb;</button>
+          <button id="open-web-btn" class="icon-btn" title="Open in browser">&#x1F517;</button>
+        </div>
       </div>
 
-      <div class="pr-meta">
-        <span id="pr-status-badge" class="status-badge"></span>
-        <span id="pr-mergeable-badge" class="mergeable-badge" style="display: none;"></span>
+      <div class="header-meta">
         <span class="pr-author">
-          by <a class="user-link" id="author-avatar-link" href="#" style="display:none"><img id="author-avatar" src="" alt="" class="avatar"></a>
+          <a class="user-link" id="author-avatar-link" href="#" style="display:none"><img id="author-avatar" src="" alt="" class="avatar avatar-sm"></a>
           <a class="user-link" id="author-name" href="#"></a>
         </span>
         <span id="pr-created" class="pr-date"></span>
-        <span id="pr-comment-count" class="pr-comment-count" style="display: none;"></span>
+        <span id="pr-mergeable-badge" class="mergeable-badge" style="display: none;"></span>
         <span class="pr-branch">
-          <span id="base-branch"></span>
-          <span class="branch-arrow">←</span>
-          <span id="head-branch"></span>
+          <span id="base-branch" class="branch-chip"></span>
+          <span class="branch-arrow">&larr;</span>
+          <span id="head-branch" class="branch-chip"></span>
           <span id="cross-repo-badge" class="cross-repo-badge" style="display: none;">from fork</span>
         </span>
       </div>
-
-      <div id="labels-container" class="labels-container" style="display: none;">
-        <button id="add-label-btn" class="icon-btn-small" title="Add label">+</button>
-      </div>
-      <div id="assignees-container" class="assignees-container" style="display: none;">
-        <button id="add-assignee-btn" class="icon-btn-small" title="Add assignee">+</button>
-      </div>
-      <div id="reviewers-container" class="reviewers-container" style="display: none;">
-        <button id="add-reviewer-btn" class="icon-btn-small" title="Request review">+</button>
-      </div>
     </header>
 
+    <!-- Action bar: primary PR actions -->
     <nav class="action-bar">
       <button id="checkout-btn" class="btn btn-primary">Checkout</button>
-      <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
-      <button id="open-web-btn" class="btn btn-secondary">Open in Web</button>
-      <button id="add-comment-btn" class="btn btn-secondary">+ Comment</button>
-      <div id="merge-actions" class="merge-actions" style="display: none;">
+      <div id="merge-actions" class="action-group" style="display: none;">
         <button id="merge-btn" class="btn btn-success">Merge</button>
       </div>
-      <div id="revert-actions" class="revert-actions" style="display: none;">
+      <button id="reopen-pr-btn" class="btn btn-secondary" style="display: none;">Reopen</button>
+      <button id="toggle-draft-btn" class="btn btn-secondary" style="display: none;">Ready for Review</button>
+      <div id="revert-actions" class="action-group" style="display: none;">
         <button id="revert-btn" class="btn btn-danger">Revert</button>
       </div>
-      <button id="reopen-pr-btn" class="btn btn-success" style="display: none;">Reopen</button>
-      <button id="toggle-draft-btn" class="btn btn-secondary" style="display: none;">Ready for Review</button>
     </nav>
 
-    <section class="description-section">
-      <div class="description-header">
+    <!-- Meta: labels, assignees, reviewers as manageable sections -->
+    <div class="meta-grid">
+      <div id="labels-container" class="meta-section" style="display: none;">
+        <div class="meta-header">
+          <span class="meta-title">Labels</span>
+          <button id="add-label-btn" class="meta-manage-btn" title="Manage labels">+ Add</button>
+        </div>
+        <div id="labels-list" class="labels-list"></div>
+      </div>
+      <div id="assignees-container" class="meta-section" style="display: none;">
+        <div class="meta-header">
+          <span class="meta-title">Assignees</span>
+          <button id="add-assignee-btn" class="meta-manage-btn" title="Manage assignees">+ Add</button>
+        </div>
+        <div id="assignees-list" class="assignees-list"></div>
+      </div>
+      <div id="reviewers-container" class="meta-section" style="display: none;">
+        <div class="meta-header">
+          <span class="meta-title">Reviewers</span>
+          <button id="add-reviewer-btn" class="meta-manage-btn" title="Manage reviewers">+ Add</button>
+        </div>
+        <div id="reviewers-list" class="reviewers-list"></div>
+      </div>
+    </div>
+
+    <!-- Description -->
+    <section class="content-section">
+      <div class="section-header">
         <h2>Description</h2>
-        <button id="edit-description-btn" class="btn btn-secondary btn-small">Edit</button>
+        <button id="edit-description-btn" class="btn btn-secondary btn-sm">Edit</button>
       </div>
       <div id="pr-description" class="markdown-body"></div>
       <div id="pr-description-editor" class="description-editor" style="display: none;">
         <textarea id="description-textarea" class="description-textarea"></textarea>
-        <div class="description-editor-actions">
-          <button id="save-description-btn" class="btn btn-primary btn-small">Save</button>
-          <button id="cancel-description-btn" class="btn btn-secondary btn-small">Cancel</button>
+        <div class="editor-actions">
+          <button id="save-description-btn" class="btn btn-primary btn-sm">Save</button>
+          <button id="cancel-description-btn" class="btn btn-secondary btn-sm">Cancel</button>
         </div>
       </div>
     </section>
 
-    <section id="ci-section" class="ci-section" style="display: none;">
-      <h2>CI Status</h2>
-      <div id="ci-status-list"></div>
+    <!-- CI/Checks -->
+    <section id="ci-section" class="content-section" style="display: none;">
+      <div class="section-header">
+        <h2>Checks</h2>
+        <span id="ci-summary" class="ci-summary"></span>
+      </div>
+      <div id="ci-status-list" class="ci-list"></div>
     </section>
 
-    <section class="activity-section">
-      <h2>Activity <span id="activity-count"></span></h2>
-      <div id="activity-timeline">
-        <div class="activity-timeline-line"></div>
+    <!-- Activity timeline -->
+    <section class="content-section">
+      <div class="section-header">
+        <h2>Activity</h2>
+        <span id="activity-count" class="section-count"></span>
+      </div>
+      <div id="activity-timeline" class="timeline">
+        <div class="timeline-line"></div>
       </div>
     </section>
 
-    <div id="comment-input-container" class="comment-input-container" style="display: none;">
-      <textarea id="comment-input" placeholder="Write a comment..."></textarea>
-      <div class="comment-actions">
-        <button id="submit-comment-btn" class="btn btn-primary">Submit</button>
-        <button id="cancel-comment-btn" class="btn btn-secondary">Cancel</button>
+    <!-- Comment composer (sticky bottom) -->
+    <div id="comment-input-container" class="comment-composer" style="display: none;">
+      <textarea id="comment-input" placeholder="Write a comment..." class="comment-textarea"></textarea>
+      <div class="composer-actions">
+        <button id="submit-comment-btn" class="btn btn-primary btn-sm">Comment</button>
+        <button id="submit-review-btn" class="btn btn-secondary btn-sm">Review</button>
       </div>
     </div>
 
-    <div id="review-dialog" class="review-dialog" style="display: none;">
-      <h3>Submit Review</h3>
-      <select id="review-state">
-        <option value="COMMENT">Comment</option>
-        <option value="APPROVE">Approve</option>
-        <option value="REQUEST_CHANGES">Request Changes</option>
-      </select>
-      <textarea id="review-body" placeholder="Review comment..."></textarea>
-      <div class="review-actions">
-        <button id="submit-review-btn" class="btn btn-primary">Submit Review</button>
-        <button id="cancel-review-btn" class="btn btn-secondary">Cancel</button>
+    <!-- Review dialog -->
+    <div id="review-dialog" class="modal-overlay" style="display: none;">
+      <div class="modal">
+        <h3>Submit Review</h3>
+        <select id="review-state" class="modal-select">
+          <option value="COMMENT">Comment</option>
+          <option value="APPROVE">Approve</option>
+          <option value="REQUEST_CHANGES">Request Changes</option>
+        </select>
+        <textarea id="review-body" class="modal-textarea" placeholder="Review comment..."></textarea>
+        <div class="modal-actions">
+          <button id="confirm-review-btn" class="btn btn-primary">Submit Review</button>
+          <button id="cancel-review-btn" class="btn btn-secondary">Cancel</button>
+        </div>
       </div>
     </div>
 
-    <div id="merge-dialog" class="merge-dialog" style="display: none;">
-      <h3>Merge Pull Request</h3>
-      <select id="merge-strategy">
-        <option value="merge">Create a merge commit</option>
-        <option value="squash">Squash and merge</option>
-        <option value="rebase">Rebase and merge</option>
-      </select>
-      <textarea id="merge-message" placeholder="Merge message (optional)"></textarea>
-      <div class="merge-actions">
-        <button id="confirm-merge-btn" class="btn btn-success">Merge</button>
-        <button id="cancel-merge-btn" class="btn btn-secondary">Cancel</button>
+    <!-- Merge dialog -->
+    <div id="merge-dialog" class="modal-overlay" style="display: none;">
+      <div class="modal">
+        <h3>Merge Pull Request</h3>
+        <select id="merge-strategy" class="modal-select">
+          <option value="merge">Create a merge commit</option>
+          <option value="squash">Squash and merge</option>
+          <option value="rebase">Rebase and merge</option>
+        </select>
+        <input id="merge-title" class="modal-input" placeholder="Merge title (optional)">
+        <textarea id="merge-message" class="modal-textarea" placeholder="Merge message (optional)"></textarea>
+        <div class="modal-actions">
+          <button id="confirm-merge-btn" class="btn btn-success">Merge</button>
+          <button id="cancel-merge-btn" class="btn btn-secondary">Cancel</button>
+        </div>
       </div>
     </div>
 
+    <!-- Emoji picker -->
     <div id="emoji-picker" class="emoji-picker" style="display: none;">
       <span class="emoji-option" data-emoji="+1">\u{1F44D}</span>
       <span class="emoji-option" data-emoji="-1">\u{1F44E}</span>

@@ -32,6 +32,7 @@ import { ForgejoClient } from './api/forgejoClient';
 import { getForgejoConfig } from './utils/config';
 import { initializeSecretStorage } from './utils/secretStorage';
 import { migrateTokensToSecretStorage } from './utils/migration';
+import { getCurrentBranch } from './utils/gitUtils';
 import { initCacheStore } from './utils/cacheStore';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -265,12 +266,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register PR file diff viewer
   //
-  // Opens the PR file diff in VS Code's built-in diff editor where the RIGHT
-  // pane is the user's actual local working file (editable — typing live-updates
-  // the diff highlighting) and the LEFT pane is the read-only "before" content
-  // fetched at the PR base ref (rendered via the forgejo-pr: virtual document
-  // provider). This requires the PR branch to be checked out locally so the
-  // working file reflects the PR's changes.
+  // Two modes (configurable via `forgejo.prDiffMode`):
+  //
+  //  "local" (default): RIGHT pane = your actual local working file (editable),
+  //    LEFT pane = read-only base-ref content via forgejo-pr: virtual doc.
+  //    Requires the PR branch to be checked out. If the local file isn't found
+  //    AND you're not on the head branch, you get a checkout prompt.
+  //
+  //  "remote": Both sides fetched from the API (read-only). No local checkout
+  //    needed — behaves like a traditional PR diff viewer.
   context.subscriptions.push(
     registerCommand(
       'forgejo.showPrFileDiff',
@@ -282,35 +286,16 @@ export async function activate(context: vscode.ExtensionContext) {
         baseRef: string,
         headRef: string
       ) => {
-        console.log('[Forgejo] Opening diff for file:', file.filename);
+        const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
+        const diffMode = vscode.workspace.getConfiguration('forgejo').get<'local' | 'remote'>('prDiffMode', 'local');
+        const title = `PR #${pr.number}: ${file.filename}`;
 
         try {
-          const folder = vscode.workspace.workspaceFolders?.[0];
-          if (!folder) {
-            void vscode.window.showErrorMessage(
-              'Open a workspace folder to diff PR file changes against your local working copy.'
-            );
-            return;
-          }
-
-          const showNotifications = vscode.workspace.getConfiguration('forgejo').get<boolean>('showFileStatusNotifications', true);
-          const title = `PR #${pr.number}: ${file.filename}`;
-
-          // Build the read-only "before" side of the diff (fetch happens lazily
-          // via the forgejo-pr: content provider when the diff opens).
-          let beforeUri: vscode.Uri;
-          let beforeFilePath = file.filename;
-          if (file.status === 'added') {
-            beforeUri = createEmptyPRFileUri();
-          } else {
-            beforeFilePath = file.previous_filename ?? file.filename;
-            beforeUri = createPRFileUri(owner, repo, baseRef, beforeFilePath);
-          }
-
+          // ---- Removed files: always read-only base content ----
           if (file.status === 'removed') {
-            // File was deleted in the PR: show base content (read-only) only.
+            const beforeUri = createPRFileUri(owner, repo, baseRef, file.filename);
             commentController.registerPRContext(beforeUri, {
-              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforeFilePath
+              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
             });
             const doc = await vscode.workspace.openTextDocument(beforeUri);
             await vscode.window.showTextDocument(doc, { preview: true });
@@ -322,24 +307,96 @@ export async function activate(context: vscode.ExtensionContext) {
             return;
           }
 
-          // Resolve the actual local file (right pane, editable).
+          // ---- Build the "before" (left) side ----
+          let beforeUri: vscode.Uri;
+          let beforeFilePath = file.filename;
+          if (file.status === 'added') {
+            beforeUri = createEmptyPRFileUri();
+          } else {
+            beforeFilePath = file.previous_filename ?? file.filename;
+            beforeUri = createPRFileUri(owner, repo, baseRef, beforeFilePath);
+          }
+
+          if (diffMode === 'remote') {
+            // Read-only diff: both sides from the API via forgejo-pr: virtual docs.
+            const afterUri = createPRFileUri(owner, repo, headRef, file.filename);
+            commentController.registerPRContext(beforeUri, {
+              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforeFilePath
+            });
+            commentController.registerPRContext(afterUri, {
+              owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
+            });
+            await vscode.commands.executeCommand('vscode.diff', beforeUri, afterUri, title, { preview: true });
+            if (showNotifications && file.status === 'added') {
+              void vscode.window.showInformationMessage(
+                `File ${file.filename} was added in PR #${pr.number}`
+              );
+            }
+            return;
+          }
+
+          // ---- "local" mode: diff against the actual local working file ----
+          const folder = vscode.workspace.workspaceFolders?.[0];
+          if (!folder) {
+            void vscode.window.showErrorMessage(
+              'Open a workspace folder to diff PR file changes against your local working copy.'
+            );
+            return;
+          }
+
           const localUri = vscode.Uri.joinPath(folder.uri, ...file.filename.split('/'));
           const localExists = await vscode.workspace.fs.stat(localUri).then(
             () => true,
             () => false
           );
+
           if (!localExists) {
+            // Check if we're already on the PR branch — if so, the file genuinely
+            // doesn't exist (maybe it was added in the PR but isn't in this checkout).
+            const currentBranch = getCurrentBranch();
+            const onHeadBranch = currentBranch === headRef;
+
+            if (onHeadBranch) {
+              // We're on the right branch but the file doesn't exist locally.
+              // Fall back to a read-only remote diff so the user still sees the change.
+              const afterUri = createPRFileUri(owner, repo, headRef, file.filename);
+              commentController.registerPRContext(beforeUri, {
+                owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforeFilePath
+              });
+              commentController.registerPRContext(afterUri, {
+                owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
+              });
+              await vscode.commands.executeCommand('vscode.diff', beforeUri, afterUri, title, { preview: true });
+              return;
+            }
+
+            // Not on the PR branch — offer to check it out.
             const action = await vscode.window.showWarningMessage(
-              `Local file "${file.filename}" not found. Check out the PR branch (#${pr.number}) to edit changes locally.`,
+              `Local file "${file.filename}" not found. You're on branch "${currentBranch ?? 'unknown'}" — check out "${headRef}" (PR #${pr.number}) to edit changes locally.`,
+              'Checkout PR Branch',
               'Open PR in Browser'
             );
-            if (action === 'Open PR in Browser' && pr.html_url) {
+            if (action === 'Checkout PR Branch') {
+              try {
+                const config = await getForgejoConfig();
+                if (config) {
+                  const client = new ForgejoClient(config.instanceUrl, config.token);
+                  const refs = await client.getPullRequestRefs(owner, repo, pr.number);
+                  const terminal = vscode.window.createTerminal('Forgejo Checkout');
+                  terminal.sendText(`git fetch origin ${refs.head}:${refs.head}`);
+                  terminal.sendText(`git checkout ${refs.head}`);
+                  terminal.show();
+                }
+              } catch (e) {
+                void vscode.window.showErrorMessage(`Failed to checkout: ${e instanceof Error ? e.message : 'Unknown error'}`);
+              }
+            } else if (action === 'Open PR in Browser' && pr.html_url) {
               void vscode.env.openExternal(vscode.Uri.parse(pr.html_url));
             }
             return;
           }
 
-          // Register PR context on both sides so inline review comments work.
+          // Local file exists — diff base (read-only) vs local (editable).
           commentController.registerPRContext(beforeUri, {
             owner, repo, prNumber: pr.number, baseRef, headRef, filePath: beforeFilePath
           });
@@ -347,21 +404,13 @@ export async function activate(context: vscode.ExtensionContext) {
             owner, repo, prNumber: pr.number, baseRef, headRef, filePath: file.filename
           });
 
-          await vscode.commands.executeCommand(
-            'vscode.diff',
-            beforeUri,
-            localUri,
-            title,
-            { preview: true }
-          );
+          await vscode.commands.executeCommand('vscode.diff', beforeUri, localUri, title, { preview: true });
 
           if (showNotifications && file.status === 'added') {
             void vscode.window.showInformationMessage(
               `File ${file.filename} was added in PR #${pr.number}`
             );
           }
-
-          console.log('[Forgejo] Diff opened successfully');
         } catch (error) {
           console.error('[Forgejo] Error opening diff:', error);
           void vscode.window.showErrorMessage(
@@ -392,6 +441,41 @@ export async function activate(context: vscode.ExtensionContext) {
         if (fileItem.file.blob_url) {
           void vscode.env.openExternal(vscode.Uri.parse(fileItem.file.blob_url));
         }
+      }
+    )
+  );
+
+  // Open PR file in the editor (like VS Code's built-in explorer)
+  context.subscriptions.push(
+    registerCommand(
+      'forgejo.openPrFileInEditor',
+      async (fileItem) => {
+        const filename: string = fileItem.file.filename;
+        const title = `PR #${fileItem.pr.number}: ${filename}`;
+
+        // Try the local working copy first
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        if (folder) {
+          const localUri = vscode.Uri.joinPath(folder.uri, ...filename.split('/'));
+          const localExists = await vscode.workspace.fs.stat(localUri).then(() => true, () => false);
+          if (localExists) {
+            await vscode.commands.executeCommand('vscode.openWith', localUri, 'default', { preview: true, label: title } as any);
+            return;
+          }
+        }
+
+        // Fallback: open the PR head version via the forgejo-pr: virtual doc
+        const remoteUri = createPRFileUri(fileItem.owner, fileItem.repo, fileItem.headRef, filename);
+        commentController.registerPRContext(remoteUri, {
+          owner: fileItem.owner,
+          repo: fileItem.repo,
+          prNumber: fileItem.pr.number,
+          baseRef: fileItem.baseRef,
+          headRef: fileItem.headRef,
+          filePath: filename,
+        });
+        const doc = await vscode.workspace.openTextDocument(remoteUri);
+        await vscode.window.showTextDocument(doc, { preview: true, label: title } as any);
       }
     )
   );

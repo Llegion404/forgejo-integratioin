@@ -77,9 +77,15 @@ export class PRFileItem extends vscode.TreeItem {
     public readonly baseRef: string,
     public readonly headRef: string
   ) {
-    super(file.filename, vscode.TreeItemCollapsibleState.None);
+    const parts = file.filename.split('/');
+    const fileName = parts.pop() || file.filename;
+    const dirPath = parts.length > 0 ? parts.join('/') : '';
 
-    this.description = `+${file.additions} -${file.deletions}`;
+    super(fileName, vscode.TreeItemCollapsibleState.None);
+
+    this.description = dirPath
+      ? `${dirPath}  +${file.additions} -${file.deletions}`
+      : `+${file.additions} -${file.deletions}`;
     this.tooltip = `${file.filename}\nStatus: ${file.status}\n+${file.additions} -${file.deletions}`;
     this.contextValue = 'prFile';
 

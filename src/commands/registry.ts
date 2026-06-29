@@ -84,6 +84,7 @@ export interface CommandMap {
 
   'forgejo.openPrInBrowserFromContext': [prItem: PRTreeItem];
   'forgejo.openPrFileInBrowser': [fileItem: PRFileItem];
+  'forgejo.openPrFileInEditor': [fileItem: PRFileItem];
 
   // view/item/context: viewItem == prOverview  +  executeCommand calls
   'forgejo.showPrDetails': [

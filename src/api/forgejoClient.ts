@@ -194,6 +194,21 @@ export class ForgejoClient extends BaseClient {
     await this.rawRequest('DELETE', `/repos/${owner}/${repo}/pulls/${prIndex}/requested_reviewers`, { reviewers: [reviewer] });
   }
 
+  async mergePullRequestWithMessage(
+    owner: string,
+    repo: string,
+    index: number,
+    method: 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only',
+    mergeTitle: string,
+    mergeMessage: string
+  ): Promise<void> {
+    await this.rawRequest('POST', `/repos/${owner}/${repo}/pulls/${index}/merge`, {
+      Do: method,
+      MergeTitleField: mergeTitle,
+      MergeMessageField: mergeMessage,
+    });
+  }
+
   // Release management
   async deleteRelease(owner: string, repo: string, releaseId: number): Promise<void> {
     await this.rawRequest('DELETE', `/repos/${owner}/${repo}/releases/${releaseId}`);

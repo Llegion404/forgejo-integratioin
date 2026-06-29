@@ -270,3 +270,24 @@ export function hasGitRepository(): boolean {
     return false;
   }
 }
+
+/**
+ * Returns the name of the currently checked-out git branch, or null if it
+ * can't be determined (not a git repo, detached HEAD, etc.).
+ */
+export function getCurrentBranch(): string | null {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders || workspaceFolders.length === 0) {
+    return null;
+  }
+
+  try {
+    const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+      cwd: workspaceFolders[0].uri.fsPath,
+      encoding: 'utf-8',
+    }).trim();
+    return branch === 'HEAD' ? null : branch;
+  } catch {
+    return null;
+  }
+}

@@ -1,605 +1,281 @@
 (function() {
   const vscode = acquireVsCodeApi();
   let currentData = null;
-  let isReady = false;
-
-  console.log('[Forgejo Webview] Script loaded');
 
   // DOM Elements
-  const loadingEl = document.getElementById('loading');
-  const errorEl = document.getElementById('error');
-  const errorMessageEl = document.getElementById('error-message');
-  const retryBtn = document.getElementById('retry-btn');
-  const contentEl = document.getElementById('content');
+  const $ = (id) => document.getElementById(id);
+  const loadingEl = $('loading');
+  const errorEl = $('error');
+  const errorMessageEl = $('error-message');
+  const contentEl = $('content');
 
-  const prTitleEl = document.getElementById('pr-title');
-  const prNumberEl = document.getElementById('pr-number');
-  const copyUrlBtn = document.getElementById('copy-url-btn');
-  const prStatusBadge = document.getElementById('pr-status-badge');
-  const authorAvatar = document.getElementById('author-avatar');
-  const authorName = document.getElementById('author-name');
-  const baseBranch = document.getElementById('base-branch');
-  const headBranch = document.getElementById('head-branch');
+  const prTitleEl = $('pr-title');
+  const prNumberEl = $('pr-number');
+  const prStatusBadge = $('pr-status-badge');
+  const authorAvatar = $('author-avatar');
+  const authorName = $('author-name');
+  const baseBranch = $('base-branch');
+  const headBranch = $('head-branch');
+  const crossRepoBadge = $('cross-repo-badge');
 
-  const checkoutBtn = document.getElementById('checkout-btn');
-  const refreshBtn = document.getElementById('refresh-btn');
-  const openWebBtn = document.getElementById('open-web-btn');
-  const addCommentBtn = document.getElementById('add-comment-btn');
-  const mergeActionsEl = document.getElementById('merge-actions');
-  const mergeBtn = document.getElementById('merge-btn');
-  const revertActionsEl = document.getElementById('revert-actions');
-  const revertBtn = document.getElementById('revert-btn');
+  const checkoutBtn = $('checkout-btn');
+  const refreshBtn = $('refresh-btn');
+  const openWebBtn = $('open-web-btn');
+  const mergeActionsEl = $('merge-actions');
+  const mergeBtn = $('merge-btn');
+  const revertActionsEl = $('revert-actions');
+  const revertBtn = $('revert-btn');
+  const reopenPRBtn = $('reopen-pr-btn');
+  const toggleDraftBtn = $('toggle-draft-btn');
 
-  const prDescriptionEl = document.getElementById('pr-description');
-  const ciSection = document.getElementById('ci-section');
-  const ciStatusList = document.getElementById('ci-status-list');
-  const activityCountEl = document.getElementById('activity-count');
-  const activityTimeline = document.getElementById('activity-timeline');
-  const labelsContainer = document.getElementById('labels-container');
-  const assigneesContainer = document.getElementById('assignees-container');
-  const reviewersContainer = document.getElementById('reviewers-container');
-  const prCreatedEl = document.getElementById('pr-created');
-  const prCommentCountEl = document.getElementById('pr-comment-count');
-  const mergeableBadge = document.getElementById('pr-mergeable-badge');
-  const crossRepoBadge = document.getElementById('cross-repo-badge');
-  const reopenPRBtn = document.getElementById('reopen-pr-btn');
-  const toggleDraftBtn = document.getElementById('toggle-draft-btn');
+  const prDescriptionEl = $('pr-description');
+  const ciSection = $('ci-section');
+  const ciStatusList = $('ci-status-list');
+  const ciSummary = $('ci-summary');
+  const activityCountEl = $('activity-count');
+  const activityTimeline = $('activity-timeline');
 
-  const editDescriptionBtn = document.getElementById('edit-description-btn');
-  const descriptionEditor = document.getElementById('pr-description-editor');
-  const descriptionTextarea = document.getElementById('description-textarea');
-  const saveDescriptionBtn = document.getElementById('save-description-btn');
-  const cancelDescriptionBtn = document.getElementById('cancel-description-btn');
+  const labelsContainer = $('labels-container');
+  const labelsList = $('labels-list');
+  const addLabelBtn = $('add-label-btn');
+  const assigneesContainer = $('assignees-container');
+  const assigneesList = $('assignees-list');
+  const addAssigneeBtn = $('add-assignee-btn');
+  const reviewersContainer = $('reviewers-container');
+  const reviewersList = $('reviewers-list');
+  const addReviewerBtn = $('add-reviewer-btn');
 
-  const commentInputContainer = document.getElementById('comment-input-container');
-  const commentInput = document.getElementById('comment-input');
-  const submitCommentBtn = document.getElementById('submit-comment-btn');
-  const cancelCommentBtn = document.getElementById('cancel-comment-btn');
+  const prCreatedEl = $('pr-created');
+  const mergeableBadge = $('pr-mergeable-badge');
 
-  const reviewDialog = document.getElementById('review-dialog');
-  const reviewState = document.getElementById('review-state');
-  const reviewBody = document.getElementById('review-body');
-  const submitReviewBtn = document.getElementById('submit-review-btn');
-  const cancelReviewBtn = document.getElementById('cancel-review-btn');
+  const editDescriptionBtn = $('edit-description-btn');
+  const descriptionEditor = $('pr-description-editor');
+  const descriptionTextarea = $('description-textarea');
+  const saveDescriptionBtn = $('save-description-btn');
+  const cancelDescriptionBtn = $('cancel-description-btn');
 
-  const mergeDialog = document.getElementById('merge-dialog');
-  const mergeStrategy = document.getElementById('merge-strategy');
-  const mergeMessage = document.getElementById('merge-message');
-  const confirmMergeBtn = document.getElementById('confirm-merge-btn');
-  const cancelMergeBtn = document.getElementById('cancel-merge-btn');
+  const commentInputContainer = $('comment-input-container');
+  const commentInput = $('comment-input');
+  const submitCommentBtn = $('submit-comment-btn');
+  const submitReviewBtn = $('submit-review-btn');
 
-  // Initialize
+  const reviewDialog = $('review-dialog');
+  const reviewState = $('review-state');
+  const reviewBody = $('review-body');
+  const confirmReviewBtn = $('confirm-review-btn');
+  const cancelReviewBtn = $('cancel-review-btn');
+
+  const mergeDialog = $('merge-dialog');
+  const mergeStrategy = $('merge-strategy');
+  const mergeTitle = $('merge-title');
+  const mergeMessage = $('merge-message');
+  const confirmMergeBtn = $('confirm-merge-btn');
+  const cancelMergeBtn = $('cancel-merge-btn');
+
+  // ======== Init ========
   function init() {
-    console.log('[Forgejo Webview] Initializing...');
     setupEventListeners();
     setupMessageHandler();
-
-    // Notify extension that webview is ready
-    console.log('[Forgejo Webview] Posting ready message');
     vscode.postMessage({ type: 'ready' });
-    isReady = true;
   }
 
   function setupEventListeners() {
-    console.log('[Forgejo Webview] Setting up event listeners');
+    $('retry-btn').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
 
-    retryBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Retry clicked');
-      vscode.postMessage({ type: 'refresh' });
+    checkoutBtn.addEventListener('click', () => vscode.postMessage({ type: 'checkout' }));
+    refreshBtn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+    openWebBtn.addEventListener('click', () => vscode.postMessage({ type: 'openInBrowser' }));
+
+    // Label/assignee/reviewer management -> VS Code QuickPick
+    addLabelBtn.addEventListener('click', () => vscode.postMessage({ type: 'manageLabels' }));
+    addAssigneeBtn.addEventListener('click', () => vscode.postMessage({ type: 'manageAssignees' }));
+    addReviewerBtn.addEventListener('click', () => vscode.postMessage({ type: 'manageReviewers' }));
+
+    // Reopen / toggle draft
+    reopenPRBtn.addEventListener('click', () => vscode.postMessage({ type: 'reopenPR' }));
+    toggleDraftBtn.addEventListener('click', () => vscode.postMessage({ type: 'toggleDraft' }));
+
+    // Merge
+    mergeBtn.addEventListener('click', () => { mergeDialog.style.display = 'flex'; mergeStrategy.focus(); });
+    confirmMergeBtn.addEventListener('click', () => {
+      const strategy = mergeStrategy.value;
+      const title = mergeTitle.value.trim() || undefined;
+      const message = mergeMessage.value.trim() || undefined;
+      confirmMergeBtn.disabled = true;
+      confirmMergeBtn.textContent = 'Merging...';
+      vscode.postMessage({ type: 'merge', strategy, title, message });
     });
+    cancelMergeBtn.addEventListener('click', () => closeMergeDialog());
+    mergeMessage.addEventListener('keydown', modalKeyHandler(() => confirmMergeBtn.click(), () => cancelMergeBtn.click()));
 
-    copyUrlBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Copy URL clicked');
-      if (currentData && currentData.pr && currentData.pr.html_url) {
-        navigator.clipboard.writeText(currentData.pr.html_url);
-        copyUrlBtn.textContent = '\u2713';
-        setTimeout(() => {
-          copyUrlBtn.textContent = '\uD83D\uDCCB';
-        }, 2000);
+    // Revert
+    revertBtn.addEventListener('click', () => {
+      if (currentData?.pr?.merge_commit_sha) {
+        vscode.postMessage({ type: 'revert', commitSha: currentData.pr.merge_commit_sha });
       }
     });
 
-    checkoutBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Checkout clicked');
-      vscode.postMessage({ type: 'checkout' });
-    });
-
-    refreshBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Refresh clicked');
-      vscode.postMessage({ type: 'refresh' });
-    });
-
-    openWebBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Open in web clicked');
-      vscode.postMessage({ type: 'openInBrowser' });
-    });
-
-    addCommentBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Add comment clicked');
-      commentInputContainer.style.display = 'block';
-      commentInput.focus();
-    });
-
-    if (mergeBtn) {
-      mergeBtn.addEventListener('click', () => {
-        console.log('[Forgejo Webview] Merge clicked');
-        mergeDialog.style.display = 'block';
-      });
-    }
-
-    if (revertBtn) {
-      revertBtn.addEventListener('click', () => {
-        console.log('[Forgejo Webview] Revert clicked');
-        if (currentData && currentData.pr && currentData.pr.merge_commit_sha) {
-          vscode.postMessage({ type: 'revert', commitSha: currentData.pr.merge_commit_sha });
-        }
-      });
-    }
-
-    if (reopenPRBtn) {
-      reopenPRBtn.addEventListener('click', () => {
-        vscode.postMessage({ type: 'reopenPR' });
-      });
-    }
-
-    if (toggleDraftBtn) {
-      toggleDraftBtn.addEventListener('click', () => {
-        vscode.postMessage({ type: 'toggleDraft' });
-      });
-    }
-
+    // Description editing
     editDescriptionBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Edit description clicked');
-      if (currentData && currentData.pr) {
-        descriptionTextarea.value = currentData.pr.body || '';
-        prDescriptionEl.style.display = 'none';
-        descriptionEditor.style.display = 'block';
-        editDescriptionBtn.style.display = 'none';
-        descriptionTextarea.focus();
+      if (!currentData?.pr) return;
+      descriptionTextarea.value = currentData.pr.body || '';
+      prDescriptionEl.style.display = 'none';
+      descriptionEditor.style.display = 'block';
+      editDescriptionBtn.style.display = 'none';
+      descriptionTextarea.focus();
+    });
+    saveDescriptionBtn.addEventListener('click', () => {
+      saveDescriptionBtn.disabled = true;
+      saveDescriptionBtn.textContent = 'Saving...';
+      vscode.postMessage({ type: 'updateBody', body: descriptionTextarea.value });
+    });
+    cancelDescriptionBtn.addEventListener('click', () => {
+      descriptionEditor.style.display = 'none';
+      prDescriptionEl.style.display = 'block';
+      editDescriptionBtn.style.display = 'inline-flex';
+    });
+    descriptionTextarea.addEventListener('keydown', modalKeyHandler(() => saveDescriptionBtn.click(), () => cancelDescriptionBtn.click()));
+
+    // Title editing (click to edit)
+    prTitleEl.addEventListener('click', () => {
+      if (prTitleEl.contentEditable !== 'true') {
+        prTitleEl.contentEditable = 'true';
+        prTitleEl.focus();
+        const range = document.createRange();
+        range.selectNodeContents(prTitleEl);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
       }
     });
-
-    prTitleEl.addEventListener('dblclick', () => {
-      if (!currentData || !currentData.pr) return;
-      var currentTitle = currentData.pr.title || '';
-      prTitleEl.contentEditable = 'true';
-      prTitleEl.focus();
-      var range = document.createRange();
-      range.selectNodeContents(prTitleEl);
-      var sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    });
-
     prTitleEl.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         prTitleEl.contentEditable = 'false';
-        var newTitle = prTitleEl.textContent.trim();
-        if (newTitle && currentData && currentData.pr && newTitle !== currentData.pr.title) {
+        const newTitle = prTitleEl.textContent.trim();
+        if (newTitle && currentData?.pr && newTitle !== currentData.pr.title) {
           vscode.postMessage({ type: 'updateTitle', title: newTitle });
         }
       } else if (e.key === 'Escape') {
         e.preventDefault();
         prTitleEl.contentEditable = 'false';
-        if (currentData && currentData.pr) {
-          prTitleEl.textContent = currentData.pr.title;
-        }
+        if (currentData?.pr) prTitleEl.textContent = currentData.pr.title;
       }
     });
-
     prTitleEl.addEventListener('blur', () => {
       if (prTitleEl.contentEditable === 'true') {
         prTitleEl.contentEditable = 'false';
-        if (currentData && currentData.pr) {
-          prTitleEl.textContent = currentData.pr.title;
-        }
+        if (currentData?.pr) prTitleEl.textContent = currentData.pr.title;
       }
     });
 
-    saveDescriptionBtn.addEventListener('click', () => {
-      const body = descriptionTextarea.value;
-      console.log('[Forgejo Webview] Save description clicked');
-      saveDescriptionBtn.disabled = true;
-      saveDescriptionBtn.textContent = 'Saving...';
-      vscode.postMessage({ type: 'updateBody', body });
-    });
-
-    cancelDescriptionBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Cancel description edit clicked');
-      descriptionEditor.style.display = 'none';
-      prDescriptionEl.style.display = 'block';
-      editDescriptionBtn.style.display = 'inline-flex';
-    });
-
-    descriptionTextarea.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        saveDescriptionBtn.click();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelDescriptionBtn.click();
-      }
-    });
-
+    // Comment composer
     submitCommentBtn.addEventListener('click', () => {
       const body = commentInput.value.trim();
-      console.log('[Forgejo Webview] Submit comment clicked, body length:', body.length);
       if (body) {
-        // Disable button and show loading state to prevent double-submit
         submitCommentBtn.disabled = true;
         submitCommentBtn.textContent = 'Submitting...';
         vscode.postMessage({ type: 'addComment', body });
       }
     });
-
-    cancelCommentBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Cancel comment clicked');
-      commentInput.value = '';
-      commentInputContainer.style.display = 'none';
-    });
-
-    // Keyboard shortcuts for comment input
     commentInput.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         submitCommentBtn.click();
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        cancelCommentBtn.click();
+        commentInput.value = '';
+        commentInputContainer.style.display = 'none';
       }
     });
-
-    // Auto-resize comment textarea
-    function autoResize(textarea) {
-      textarea.style.height = 'auto';
-      textarea.style.height = Math.min(textarea.scrollHeight, 300) + 'px';
-    }
     commentInput.addEventListener('input', function() { autoResize(this); });
 
+    // Review dialog
     submitReviewBtn.addEventListener('click', () => {
+      reviewDialog.style.display = 'flex';
+      reviewBody.focus();
+    });
+    confirmReviewBtn.addEventListener('click', () => {
       const state = reviewState.value;
       const body = reviewBody.value.trim();
-      console.log('[Forgejo Webview] Submit review clicked, state:', state);
-      submitReviewBtn.disabled = true;
-      submitReviewBtn.textContent = 'Submitting...';
+      confirmReviewBtn.disabled = true;
+      confirmReviewBtn.textContent = 'Submitting...';
       vscode.postMessage({ type: 'addReview', state, body });
     });
+    cancelReviewBtn.addEventListener('click', () => closeReviewDialog());
+    reviewBody.addEventListener('keydown', modalKeyHandler(() => confirmReviewBtn.click(), () => cancelReviewBtn.click()));
 
-    cancelReviewBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Cancel review clicked');
-      reviewBody.value = '';
-      reviewDialog.style.display = 'none';
-    });
-
-    reviewBody.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        submitReviewBtn.click();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelReviewBtn.click();
-      }
-    });
-
-    confirmMergeBtn.addEventListener('click', () => {
-      const strategy = mergeStrategy.value;
-      const message = mergeMessage.value.trim() || undefined;
-      console.log('[Forgejo Webview] Confirm merge clicked, strategy:', strategy);
-      confirmMergeBtn.disabled = true;
-      confirmMergeBtn.textContent = 'Merging...';
-      vscode.postMessage({ type: 'merge', strategy, message });
-    });
-
-    cancelMergeBtn.addEventListener('click', () => {
-      console.log('[Forgejo Webview] Cancel merge clicked');
-      mergeMessage.value = '';
-      mergeDialog.style.display = 'none';
-    });
-
-    mergeMessage.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        confirmMergeBtn.click();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        cancelMergeBtn.click();
-      }
-    });
-
+    // CI status click → open
     ciStatusList.addEventListener('click', (e) => {
-      const item = e.target.closest('.ci-status-item');
-      if (item && item.dataset.targetUrl) {
+      const item = e.target.closest('.ci-item');
+      if (item?.dataset.targetUrl) {
         vscode.postMessage({ type: 'openCIStatus', url: item.dataset.targetUrl });
       }
     });
 
-    // Delegated click handler for activity timeline interactions
-    activityTimeline.addEventListener('click', function(e) {
-      // User link clicks -> open profile
-      var userLink = e.target.closest('.user-link');
-      if (userLink && userLink.dataset.username) {
-        e.preventDefault();
-        vscode.postMessage({ type: 'openUserProfile', username: userLink.dataset.username });
-        return;
-      }
-
-      // Reaction badge clicks -> toggle reaction
-      var reactionBadge = e.target.closest('.reaction-badge');
-      if (reactionBadge && reactionBadge.dataset.reaction) {
-        var activityItem = reactionBadge.closest('[data-comment-id]');
-        if (activityItem && activityItem.dataset.commentId) {
-          var commentId = parseInt(activityItem.dataset.commentId, 10);
-          var userId = 'currentUser';
-          // Toggle: if we can detect user already reacted, remove it
-          var reacted = reactionBadge.classList.contains('reacted-by-me');
-          if (reacted) {
-            vscode.postMessage({ type: 'removeReaction', commentId: commentId, reaction: reactionBadge.dataset.reaction });
-          } else {
-            vscode.postMessage({ type: 'addReaction', commentId: commentId, reaction: reactionBadge.dataset.reaction });
-          }
-        }
-        return;
-      }
-
-      // Reaction add button -> show emoji picker
-      var addBtn = e.target.closest('.reaction-add-btn');
-      if (addBtn) {
-        var picker = document.getElementById('emoji-picker');
-        var rect = addBtn.getBoundingClientRect();
-        picker.style.display = 'flex';
-        picker.style.position = 'fixed';
-        picker.style.left = rect.left + 'px';
-        picker.style.top = (rect.bottom + 2) + 'px';
-        picker.dataset.parentCommentId = addBtn.closest('[data-comment-id]')?.dataset.commentId || '';
-        return;
-      }
-
-      // Copy comment button
-      var copyBtn = e.target.closest('.copy-comment-btn');
-      if (copyBtn) {
-        var commentBody = copyBtn.closest('.activity-content')?.querySelector('.activity-body');
-        if (commentBody) {
-          navigator.clipboard.writeText(commentBody.textContent || '');
-          copyBtn.textContent = '\u2713';
-          setTimeout(function() { copyBtn.textContent = '\u{1F4CB}'; }, 2000);
-        }
-        return;
-      }
-
-      // Reply to comment button
-      var replyBtn = e.target.closest('.reply-comment-btn');
-      if (replyBtn) {
-        var activityItem = replyBtn.closest('[data-comment-id]');
-        var originalBodyEl = activityItem?.querySelector('.activity-body');
-        var originalUser = activityItem?.querySelector('.user-link')?.textContent || 'User';
-        var originalText = originalBodyEl?.textContent || '';
-        var quotedText = originalText.split('\n').map(function(l) { return '> ' + l; }).join('\n');
-        commentInput.value = quotedText + '\n\n';
-        commentInputContainer.style.display = 'block';
-        commentInput.focus();
-        return;
-      }
-
-      // Edit comment button
-      var editBtn = e.target.closest('.edit-comment-btn');
-      if (editBtn) {
-        var contentEl = editBtn.closest('.activity-content');
-        if (contentEl) {
-          var bodyEl = contentEl.querySelector('.activity-body');
-          var editorEl = contentEl.querySelector('.edit-comment-editor');
-          if (bodyEl && editorEl) {
-            bodyEl.style.display = 'none';
-            editorEl.style.display = 'block';
-            editorEl.querySelector('.edit-comment-textarea').focus();
-          }
-        }
-        return;
-      }
-
-      // Save edit button
-      var saveEditBtn = e.target.closest('.save-edit-btn');
-      if (saveEditBtn) {
-        var editorEl = saveEditBtn.closest('.edit-comment-editor');
-        var commentId = parseInt((editorEl?.closest('[data-comment-id]')?.dataset.commentId || '0'), 10);
-        if (editorEl && commentId > 0) {
-          var newBody = editorEl.querySelector('.edit-comment-textarea').value;
-          vscode.postMessage({ type: 'editComment', commentId: commentId, body: newBody });
-          editorEl.style.display = 'none';
-          var bodyEl = editorEl.closest('.activity-content')?.querySelector('.activity-body');
-          if (bodyEl) bodyEl.style.display = 'block';
-        }
-        return;
-      }
-
-      // Cancel edit button
-      var cancelEditBtn = e.target.closest('.cancel-edit-btn');
-      if (cancelEditBtn) {
-        var editorEl = cancelEditBtn.closest('.edit-comment-editor');
-        if (editorEl) {
-          editorEl.style.display = 'none';
-          var bodyEl = editorEl.closest('.activity-content')?.querySelector('.activity-body');
-          if (bodyEl) bodyEl.style.display = 'block';
-        }
-        return;
-      }
-
-      // Expand collapsed comment
-      var expandBtn = e.target.closest('.activity-expand-btn');
-      if (expandBtn) {
-        var bodyEl = expandBtn.closest('.activity-item')?.querySelector('.activity-body.collapsed');
-        if (bodyEl) {
-          bodyEl.classList.remove('collapsed');
-          expandBtn.remove();
-        }
-        return;
-      }
-
-      // Delete comment button
-      var deleteBtn = e.target.closest('.delete-comment-btn');
-      if (deleteBtn) {
-        var activityItem = deleteBtn.closest('[data-comment-id]');
-        if (activityItem && activityItem.dataset.commentId) {
-          var commentId = parseInt(activityItem.dataset.commentId, 10);
-          if (confirm('Delete this comment?')) {
-            vscode.postMessage({ type: 'deleteComment', commentId: commentId });
-          }
-        }
-        return;
-      }
-    });
+    // Timeline delegated handler
+    activityTimeline.addEventListener('click', handleTimelineClick);
 
     // Emoji picker
-    document.getElementById('emoji-picker').addEventListener('click', function(e) {
-      var emojiOption = e.target.closest('.emoji-option');
-      if (emojiOption && emojiOption.dataset.emoji) {
-        var commentId = parseInt(this.dataset.parentCommentId || '0', 10);
+    $('emoji-picker').addEventListener('click', function(e) {
+      const opt = e.target.closest('.emoji-option');
+      if (opt?.dataset.emoji) {
+        const commentId = parseInt(this.dataset.parentCommentId || '0', 10);
         if (commentId > 0) {
-          vscode.postMessage({ type: 'addReaction', commentId: commentId, reaction: emojiOption.dataset.emoji });
+          vscode.postMessage({ type: 'addReaction', commentId, reaction: opt.dataset.emoji });
         }
         this.style.display = 'none';
       }
     });
 
-    // Close emoji picker on click outside
-    document.addEventListener('click', function(e) {
-      var picker = document.getElementById('emoji-picker');
-      if (picker && !e.target.closest('.emoji-picker') && !e.target.closest('.reaction-add-btn')) {
+    // Close emoji picker on outside click
+    document.addEventListener('click', (e) => {
+      const picker = $('emoji-picker');
+      if (picker && !e.target.closest('.emoji-picker') && !e.target.closest('.add-reaction-btn')) {
         picker.style.display = 'none';
       }
     });
 
-    // Document-level click handler for user links (header author etc)
-    document.addEventListener('click', function(e) {
-      var userLink = e.target.closest('.user-link');
-      if (userLink && userLink.dataset.username) {
+    // Document-level user link handler
+    document.addEventListener('click', (e) => {
+      const link = e.target.closest('.user-link');
+      if (link?.dataset.username) {
         e.preventDefault();
-        vscode.postMessage({ type: 'openUserProfile', username: userLink.dataset.username });
+        vscode.postMessage({ type: 'openUserProfile', username: link.dataset.username });
       }
     });
 
-    // Image click -> open in browser (lightbox)
-    prDescriptionEl.addEventListener('click', function(e) {
-      var img = e.target.closest('img');
-      if (img && img.src && img.src.startsWith('http')) {
+    // Image lightbox in description
+    prDescriptionEl.addEventListener('click', (e) => {
+      const img = e.target.closest('img');
+      if (img?.src?.startsWith('http')) {
         e.preventDefault();
         vscode.postMessage({ type: 'openInBrowserFromUrl', url: img.src });
-        return;
       }
     });
   }
 
-  function setupDynamicButtonListeners() {
-    // Label remove buttons
-    document.querySelectorAll('.label-remove-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const label = btn.dataset.label;
-        if (confirm(`Remove label "${label}"?`)) {
-          vscode.postMessage({ type: 'removeLabel', label });
-        }
-      });
-    });
-
-    // Assignee remove buttons
-    document.querySelectorAll('.assignee-remove-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const assignee = btn.dataset.assignee;
-        if (confirm(`Remove assignee "${assignee}"?`)) {
-          vscode.postMessage({ type: 'removeAssignees', assignees: [assignee] });
-        }
-      });
-    });
-
-    // Reviewer remove buttons
-    document.querySelectorAll('.reviewer-remove-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const reviewer = btn.dataset.reviewer;
-        if (confirm(`Remove reviewer "${reviewer}"?`)) {
-          vscode.postMessage({ type: 'removeReview', reviewer });
-        }
-      });
-    });
-
-    // Add label button
-    const addLabelBtn = document.getElementById('add-label-btn');
-    if (addLabelBtn) {
-      addLabelBtn.addEventListener('click', () => {
-        var label = prompt('Enter label name:');
-        if (label && label.trim()) {
-          vscode.postMessage({ type: 'addLabels', labels: [label.trim()] });
-        }
-      });
-    }
-
-    // Add assignee button
-    const addAssigneeBtn = document.getElementById('add-assignee-btn');
-    if (addAssigneeBtn) {
-      addAssigneeBtn.addEventListener('click', () => {
-        var assignee = prompt('Enter username:');
-        if (assignee && assignee.trim()) {
-          vscode.postMessage({ type: 'addAssignees', assignees: [assignee.trim()] });
-        }
-      });
-    }
-
-    // Add reviewer button
-    const addReviewerBtn = document.getElementById('add-reviewer-btn');
-    if (addReviewerBtn) {
-      addReviewerBtn.addEventListener('click', () => {
-        var reviewer = prompt('Enter reviewer username:');
-        if (reviewer && reviewer.trim()) {
-          vscode.postMessage({ type: 'requestReview', reviewer: reviewer.trim() });
-        }
-      });
-    }
-  }
-
+  // ======== Message Handler ========
   function setupMessageHandler() {
-    console.log('[Forgejo Webview] Setting up message handler');
-
-    window.addEventListener('message', event => {
+    window.addEventListener('message', (event) => {
       const message = event.data;
-      console.log('[Forgejo Webview] Received message:', message.type);
-
       switch (message.type) {
         case 'update':
-          console.log('[Forgejo Webview] Update received, PR:', message.data?.pr?.title);
           currentData = message.data;
           updatePRDetails(currentData);
-          setupDynamicButtonListeners();
           break;
-        case 'loading':
-          console.log('[Forgejo Webview] Loading state:', message.show);
-          setLoading(message.show);
-          break;
-        case 'error':
-          console.log('[Forgejo Webview] Error received:', message.message);
-          showError(message.message);
-          break;
-        case 'theme':
-          console.log('[Forgejo Webview] Theme received:', message.theme);
-          applyTheme(message.theme);
-          break;
-        case 'actionComplete':
-          console.log('[Forgejo Webview] Action complete:', message.action, 'success:', message.success);
-          handleActionComplete(message.action, message.success);
-          break;
+        case 'loading': setLoading(message.show); break;
+        case 'error': showError(message.message); break;
+        case 'theme': applyTheme(message.theme); break;
+        case 'actionComplete': handleActionComplete(message.action, message.success); break;
         case 'bodyUpdated':
-          console.log('[Forgejo Webview] Body updated');
-          if (currentData && currentData.pr) {
-            currentData.pr.body = message.body;
-          }
+          if (currentData?.pr) currentData.pr.body = message.body;
           prDescriptionEl.innerHTML = message.body ? renderMarkdown(message.body) : '<p style="color:var(--vscode-descriptionForeground)">No description provided.</p>';
           setupCheckboxListeners();
           descriptionEditor.style.display = 'none';
           prDescriptionEl.style.display = 'block';
           editDescriptionBtn.style.display = 'inline-flex';
           break;
-        default:
-          console.log('[Forgejo Webview] Unknown message type:', message.type);
       }
     });
   }
@@ -608,295 +284,473 @@
     switch (action) {
       case 'addComment':
         submitCommentBtn.disabled = false;
-        submitCommentBtn.textContent = 'Submit';
-        if (success) {
-          commentInput.value = '';
-          commentInputContainer.style.display = 'none';
-        }
+        submitCommentBtn.textContent = 'Comment';
+        if (success) { commentInput.value = ''; commentInputContainer.style.display = 'none'; }
         break;
       case 'addReview':
-        submitReviewBtn.disabled = false;
-        submitReviewBtn.textContent = 'Submit Review';
-        if (success) {
-          reviewBody.value = '';
-          reviewDialog.style.display = 'none';
-        }
+        confirmReviewBtn.disabled = false;
+        confirmReviewBtn.textContent = 'Submit Review';
+        if (success) closeReviewDialog();
         break;
       case 'merge':
         confirmMergeBtn.disabled = false;
         confirmMergeBtn.textContent = 'Merge';
-        if (success) {
-          mergeMessage.value = '';
-          mergeDialog.style.display = 'none';
-        }
+        if (success) closeMergeDialog();
+        break;
+      case 'editComment':
+        if (success) {} // data will refresh
         break;
       case 'updateBody':
         saveDescriptionBtn.disabled = false;
         saveDescriptionBtn.textContent = 'Save';
-        if (!success) {
-          // Keep editor open on failure so user doesn't lose changes
-        }
         break;
     }
   }
 
+  // ======== State helpers ========
   function setLoading(show) {
-    console.log('[Forgejo Webview] setLoading:', show);
-    if (show) {
-      loadingEl.style.display = 'flex';
-      contentEl.style.display = 'none';
-      errorEl.style.display = 'none';
-    } else {
-      loadingEl.style.display = 'none';
-      contentEl.style.display = 'block';
-      errorEl.style.display = 'none';
-    }
+    loadingEl.style.display = show ? 'flex' : 'none';
+    contentEl.style.display = show ? 'none' : 'block';
+    errorEl.style.display = 'none';
   }
 
   function showError(message) {
-    console.log('[Forgejo Webview] showError:', message);
     loadingEl.style.display = 'none';
     contentEl.style.display = 'none';
     errorEl.style.display = 'block';
     errorMessageEl.textContent = message;
   }
 
+  function closeMergeDialog() {
+    mergeTitle.value = '';
+    mergeMessage.value = '';
+    mergeDialog.style.display = 'none';
+  }
+
+  function closeReviewDialog() {
+    reviewBody.value = '';
+    reviewDialog.style.display = 'none';
+  }
+
+  function autoResize(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 300) + 'px';
+  }
+
+  function modalKeyHandler(onEnter, onEscape) {
+    return (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); onEnter(); }
+      else if (e.key === 'Escape') { e.preventDefault(); onEscape(); }
+    };
+  }
+
+  // ======== Render PR Details ========
   function updatePRDetails(data) {
-    console.log('[Forgejo Webview] Updating PR details');
     const { pr, activities, statuses, owner, repo } = data;
 
-    // Update header
+    // Title + number
     prTitleEl.textContent = pr.title || 'Untitled PR';
     prNumberEl.textContent = `#${pr.number || '?'}`;
 
-    // Update status badge
+    // Status badge
     let statusText = pr.state || 'open';
     let statusClass = (pr.state || 'open').toLowerCase();
-
-    if (pr.draft) {
-      statusText = 'Draft';
-      statusClass = 'draft';
-    } else if (pr.merged) {
-      statusText = 'Merged';
-      statusClass = 'merged';
-    }
-
+    if (pr.draft) { statusText = 'Draft'; statusClass = 'draft'; }
+    else if (pr.merged) { statusText = 'Merged'; statusClass = 'merged'; }
     prStatusBadge.textContent = statusText;
     prStatusBadge.className = 'status-badge ' + statusClass;
 
-    // Update mergeable status
-    if (mergeableBadge) {
-      if (pr.state === 'open' && !pr.draft) {
-        if (pr.mergeable === true) {
-          mergeableBadge.textContent = 'Mergeable';
-          mergeableBadge.className = 'mergeable-badge mergeable-yes';
-          mergeableBadge.style.display = 'inline';
-        } else if (pr.mergeable === false) {
-          mergeableBadge.textContent = 'Conflicts';
-          mergeableBadge.className = 'mergeable-badge mergeable-no';
-          mergeableBadge.style.display = 'inline';
-        } else {
-          mergeableBadge.style.display = 'none';
-        }
+    // Mergeable badge
+    if (pr.state === 'open' && !pr.draft) {
+      if (pr.mergeable === true) {
+        mergeableBadge.textContent = 'Mergeable';
+        mergeableBadge.className = 'mergeable-badge yes';
+        mergeableBadge.style.display = 'inline-block';
+      } else if (pr.mergeable === false) {
+        mergeableBadge.textContent = 'Conflicts';
+        mergeableBadge.className = 'mergeable-badge no';
+        mergeableBadge.style.display = 'inline-block';
       } else {
         mergeableBadge.style.display = 'none';
       }
-    }
-
-    // Update labels
-    if (labelsContainer) {
-      if (pr.labels && pr.labels.length > 0) {
-        labelsContainer.style.display = 'flex';
-        labelsContainer.innerHTML = pr.labels.map(label => {
-          const bgColor = label.color ? `#${label.color}` : 'var(--vscode-badge-background)';
-          const textColor = getContrastColor(label.color || '000000');
-          return `<span class="label" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(label.name)}<button class="label-remove-btn" data-label="${escapeHtml(label.name)}" title="Remove label">&times;</button></span>`;
-        }).join('') + '<button id="add-label-btn" class="icon-btn-small" title="Add label">+</button>';
-      } else {
-        labelsContainer.innerHTML = '<button id="add-label-btn" class="icon-btn-small" title="Add label">+</button>';
-        labelsContainer.style.display = 'flex';
-      }
-    }
-
-    // Update assignees
-    if (assigneesContainer) {
-      if (pr.assignees && pr.assignees.length > 0) {
-        assigneesContainer.style.display = 'flex';
-        assigneesContainer.innerHTML = '<span class="assignees-label">Assignees:</span> ' +
-          pr.assignees.map(a => `<span class="assignee">${escapeHtml(a.login)}<button class="assignee-remove-btn" data-assignee="${escapeHtml(a.login)}" title="Remove assignee">&times;</button></span>`).join(', ') +
-          '<button id="add-assignee-btn" class="icon-btn-small" title="Add assignee">+</button>';
-      } else {
-        assigneesContainer.innerHTML = '<span class="assignees-label">No assignees</span> <button id="add-assignee-btn" class="icon-btn-small" title="Add assignee">+</button>';
-        assigneesContainer.style.display = 'flex';
-      }
-    }
-
-    // Update reviewers
-    if (reviewersContainer) {
-      if (pr.requested_reviewers && pr.requested_reviewers.length > 0) {
-        reviewersContainer.style.display = 'flex';
-        reviewersContainer.innerHTML = '<span class="assignees-label">Reviewers:</span> ' +
-          pr.requested_reviewers.map(r => `<span class="assignee">${escapeHtml(r.login)}<button class="reviewer-remove-btn" data-reviewer="${escapeHtml(r.login)}" title="Remove reviewer">&times;</button></span>`).join(', ') +
-          '<button id="add-reviewer-btn" class="icon-btn-small" title="Request review">+</button>';
-      } else {
-        reviewersContainer.innerHTML = '<span class="assignees-label">No reviewers</span> <button id="add-reviewer-btn" class="icon-btn-small" title="Request review">+</button>';
-        reviewersContainer.style.display = 'flex';
-      }
-    }
-
-    // Update created date
-    if (prCreatedEl && pr.created_at) {
-      prCreatedEl.textContent = 'opened ' + formatTimeAgo(pr.created_at);
-    }
-
-    // Update comment count
-    if (prCommentCountEl && pr.comments !== undefined && pr.comments > 0) {
-      prCommentCountEl.textContent = pr.comments + ' comment' + (pr.comments !== 1 ? 's' : '');
-      prCommentCountEl.style.display = 'inline';
-    } else if (prCommentCountEl) {
-      prCommentCountEl.style.display = 'none';
-    }
-
-    // Update author
-    var authorLogin = pr.user ? pr.user.login : 'Unknown';
-    if (pr.user && pr.user.avatar_url) {
-      authorAvatar.src = pr.user.avatar_url;
-      var avatarLink = document.getElementById('author-avatar-link');
-      avatarLink.style.display = 'inline-block';
-      avatarLink.dataset.username = authorLogin;
     } else {
-      document.getElementById('author-avatar-link').style.display = 'none';
+      mergeableBadge.style.display = 'none';
+    }
+
+    // Author
+    const authorLogin = pr.user?.login || 'Unknown';
+    if (pr.user?.avatar_url) {
+      authorAvatar.src = pr.user.avatar_url;
+      $('author-avatar-link').style.display = 'inline-block';
+      $('author-avatar-link').dataset.username = authorLogin;
+    } else {
+      $('author-avatar-link').style.display = 'none';
     }
     authorName.textContent = authorLogin;
     authorName.dataset.username = authorLogin;
 
-    // Update branches
+    // Created date
+    if (pr.created_at) {
+      prCreatedEl.textContent = 'opened ' + formatTimeAgo(pr.created_at);
+    }
+
+    // Branches
     if (pr.base) {
-      baseBranch.innerHTML = '<code>' + escapeHtml(pr.base.ref || 'unknown') + '</code>';
+      baseBranch.textContent = pr.base.ref || 'unknown';
     }
     if (pr.head) {
-      headBranch.innerHTML = '<code>' + escapeHtml(pr.head.ref || 'unknown') + '</code>';
-      if (crossRepoBadge && pr.head.repo && pr.head.repo.full_name && !pr.head.repo.full_name.startsWith(owner + '/' + repo)) {
+      headBranch.textContent = pr.head.ref || 'unknown';
+      if (crossRepoBadge && pr.head.repo?.full_name && !pr.head.repo.full_name.startsWith(owner + '/' + repo)) {
         crossRepoBadge.textContent = 'from ' + pr.head.repo.full_name;
         crossRepoBadge.style.display = 'inline';
-      } else if (crossRepoBadge) {
+      } else {
         crossRepoBadge.style.display = 'none';
       }
     }
 
-    // Update description with Markdown rendering
+    // Labels
+    if (pr.labels?.length > 0) {
+      labelsContainer.style.display = 'block';
+      labelsList.innerHTML = pr.labels.map(label => {
+        const bgColor = label.color ? '#' + label.color : 'var(--vscode-badge-background)';
+        const textColor = getContrastColor(label.color || '000000');
+        return `<span class="label-pill" style="background-color:${bgColor};color:${textColor};">${escapeHtml(label.name)}</span>`;
+      }).join('');
+    } else {
+      labelsContainer.style.display = 'block';
+      labelsList.innerHTML = '<span class="meta-empty">None</span>';
+    }
+
+    // Assignees
+    if (pr.assignees?.length > 0) {
+      assigneesContainer.style.display = 'block';
+      assigneesList.innerHTML = pr.assignees.map(a =>
+        `<span class="assignee-chip">${escapeHtml(a.login)}</span>`
+      ).join('');
+    } else {
+      assigneesContainer.style.display = 'block';
+      assigneesList.innerHTML = '<span class="meta-empty">None</span>';
+    }
+
+    // Reviewers
+    if (pr.requested_reviewers?.length > 0) {
+      reviewersContainer.style.display = 'block';
+      reviewersList.innerHTML = pr.requested_reviewers.map(r =>
+        `<span class="reviewer-chip">${escapeHtml(r.login)}</span>`
+      ).join('');
+    } else {
+      reviewersContainer.style.display = 'block';
+      reviewersList.innerHTML = '<span class="meta-empty">None</span>';
+    }
+
+    // Description
     if (pr.body) {
       prDescriptionEl.innerHTML = renderMarkdown(pr.body);
       setupCheckboxListeners();
     } else {
       prDescriptionEl.innerHTML = '<p style="color:var(--vscode-descriptionForeground)">No description provided.</p>';
     }
-    // Reset edit state
     descriptionEditor.style.display = 'none';
     prDescriptionEl.style.display = 'block';
     editDescriptionBtn.style.display = 'inline-flex';
 
-    // Update CI status
-    if (statuses && statuses.length > 0) {
-      console.log('[Forgejo Webview] CI statuses:', statuses.length);
+    // CI status
+    if (statuses?.length > 0) {
       ciSection.style.display = 'block';
-      ciSection.classList.add('active');
+      const passed = statuses.filter(s => s.status === 'success').length;
+      const failed = statuses.filter(s => s.status === 'error' || s.status === 'failure').length;
+      ciSummary.textContent = `${passed}/${statuses.length} passed` + (failed > 0 ? ` · ${failed} failed` : '');
       ciStatusList.innerHTML = statuses.map(status => {
         const statusClass = status.status || 'pending';
-        const statusIcon = statusIconForStatus(statusClass);
+        const icon = statusIconFor(statusClass);
         const timeAgo = formatTimeAgo(status.updated_at || status.created_at);
-        return `
-          <div class="ci-status-item ${statusClass}" data-target-url="${escapeHtml(status.target_url || '')}">
-            <span class="ci-status-icon">${statusIcon}</span>
-            <span class="ci-status-context">${escapeHtml(status.context || 'Unknown')}</span>
-            <span class="ci-status-description">${escapeHtml(status.description || '')}</span>
-            <span class="ci-status-time">${timeAgo}</span>
-            ${status.target_url ? '<span class="ci-status-link-icon" title="View CI details">&#x2197;</span>' : ''}
-          </div>
-        `;
+        return `<div class="ci-item ${statusClass}" data-target-url="${escapeHtml(status.target_url || '')}">
+          <span class="ci-icon">${icon}</span>
+          <span class="ci-context">${escapeHtml(status.context || 'Unknown')}</span>
+          <span class="ci-meta">${timeAgo}</span>
+        </div>`;
       }).join('');
     } else {
-      console.log('[Forgejo Webview] No CI statuses');
       ciSection.style.display = 'none';
-      ciSection.classList.remove('active');
     }
 
-    // Update action buttons
-    console.log('[Forgejo Webview] PR state:', pr.state, 'draft:', pr.draft, 'merged:', pr.merged);
+    // Action buttons
     if (pr.state === 'open' && !pr.draft) {
       mergeActionsEl.style.display = 'flex';
       revertActionsEl.style.display = 'none';
-      if (reopenPRBtn) reopenPRBtn.style.display = 'none';
-      if (toggleDraftBtn) toggleDraftBtn.style.display = 'inline-flex';
+      reopenPRBtn.style.display = 'none';
+      toggleDraftBtn.style.display = 'inline-flex';
+      toggleDraftBtn.textContent = 'Convert to Draft';
     } else if (pr.state === 'open' && pr.draft) {
       mergeActionsEl.style.display = 'none';
       revertActionsEl.style.display = 'none';
-      if (reopenPRBtn) reopenPRBtn.style.display = 'none';
-      if (toggleDraftBtn) {
-        toggleDraftBtn.textContent = 'Ready for Review';
-        toggleDraftBtn.style.display = 'inline-flex';
-      }
+      reopenPRBtn.style.display = 'none';
+      toggleDraftBtn.style.display = 'inline-flex';
+      toggleDraftBtn.textContent = 'Ready for Review';
     } else if (pr.merged) {
       mergeActionsEl.style.display = 'none';
       revertActionsEl.style.display = 'flex';
-      if (reopenPRBtn) reopenPRBtn.style.display = 'none';
-      if (toggleDraftBtn) toggleDraftBtn.style.display = 'none';
+      reopenPRBtn.style.display = 'none';
+      toggleDraftBtn.style.display = 'none';
     } else {
       mergeActionsEl.style.display = 'none';
       revertActionsEl.style.display = 'none';
-      if (reopenPRBtn) reopenPRBtn.style.display = 'inline-flex';
-      if (toggleDraftBtn) toggleDraftBtn.style.display = 'none';
+      reopenPRBtn.style.display = 'inline-flex';
+      toggleDraftBtn.style.display = 'none';
     }
 
-    // Update activity timeline
-    const activityCount = activities ? activities.length : 0;
-    console.log('[Forgejo Webview] Activities:', activityCount);
+    // Always show comment composer
+    commentInputContainer.style.display = 'flex';
+
+    // Activity timeline
+    const activityCount = activities?.length || 0;
     activityCountEl.textContent = `(${activityCount} events)`;
 
-    if (activities && activities.length > 0) {
-      activityTimeline.querySelectorAll('.activity-item').forEach(function(el) { el.remove(); });
-      var html = activities.map(activity => renderActivity(activity, owner, repo)).join('');
-      var line = activityTimeline.querySelector('.activity-timeline-line');
+    // Clear existing timeline items (keep the line)
+    activityTimeline.querySelectorAll('.timeline-item').forEach(el => el.remove());
+
+    if (activities?.length > 0) {
+      const html = activities.map(a => renderActivity(a)).join('');
+      const line = activityTimeline.querySelector('.timeline-line');
       if (line) {
         line.insertAdjacentHTML('afterend', html);
       } else {
         activityTimeline.innerHTML += html;
       }
     } else {
-      activityTimeline.querySelectorAll('.activity-item').forEach(function(el) { el.remove(); });
-      activityTimeline.innerHTML += '<div class="empty-state"><div class="empty-state-icon">&#x1F4AD;</div><p class="empty-state-text">No activity yet</p></div>';
+      activityTimeline.innerHTML += '<div class="timeline-item"><div class="timeline-body"><span style="color:var(--vscode-descriptionForeground)">No activity yet</span></div></div>';
     }
 
-    // Show content
     setLoading(false);
-    console.log('[Forgejo Webview] PR details updated successfully');
   }
 
-  /**
-   * Toggle a task list checkbox in the raw markdown body.
-   * Finds the Nth task list item (- [ ] or - [x]) and toggles it.
-   */
-  function toggleCheckboxInBody(body, checkboxIndex, checked) {
-    var taskPattern = /- \[[ xX]\]/g;
-    var count = 0;
-    return body.replace(taskPattern, function(match) {
-      if (count++ === checkboxIndex) {
-        return checked ? '- [x]' : '- [ ]';
+  // ======== Timeline rendering ========
+  function renderActivity(activity) {
+    const timeAgo = formatTimeAgo(activity.created_at || activity.submitted_at || activity.committed_at);
+    const userLogin = activity.user?.login || 'Unknown';
+    const userAvatar = activity.user?.avatar_url || '';
+
+    if (activity.type === 'comment') {
+      return `<div class="timeline-item" data-comment-id="${activity.id}">
+        <div class="timeline-marker comment" title="Comment"></div>
+        <div class="timeline-header">
+          ${makeUserLink(userLogin)}
+          <span class="timeline-action">commented</span>
+          <span class="timeline-time" title="${escapeHtml(activity.created_at || '')}">${timeAgo}</span>
+          <span class="comment-actions">
+            <button class="comment-action reply-comment-btn" title="Reply">Reply</button>
+            <button class="comment-action edit-comment-btn" title="Edit">Edit</button>
+            <button class="comment-action copy-comment-btn" title="Copy">Copy</button>
+            <button class="comment-action delete-comment-btn" title="Delete">Delete</button>
+          </span>
+        </div>
+        <div class="timeline-body">
+          ${activity.body ? `<div class="markdown-body collapsible${activity.body.length > 800 ? ' collapsed' : ''}">${renderMarkdown(activity.body)}</div>${activity.body.length > 800 ? '<button class="show-more-btn">Show more</button>' : ''}` : ''}
+          <div class="edit-comment-editor" style="display:none;">
+            <textarea class="comment-edit-textarea">${escapeHtml(activity.body || '')}</textarea>
+            <div class="editor-actions" style="margin-top:8px;">
+              <button class="btn btn-primary btn-sm save-edit-btn">Save</button>
+              <button class="btn btn-secondary btn-sm cancel-edit-btn">Cancel</button>
+            </div>
+          </div>
+          ${activity.reactions?.length ? renderReactions(activity.reactions) : ''}
+        </div>
+      </div>`;
+    }
+
+    if (activity.type === 'review') {
+      const reviewClass = activity.state === 'APPROVED' ? 'approved' :
+                          activity.state === 'REQUEST_CHANGES' ? 'changes' : 'review';
+      const reviewStateText = activity.state ? activity.state.toLowerCase().replace(/_/g, ' ') : 'commented';
+      return `<div class="timeline-item">
+        <div class="timeline-marker ${reviewClass}" title="${reviewStateText}"></div>
+        <div class="timeline-header">
+          ${makeUserLink(userLogin)}
+          <span class="timeline-action">reviewed:</span>
+          <span class="review-state ${reviewClass}">${reviewStateText}</span>
+          <span class="timeline-time" title="${escapeHtml(activity.submitted_at || '')}">${timeAgo}</span>
+        </div>
+        ${activity.body ? '<div class="timeline-body"><div class="markdown-body">' + renderMarkdown(activity.body) + '</div></div>' : ''}
+      </div>`;
+    }
+
+    if (activity.type === 'commit') {
+      const shortSha = activity.sha ? activity.sha.substring(0, 7) : '';
+      return `<div class="timeline-item">
+        <div class="timeline-marker commit" title="Commit"></div>
+        <div class="timeline-header">
+          ${makeUserLink(userLogin)}
+          <span class="timeline-action">committed</span>
+          <span class="commit-sha" data-sha="${escapeHtml(activity.sha || '')}">${shortSha}</span>
+          <span class="timeline-time" title="${escapeHtml(activity.committed_at || '')}">${timeAgo}</span>
+        </div>
+        ${activity.message ? '<div class="timeline-body"><span>' + escapeHtml(activity.message) + '</span></div>' : ''}
+      </div>`;
+    }
+
+    if (activity.type === 'timeline') {
+      return `<div class="timeline-item">
+        <div class="timeline-marker" title="Event"></div>
+        <div class="timeline-header">
+          ${makeUserLink(userLogin)}
+          <span class="timeline-action">${renderTimelineEvent(activity)}</span>
+          <span class="timeline-time" title="${escapeHtml(activity.created_at || '')}">${timeAgo}</span>
+        </div>
+      </div>`;
+    }
+
+    return '';
+  }
+
+  function handleTimelineClick(e) {
+    // User link
+    const userLink = e.target.closest('.user-link');
+    if (userLink?.dataset.username) {
+      e.preventDefault();
+      vscode.postMessage({ type: 'openUserProfile', username: userLink.dataset.username });
+      return;
+    }
+
+    // Reaction toggle
+    const reactionPill = e.target.closest('.reaction-pill');
+    if (reactionPill?.dataset.reaction) {
+      const item = reactionPill.closest('[data-comment-id]');
+      if (item?.dataset.commentId) {
+        const commentId = parseInt(item.dataset.commentId, 10);
+        const reacted = reactionPill.classList.contains('reacted-by-me');
+        vscode.postMessage({
+          type: reacted ? 'removeReaction' : 'addReaction',
+          commentId, reaction: reactionPill.dataset.reaction
+        });
       }
+      return;
+    }
+
+    // Add reaction button
+    const addBtn = e.target.closest('.add-reaction-btn');
+    if (addBtn) {
+      const picker = $('emoji-picker');
+      const rect = addBtn.getBoundingClientRect();
+      picker.style.display = 'flex';
+      picker.style.position = 'fixed';
+      picker.style.left = rect.left + 'px';
+      picker.style.top = (rect.bottom + 2) + 'px';
+      picker.dataset.parentCommentId = addBtn.closest('[data-comment-id]')?.dataset.commentId || '';
+      return;
+    }
+
+    // Copy comment
+    const copyBtn = e.target.closest('.copy-comment-btn');
+    if (copyBtn) {
+      const bodyEl = copyBtn.closest('.timeline-item')?.querySelector('.markdown-body');
+      if (bodyEl) {
+        navigator.clipboard.writeText(bodyEl.textContent || '');
+        copyBtn.textContent = '\u2713';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+      }
+      return;
+    }
+
+    // Reply
+    const replyBtn = e.target.closest('.reply-comment-btn');
+    if (replyBtn) {
+      const item = replyBtn.closest('[data-comment-id]');
+      const bodyEl = item?.querySelector('.markdown-body');
+      const origUser = item?.querySelector('.user-link')?.textContent || 'User';
+      const origText = bodyEl?.textContent || '';
+      const quoted = origText.split('\n').map(l => '> ' + l).join('\n');
+      commentInput.value = quoted + '\n\n';
+      commentInputContainer.style.display = 'flex';
+      commentInput.focus();
+      commentInput.scrollTop = commentInput.scrollHeight;
+      return;
+    }
+
+    // Edit comment
+    const editBtn = e.target.closest('.edit-comment-btn');
+    if (editBtn) {
+      const bodyEl = editBtn.closest('.timeline-body')?.querySelector('.markdown-body');
+      const editorEl = editBtn.closest('.timeline-body')?.querySelector('.edit-comment-editor');
+      if (bodyEl && editorEl) {
+        bodyEl.style.display = 'none';
+        editorEl.style.display = 'block';
+        editorEl.querySelector('.comment-edit-textarea')?.focus();
+      }
+      return;
+    }
+
+    // Save edit
+    const saveBtn = e.target.closest('.save-edit-btn');
+    if (saveBtn) {
+      const editorEl = saveBtn.closest('.edit-comment-editor');
+      const commentId = parseInt(editorEl?.closest('[data-comment-id]')?.dataset.commentId || '0', 10);
+      if (editorEl && commentId > 0) {
+        const newBody = editorEl.querySelector('.comment-edit-textarea').value;
+        vscode.postMessage({ type: 'editComment', commentId, body: newBody });
+        editorEl.style.display = 'none';
+        const bodyEl = editorEl.closest('.timeline-body')?.querySelector('.markdown-body');
+        if (bodyEl) bodyEl.style.display = 'block';
+      }
+      return;
+    }
+
+    // Cancel edit
+    const cancelEditBtn = e.target.closest('.cancel-edit-btn');
+    if (cancelEditBtn) {
+      const editorEl = cancelEditBtn.closest('.edit-comment-editor');
+      if (editorEl) {
+        editorEl.style.display = 'none';
+        const bodyEl = editorEl.closest('.timeline-body')?.querySelector('.markdown-body');
+        if (bodyEl) bodyEl.style.display = 'block';
+      }
+      return;
+    }
+
+    // Show more
+    const expandBtn = e.target.closest('.show-more-btn');
+    if (expandBtn) {
+      const bodyEl = expandBtn.closest('.timeline-body')?.querySelector('.collapsible');
+      if (bodyEl) {
+        bodyEl.classList.remove('collapsed');
+        expandBtn.remove();
+      }
+      return;
+    }
+
+    // Delete comment
+    const deleteBtn = e.target.closest('.delete-comment-btn');
+    if (deleteBtn) {
+      const item = deleteBtn.closest('[data-comment-id]');
+      if (item?.dataset.commentId) {
+        if (confirm('Delete this comment?')) {
+          vscode.postMessage({ type: 'deleteComment', commentId: parseInt(item.dataset.commentId, 10) });
+        }
+      }
+      return;
+    }
+
+    // Commit SHA click
+    const shaEl = e.target.closest('.commit-sha');
+    if (shaEl?.dataset.sha) {
+      vscode.postMessage({ type: 'viewCommit', sha: shaEl.dataset.sha });
+      return;
+    }
+  }
+
+  // ======== Checkboxes in markdown ========
+  function toggleCheckboxInBody(body, checkboxIndex, checked) {
+    let count = 0;
+    return body.replace(/- \[[ xX]\]/g, (match) => {
+      if (count++ === checkboxIndex) return checked ? '- [x]' : '- [ ]';
       return match;
     });
   }
 
-  /**
-   * Set up click handlers on task list checkboxes to make them interactive.
-   */
   function setupCheckboxListeners() {
-    var checkboxes = prDescriptionEl.querySelectorAll('.task-checkbox');
-    checkboxes.forEach(function(checkbox, index) {
-      checkbox.addEventListener('change', function(e) {
-        console.log('[Forgejo Webview] Checkbox toggled:', index, 'checked:', e.target.checked);
-        if (currentData && currentData.pr && currentData.pr.body) {
-          var newBody = toggleCheckboxInBody(currentData.pr.body, index, e.target.checked);
+    prDescriptionEl.querySelectorAll('.task-checkbox').forEach((checkbox, index) => {
+      checkbox.addEventListener('change', (e) => {
+        if (currentData?.pr?.body) {
+          const newBody = toggleCheckboxInBody(currentData.pr.body, index, e.target.checked);
           currentData.pr.body = newBody;
           vscode.postMessage({ type: 'updateBody', body: newBody });
         }
@@ -904,219 +758,71 @@
     });
   }
 
+  // ======== Helpers ========
   function makeUserLink(login) {
     return `<a class="user-link" href="#" data-username="${escapeHtml(login)}">${escapeHtml(login)}</a>`;
   }
 
-  function makeAvatarLink(avatarUrl, login) {
-    if (!avatarUrl) return '';
-    return `<a class="user-link" href="#" data-username="${escapeHtml(login)}"><img class="activity-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'"></a>`;
-  }
-
   function renderReactions(reactions) {
-    if (!reactions || reactions.length === 0) return '';
-    var counts = {};
-    var userReactions = {};
-    reactions.forEach(function(r) {
+    if (!reactions?.length) return '';
+    const counts = {};
+    const users = {};
+    reactions.forEach(r => {
       counts[r.reaction] = (counts[r.reaction] || 0) + 1;
-      if (!userReactions[r.reaction]) userReactions[r.reaction] = [];
-      userReactions[r.reaction].push(r.user.login);
+      if (!users[r.reaction]) users[r.reaction] = [];
+      users[r.reaction].push(r.user?.login || '');
     });
-    var html = '<div class="reactions-bar">';
-    var emojiMap = {
+    const emojiMap = {
       '+1': '\u{1F44D}', '-1': '\u{1F44E}', 'laugh': '\u{1F604}',
       'hooray': '\u{1F389}', 'confused': '\u{1F615}', 'heart': '\u2764\uFE0F',
       'rocket': '\u{1F680}', 'eyes': '\u{1F440}'
     };
-    Object.keys(counts).sort().forEach(function(r) {
-      var emoji = emojiMap[r] || r;
-      html += `<span class="reaction-badge" data-reaction="${escapeHtml(r)}" title="${escapeHtml(userReactions[r].join(', '))}">${emoji} ${counts[r]}</span>`;
+    let html = '<div class="reactions-bar">';
+    Object.keys(counts).sort().forEach(r => {
+      const emoji = emojiMap[r] || r;
+      html += `<span class="reaction-pill" data-reaction="${escapeHtml(r)}" title="${escapeHtml(users[r].join(', '))}">${emoji} ${counts[r]}</span>`;
     });
-    html += '<span class="reaction-add-btn" title="Add reaction">\u{1F60A}+</span>';
-    html += '</div>';
+    html += '<span class="add-reaction-btn" title="Add reaction">+</span></div>';
     return html;
-  }
-
-  function renderActivity(activity, owner, repo) {
-    const timeAgo = formatTimeAgo(activity.created_at || activity.submitted_at || activity.committed_at);
-    const userAvatar = activity.user ? activity.user.avatar_url : '';
-    const userLogin = activity.user ? activity.user.login : 'Unknown';
-
-    if (activity.type === 'comment') {
-      return `
-        <div class="activity-item" data-comment-id="${activity.id}">
-          <div class="activity-type-marker comment" title="Comment">\u{1F4AC}</div>
-          ${makeAvatarLink(userAvatar, userLogin)}
-          <div class="activity-content">
-            <div class="activity-header">
-              ${makeUserLink(userLogin)}
-              <span class="activity-action">commented</span>
-              <span class="activity-time" title="${escapeHtml(activity.created_at || '')}">${timeAgo}</span>
-              <span class="activity-actions">
-                <button class="icon-btn-small reply-comment-btn" title="Reply to comment">\u{1F5E8}\uFE0F</button>
-                <button class="icon-btn-small edit-comment-btn" title="Edit comment">\u270F\uFE0F</button>
-                <button class="icon-btn-small copy-comment-btn" title="Copy comment">\u{1F4CB}</button>
-                <button class="icon-btn-small delete-comment-btn" title="Delete comment">\u{1F5D1}\uFE0F</button>
-              </span>
-            </div>
-            ${activity.body ? `
-              <div class="activity-body markdown-body${activity.body.length > 800 ? ' collapsed' : ''}">${renderMarkdown(activity.body)}</div>
-              ${activity.body.length > 800 ? '<button class="activity-expand-btn">Show more</button>' : ''}
-            ` : ''}
-            <div class="edit-comment-editor" style="display:none;">
-              <textarea class="edit-comment-textarea">${escapeHtml(activity.body || '')}</textarea>
-              <div class="edit-comment-actions">
-                <button class="btn btn-primary btn-small save-edit-btn">Save</button>
-                <button class="btn btn-secondary btn-small cancel-edit-btn">Cancel</button>
-              </div>
-            </div>
-            ${activity.reactions ? renderReactions(activity.reactions) : ''}
-          </div>
-        </div>
-      `;
-    }
-
-    if (activity.type === 'review') {
-      const reviewClass = activity.state === 'APPROVED' ? 'approved' :
-                         activity.state === 'REQUEST_CHANGES' ? 'changes_requested' : 'commented';
-      const reviewState = activity.state ? activity.state.toLowerCase().replace(/_/g, ' ') : 'commented';
-      const markerClass = activity.state === 'APPROVED' ? 'approved' :
-                         activity.state === 'REQUEST_CHANGES' ? 'changes' : 'review';
-      const markerEmoji = activity.state === 'APPROVED' ? '\u2705' :
-                         activity.state === 'REQUEST_CHANGES' ? '\u274C' : '\u{1F4AC}';
-      return `
-        <div class="activity-item activity-review ${reviewClass}">
-          <div class="activity-type-marker ${markerClass}" title="${reviewState}">${markerEmoji}</div>
-          ${makeAvatarLink(userAvatar, userLogin)}
-          <div class="activity-content">
-            <div class="activity-header">
-              ${makeUserLink(userLogin)}
-              <span class="activity-action">reviewed: ${reviewState}</span>
-              <span class="activity-time" title="${escapeHtml(activity.submitted_at || '')}">${timeAgo}</span>
-            </div>
-            ${activity.body ? `<div class="activity-body markdown-body">${renderMarkdown(activity.body)}</div>` : ''}
-          </div>
-        </div>
-      `;
-    }
-
-    if (activity.type === 'commit') {
-      return `
-        <div class="activity-item">
-          <div class="activity-type-marker commit" title="Commit">\u{1F4DD}</div>
-          ${makeAvatarLink(userAvatar, userLogin)}
-          <div class="activity-content">
-            <div class="activity-header">
-              ${makeUserLink(userLogin)}
-              <span class="activity-action">committed</span>
-              <span class="activity-time" title="${escapeHtml(activity.committed_at || '')}">${timeAgo}</span>
-            </div>
-            ${activity.sha ? `
-              <div class="activity-commit">
-                <span class="activity-commit-sha">${escapeHtml(activity.sha.substring(0, 7))}</span>
-                <span class="activity-commit-message">${escapeHtml(activity.message || 'No commit message')}</span>
-              </div>
-            ` : ''}
-          </div>
-        </div>
-      `;
-    }
-
-    if (activity.type === 'timeline') {
-      return `
-        <div class="activity-item">
-          <div class="activity-type-marker timeline" title="Event">\u{1F504}</div>
-          ${makeAvatarLink(userAvatar, userLogin)}
-          <div class="activity-content">
-            <div class="activity-header">
-              ${makeUserLink(userLogin)}
-              <span class="activity-event">${renderTimelineEvent(activity)}</span>
-              <span class="activity-time" title="${escapeHtml(activity.created_at || '')}">${timeAgo}</span>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    return '';
   }
 
   function renderTimelineEvent(activity) {
     if (!activity.event) return 'performed an action';
-
     const events = {
-      // Forgejo API timeline type values (from API response)
-      'close': 'closed this pull request',
-      'reopen': 'reopened this pull request',
-      'comment': 'commented',
-      'label': 'added/removed a label',
-      'milestone': 'changed the milestone',
-      'assignees': 'changed assignees',
-      'change_title': 'changed the title',
-      'delete_branch': 'deleted the head branch',
-      'merge_pull': 'merged this pull request',
-      'review': 'submitted a review',
-      'review_request': 'requested a review',
-      'dismiss_review': 'dismissed a review',
-      'lock': 'locked this pull request',
-      'unlock': 'unlocked this pull request',
-      'pin': 'pinned this pull request',
-      'unpin': 'unpinned this pull request',
-      'change_target_branch': 'changed the target branch',
-      'pull_push': 'pushed commits',
-      'commit_ref': 'referenced this pull request',
-      'issue_ref': 'referenced this pull request',
-      'comment_ref': 'referenced this pull request',
-      'pull_ref': 'referenced this pull request',
-      'code': 'commented on code',
-      'project': 'changed the project',
-      'project_board': 'moved in project board',
-      'added_deadline': 'added a deadline',
-      'modified_deadline': 'modified the deadline',
-      'removed_deadline': 'removed the deadline',
-      'add_dependency': 'added a dependency',
-      'remove_dependency': 'removed a dependency',
-      'start_tracking': 'started time tracking',
-      'stop_tracking': 'stopped time tracking',
-      'add_time_manual': 'added tracked time',
-      'cancel_tracking': 'cancelled time tracking',
-      'delete_time_manual': 'removed tracked time',
-      'change_issue_ref': 'changed the issue reference',
-      'pull_scheduled_merge': 'scheduled auto-merge',
-      'pull_cancel_scheduled_merge': 'cancelled auto-merge',
-      // GitHub-style event names (fallback compatibility)
-      'closed': 'closed this pull request',
-      'merged': 'merged this pull request',
-      'reopened': 'reopened this pull request',
-      'reviewed': 'submitted a review',
-      'approved': 'approved this pull request',
-      'rejected': 'requested changes',
-      'commented': 'commented',
-      'labeled': 'added a label',
-      'unlabeled': 'removed a label',
-      'milestoned': 'added to a milestone',
-      'demilestoned': 'removed from a milestone',
-      'referenced': 'referenced this pull request',
-      'assigned': 'was assigned',
-      'unassigned': 'was unassigned',
-      'locked': 'locked this pull request',
-      'unlocked': 'unlocked this pull request',
-      'pinned': 'pinned this pull request',
-      'unpinned': 'unpinned this pull request',
-      'head_ref_deleted': 'deleted the head branch',
-      'head_ref_restored': 'restored the head branch',
-      'marked_ready_for_review': 'marked as ready for review',
-      'converted_to_draft': 'converted to draft'
+      'close': 'closed this', 'reopen': 'reopened this', 'comment': 'commented',
+      'label': 'changed a label', 'milestone': 'changed the milestone',
+      'assignees': 'changed assignees', 'change_title': 'changed the title',
+      'delete_branch': 'deleted the head branch', 'merge_pull': 'merged this',
+      'review': 'submitted a review', 'review_request': 'requested a review',
+      'dismiss_review': 'dismissed a review', 'lock': 'locked this', 'unlock': 'unlocked this',
+      'pin': 'pinned this', 'unpin': 'unpinned this',
+      'change_target_branch': 'changed the target branch', 'pull_push': 'pushed commits',
+      'commit_ref': 'referenced this', 'issue_ref': 'referenced this',
+      'comment_ref': 'referenced this', 'pull_ref': 'referenced this',
+      'code': 'commented on code', 'project': 'changed the project',
+      'project_board': 'moved in project board', 'added_deadline': 'added a deadline',
+      'modified_deadline': 'modified the deadline', 'removed_deadline': 'removed the deadline',
+      'add_dependency': 'added a dependency', 'remove_dependency': 'removed a dependency',
+      'start_tracking': 'started time tracking', 'stop_tracking': 'stopped time tracking',
+      'add_time_manual': 'added tracked time', 'cancel_tracking': 'cancelled time tracking',
+      'delete_time_manual': 'removed tracked time', 'change_issue_ref': 'changed the issue reference',
+      'pull_scheduled_merge': 'scheduled auto-merge', 'pull_cancel_scheduled_merge': 'cancelled auto-merge',
+      'closed': 'closed this', 'merged': 'merged this', 'reopened': 'reopened this',
+      'reviewed': 'submitted a review', 'approved': 'approved this', 'rejected': 'requested changes',
+      'commented': 'commented', 'labeled': 'added a label', 'unlabeled': 'removed a label',
+      'milestoned': 'added to a milestone', 'demilestoned': 'removed from a milestone',
+      'referenced': 'referenced this', 'assigned': 'was assigned', 'unassigned': 'was unassigned',
+      'locked': 'locked this', 'unlocked': 'unlocked this',
+      'pinned': 'pinned this', 'unpinned': 'unpinned this',
+      'head_ref_deleted': 'deleted the head branch', 'head_ref_restored': 'restored the head branch',
+      'marked_ready_for_review': 'marked as ready for review', 'converted_to_draft': 'converted to draft'
     };
-
-    var eventText = events[activity.event] || activity.event;
-
-    // Enhance with contextual details when available
+    let eventText = events[activity.event] || activity.event;
     if (activity.event === 'label' && activity.label) {
       eventText = 'changed label <strong>' + escapeHtml(activity.label.name || '') + '</strong>';
     }
     if (activity.event === 'change_title' && activity.old_title && activity.new_title) {
-      eventText = 'changed title from <del>' + escapeHtml(activity.old_title) + '</del> to <strong>' + escapeHtml(activity.new_title) + '</strong>';
+      eventText = 'renamed from <del>' + escapeHtml(activity.old_title) + '</del> to <strong>' + escapeHtml(activity.new_title) + '</strong>';
     }
     if (activity.event === 'assignees' && activity.assignee) {
       eventText = (activity.removed_assignee ? 'unassigned ' : 'assigned ') + '<strong>' + escapeHtml(activity.assignee.login || '') + '</strong>';
@@ -1124,46 +830,34 @@
     if (activity.event === 'milestone' && activity.milestone) {
       eventText = 'set milestone to <strong>' + escapeHtml(activity.milestone.title || '') + '</strong>';
     }
-
     return eventText;
   }
 
-  function statusIconForStatus(status) {
-    const icons = {
-      'pending': '\u23F3',
-      'success': '\u2705',
-      'error': '\u274C',
-      'failure': '\u274C',
-      'warning': '\u26A0\uFE0F'
-    };
-    return icons[status] || icons['pending'];
+  function statusIconFor(status) {
+    return { 'pending': '\u23F3', 'success': '\u2705', 'error': '\u274C', 'failure': '\u274C', 'warning': '\u26A0\uFE0F' }[status] || '\u23F3';
   }
 
   function getContrastColor(hexColor) {
-    var hex = hexColor.replace('#', '');
+    let hex = (hexColor || '000000').replace('#', '');
     if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
-    var r = parseInt(hex.substring(0, 2), 16);
-    var g = parseInt(hex.substring(2, 4), 16);
-    var b = parseInt(hex.substring(4, 6), 16);
-    var luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.5 ? '#000000' : '#ffffff';
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#000000' : '#ffffff';
   }
 
   function formatTimeAgo(dateString) {
     if (!dateString) return '';
-
     const date = new Date(dateString);
     const now = new Date();
-    const diffMs = now - date;
-    const diffSecs = Math.floor(diffMs / 1000);
+    const diffSecs = Math.floor((now - date) / 1000);
     const diffMins = Math.floor(diffSecs / 60);
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
-
     if (diffSecs < 60) return 'just now';
-    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 30) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 30) return `${diffDays}d ago`;
     if (diffDays < 365) return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   }
@@ -1175,332 +869,155 @@
     return div.innerHTML;
   }
 
-  /**
-   * Converts Markdown text to sanitized HTML.
-   *
-   * Supported syntax:
-   * - Fenced code blocks (```lang ... ```)
-   * - Inline code (`code`)
-   * - Headings (h1-h6 via # syntax)
-   * - Bold (**text** or __text__), italic (*text* or _text_), bold+italic
-   * - Strikethrough (~~text~~)
-   * - Links ([text](url)) and images (![alt](url))
-   * - Blockquotes (> text)
-   * - Unordered lists (-, *, +) and ordered lists (1. 2. 3.)
-   * - Task lists (- [x] done, - [ ] todo)
-   * - Tables (pipe-delimited with alignment support)
-   * - Horizontal rules (---, ***, ___)
-   *
-   * Input is HTML-escaped first to prevent XSS, then markdown syntax is converted.
-   */
+  function applyTheme(theme) {
+    document.body.className = '';
+    if (theme === 'light') document.body.classList.add('vscode-light');
+    else if (theme === 'dark') document.body.classList.add('vscode-dark');
+    else if (theme === 'high-contrast') document.body.classList.add('vscode-high-contrast');
+  }
+
+  // ======== Markdown Renderer (preserved from original) ========
   function renderMarkdown(text) {
     if (!text) return '';
-
-    // Escape HTML first for security
     var html = escapeHtml(text);
-
-    // Placeholder map to protect code blocks from further processing
     var codeBlocks = [];
-
-    // Extract fenced code blocks and replace with placeholders
-    // Single regex handles both ``` with and without newline after language tag
     html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(_match, lang, code) {
       var langAttr = lang ? ' class="language-' + lang + '"' : '';
       var idx = codeBlocks.length;
       codeBlocks.push('<pre><code' + langAttr + '>' + code + '</code></pre>');
       return '\n%%CODEBLOCK_' + idx + '%%\n';
     });
-
-    // Extract inline code and replace with placeholders
     var inlineCodes = [];
     html = html.replace(/`([^`\n]+)`/g, function(_match, code) {
       var idx = inlineCodes.length;
       inlineCodes.push('<code>' + code + '</code>');
       return '%%INLINECODE_' + idx + '%%';
     });
-
-    // Split into lines for block-level processing
     var lines = html.split('\n');
     var result = [];
-    var inList = false;
-    var listType = '';
-    var inBlockquote = false;
-    var blockquoteLines = [];
-    var inTable = false;
-    var tableLines = [];
-
+    var inList = false, listType = '';
+    var inBlockquote = false, blockquoteLines = [];
+    var inTable = false, tableLines = [];
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
-
-      // Code block placeholder -- pass through directly
       if (line.trim().match(/^%%CODEBLOCK_\d+%%$/)) {
-        // Close any open structures first
         if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
         if (inBlockquote) { result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>'); blockquoteLines = []; inBlockquote = false; }
         if (inTable) { result.push(buildTable(tableLines)); tableLines = []; inTable = false; }
         result.push(line.trim());
         continue;
       }
-
-      // Close blockquote if current line is not a blockquote line
       if (inBlockquote && !line.match(/^&gt;\s?/)) {
-        result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>');
-        blockquoteLines = [];
-        inBlockquote = false;
+        result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>'); blockquoteLines = []; inBlockquote = false;
       }
-
-      // Close table if current line is not a table row
-      if (inTable && !line.match(/^\|/)) {
-        result.push(buildTable(tableLines));
-        tableLines = [];
-        inTable = false;
-      }
-
-      // Close list if current line is not a list item and not empty
+      if (inTable && !line.match(/^\|/)) { result.push(buildTable(tableLines)); tableLines = []; inTable = false; }
       if (inList && line.trim() !== '' && !line.match(/^(\s*[-*+]\s|\s*\d+\.\s)/)) {
-        result.push('</' + listType + '>');
-        inList = false;
-        listType = '';
+        result.push('</' + listType + '>'); inList = false; listType = '';
       }
-
-      // Horizontal rule (handles spaced variants like "- - -", "* * *", "_ _ _")
       if (line.match(/^\s*([-*_]\s*){3,}$/)) {
         if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
-        result.push('<hr>');
-        continue;
+        result.push('<hr>'); continue;
       }
-
-      // Headings (h1-h6)
       var headingMatch = line.match(/^(#{1,6})\s+(.*?)$/);
       if (headingMatch) {
         var level = headingMatch[1].length;
-        var headingText = processInline(headingMatch[2]);
-        result.push('<h' + level + '>' + headingText + '</h' + level + '>');
+        result.push('<h' + level + '>' + processInline(headingMatch[2]) + '</h' + level + '>');
         continue;
       }
-
-      // Blockquotes (escaped > becomes &gt;)
-      if (line.match(/^&gt;\s?/)) {
-        inBlockquote = true;
-        blockquoteLines.push(line.replace(/^&gt;\s?/, ''));
-        continue;
-      }
-
-      // Table rows (lines starting with |)
-      if (line.match(/^\|/)) {
-        if (!inTable) {
-          inTable = true;
-          tableLines = [];
-        }
-        tableLines.push(line);
-        continue;
-      }
-
-      // Unordered list items
+      if (line.match(/^&gt;\s?/)) { inBlockquote = true; blockquoteLines.push(line.replace(/^&gt;\s?/, '')); continue; }
+      if (line.match(/^\|/)) { if (!inTable) { inTable = true; tableLines = []; } tableLines.push(line); continue; }
       var ulMatch = line.match(/^(\s*)[-*+]\s+(.*)/);
       if (ulMatch) {
-        if (!inList || listType !== 'ul') {
-          if (inList) { result.push('</' + listType + '>'); }
-          result.push('<ul>');
-          inList = true;
-          listType = 'ul';
-        }
+        if (!inList || listType !== 'ul') { if (inList) result.push('</' + listType + '>'); result.push('<ul>'); inList = true; listType = 'ul'; }
         var liContent = ulMatch[2];
-        // Task list item: - [x] or - [ ]
         var taskMatch = liContent.match(/^\[([ xX])\]\s+(.*)/);
         if (taskMatch) {
           var checked = taskMatch[1] !== ' ' ? ' checked' : '';
-          result.push('<li class="task-list-item"><input type="checkbox" class="task-checkbox" data-line="' + i + '"' + checked + '> ' + processInline(taskMatch[2]) + '</li>');
+          result.push('<li class="task-list-item"><input type="checkbox" class="task-checkbox"' + checked + '> ' + processInline(taskMatch[2]) + '</li>');
         } else {
           result.push('<li>' + processInline(liContent) + '</li>');
         }
         continue;
       }
-
-      // Ordered list items
       var olMatch = line.match(/^(\s*)\d+\.\s+(.*)/);
       if (olMatch) {
-        if (!inList || listType !== 'ol') {
-          if (inList) { result.push('</' + listType + '>'); }
-          result.push('<ol>');
-          inList = true;
-          listType = 'ol';
-        }
-        result.push('<li>' + processInline(olMatch[2]) + '</li>');
-        continue;
+        if (!inList || listType !== 'ol') { if (inList) result.push('</' + listType + '>'); result.push('<ol>'); inList = true; listType = 'ol'; }
+        result.push('<li>' + processInline(olMatch[2]) + '</li>'); continue;
       }
-
-      // Empty line
-      if (line.trim() === '') {
-        continue;
-      }
-
-      // Regular paragraph line
+      if (line.trim() === '') continue;
       result.push('<p>' + processInline(line) + '</p>');
     }
-
-    // Close any remaining open elements
-    if (inBlockquote) {
-      result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>');
-    }
-    if (inTable) {
-      result.push(buildTable(tableLines));
-    }
-    if (inList) {
-      result.push('</' + listType + '>');
-    }
-
+    if (inBlockquote) result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>');
+    if (inTable) result.push(buildTable(tableLines));
+    if (inList) result.push('</' + listType + '>');
     var output = result.join('\n');
-
-    // Restore code block placeholders
-    for (var cb = 0; cb < codeBlocks.length; cb++) {
-      output = output.replace('%%CODEBLOCK_' + cb + '%%', codeBlocks[cb]);
-    }
-
-    // Restore inline code placeholders
-    for (var ic = 0; ic < inlineCodes.length; ic++) {
-      output = output.replace(new RegExp('%%INLINECODE_' + ic + '%%', 'g'), inlineCodes[ic]);
-    }
-
+    for (var cb = 0; cb < codeBlocks.length; cb++) output = output.replace('%%CODEBLOCK_' + cb + '%%', codeBlocks[cb]);
+    for (var ic = 0; ic < inlineCodes.length; ic++) output = output.replace(new RegExp('%%INLINECODE_' + ic + '%%', 'g'), inlineCodes[ic]);
     return output;
   }
 
-  /**
-   * Process blockquote content lines, rendering inline formatting on each line.
-   */
   function processBlockquoteContent(lines) {
-    return lines.map(function(line) {
-      if (line.trim() === '') return '';
-      return '<p>' + processInline(line) + '</p>';
-    }).join('\n');
+    return lines.map(function(line) { return line.trim() === '' ? '' : '<p>' + processInline(line) + '</p>'; }).join('\n');
   }
 
-  /**
-   * Sanitize a URL to only allow safe schemes (http, https, mailto).
-   * Returns empty string for javascript:, data:, vbscript:, etc.
-   */
   function sanitizeUrl(url) {
-    var trimmed = url.trim().toLowerCase();
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('mailto:')) {
-      return url.trim();
-    }
+    var t = (url || '').trim().toLowerCase();
+    if (t.startsWith('http://') || t.startsWith('https://') || t.startsWith('mailto:')) return url.trim();
     return '';
   }
 
-  /**
-   * Process inline Markdown elements: images, links, bold+italic, bold, italic,
-   * strikethrough. Assumes input is already HTML-escaped.
-   *
-   * Processing order: images -> links -> bold -> italic -> strikethrough
-   */
   function processInline(text) {
     if (!text) return '';
-
-    // Images: ![alt](url) -- processed before links so ![alt](url) is not consumed by link regex
-    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_match, alt, url) {
-      var safe = sanitizeUrl(url);
-      if (!safe) return alt;
-      return '<img src="' + safe + '" alt="' + alt + '" style="max-width:100%;">';
-    });
-
-    // Links: [text](url) -- processed after images to avoid matching image syntax
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_match, linkText, url) {
-      var safe = sanitizeUrl(url);
-      if (!safe) return linkText;
-      return '<a href="' + safe + '">' + linkText + '</a>';
-    });
-
-    // Bold + italic: ***text*** or ___text___
+    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_m, alt, url) { var s = sanitizeUrl(url); return s ? '<img src="' + s + '" alt="' + alt + '" style="max-width:100%;">' : alt; });
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_m, lt, url) { var s = sanitizeUrl(url); return s ? '<a href="' + s + '">' + lt + '</a>' : lt; });
     text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
     text = text.replace(/___([^_]+)___/g, '<strong><em>$1</em></strong>');
-
-    // Bold: **text** or __text__
     text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-
-    // Italic: *text* or _text_
     text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
     text = text.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
-
-    // Strikethrough: ~~text~~
     text = text.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-
     return text;
   }
 
-  /**
-   * Build an HTML table from pipe-delimited lines.
-   * Handles header row, separator row (with alignment via colons), and body rows.
-   */
   function buildTable(lines) {
-    if (lines.length < 2) {
-      return lines.map(function(l) { return '<p>' + processInline(l) + '</p>'; }).join('\n');
-    }
-
+    if (lines.length < 2) return lines.map(function(l) { return '<p>' + processInline(l) + '</p>'; }).join('\n');
     var headerCells = parseTableRow(lines[0]);
     var alignments = [];
-
-    // Check if second line is a separator row (each cell must contain at least one dash)
-    var isSeparator = lines[1].replace(/\s/g, '').match(/^\|?(:?-+:?\|)*:?-+:?\|?$/);
+    var isSeparator = lines[1].replace(/\s/g, '').match(/^\|(:?-+:?\|)*:?-+:?\|?$/);
     var bodyStartIndex = 1;
-
     if (isSeparator) {
       bodyStartIndex = 2;
       var sepCells = parseTableRow(lines[1]);
       for (var a = 0; a < sepCells.length; a++) {
         var cell = sepCells[a].trim();
-        if (cell.match(/^:-+:$/)) {
-          alignments.push('center');
-        } else if (cell.match(/^-+:$/)) {
-          alignments.push('right');
-        } else {
-          alignments.push('left');
-        }
+        if (cell.match(/^:-+:$/)) alignments.push('center');
+        else if (cell.match(/^-+:$/)) alignments.push('right');
+        else alignments.push('left');
       }
     }
-
     var tableHtml = '<table>\n<thead>\n<tr>';
     for (var h = 0; h < headerCells.length; h++) {
       var alignAttr = alignments[h] ? ' style="text-align:' + alignments[h] + '"' : '';
       tableHtml += '<th' + alignAttr + '>' + processInline(headerCells[h].trim()) + '</th>';
     }
     tableHtml += '</tr>\n</thead>\n<tbody>';
-
     for (var r = bodyStartIndex; r < lines.length; r++) {
       var cells = parseTableRow(lines[r]);
       tableHtml += '\n<tr>';
       for (var c = 0; c < cells.length; c++) {
-        var cellAlignAttr = alignments[c] ? ' style="text-align:' + alignments[c] + '"' : '';
-        tableHtml += '<td' + cellAlignAttr + '>' + processInline(cells[c].trim()) + '</td>';
+        var ca = alignments[c] ? ' style="text-align:' + alignments[c] + '"' : '';
+        tableHtml += '<td' + ca + '>' + processInline(cells[c].trim()) + '</td>';
       }
       tableHtml += '</tr>';
     }
-
-    tableHtml += '\n</tbody>\n</table>';
-    return tableHtml;
+    return tableHtml + '\n</tbody>\n</table>';
   }
 
-  /**
-   * Parse a pipe-delimited table row into an array of cell contents.
-   */
   function parseTableRow(row) {
-    var trimmed = row.replace(/^\|/, '').replace(/\|$/, '');
-    return trimmed.split('|');
-  }
-
-  function applyTheme(theme) {
-    console.log('[Forgejo Webview] Applying theme:', theme);
-    document.body.className = '';
-    if (theme === 'light') {
-      document.body.classList.add('vscode-light');
-    } else if (theme === 'dark') {
-      document.body.classList.add('vscode-dark');
-    } else if (theme === 'high-contrast') {
-      document.body.classList.add('vscode-high-contrast');
-    }
+    return row.replace(/^\|/, '').replace(/\|$/, '').split('|');
   }
 
   // Start
-  console.log('[Forgejo Webview] Starting initialization');
   init();
 })();

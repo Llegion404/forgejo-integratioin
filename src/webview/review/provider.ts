@@ -107,13 +107,14 @@ export class ReviewProvider {
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
 
-      const [files, refs] = await Promise.all([
+      const [files, refs, prDetails] = await Promise.all([
         client.getPullRequestFiles(owner, repo, number),
-        client.getPullRequestRefs(owner, repo, number)
+        client.getPullRequestRefs(owner, repo, number),
+        client.getPullRequestDetails(owner, repo, number)
       ]);
 
       state.pendingData = {
-        pr: { number, title: '' },
+        pr: { number, title: prDetails.title || '' },
         files,
         owner,
         repo,
