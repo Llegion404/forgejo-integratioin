@@ -157,6 +157,40 @@ All three (`PRDetailWebviewProvider`, `IssueDetailWebviewProvider`, `ActionDetai
 - **Auto-detect**: `getForgejoConfig()` → tries manual config → git remote → `findBestInstanceMatch()` (exact URL → domain → default/first)
 - **Migration**: `migrateToMultiInstance()` + `migrateTokensToSecretStorage()` run on activation
 
+### MCP Server (`src/mcp/`)
+Bundles a Model Context Protocol (MCP) stdio server that exposes Forgejo issues + PRs to AI coding agents (Claude Code, Codex CLI, GitHub Copilot). The server runs as a child process spawned by the agent — not by VS Code — so it cannot read SecretStorage or import `'vscode'`.
+
+| File | Responsibility |
+|---|---|
+| `transport.ts` | Hand-rolled newline-delimited JSON-RPC 2.0 stdio transport (~250 lines, no `@modelcontextprotocol/sdk` dep) |
+| `config.ts` | `resolveConfig()`: env vars (`FORGEJO_URL`/`TOKEN`/`OWNER`/`REPO`) → `~/.config/forgejo-mcp/instances.json` fallback → throw |
+| `client.ts` | `McpForgejoClient extends ForgejoClient` (from `forgejo-ts`) with `noopLogger` — bypasses extension's `forgejoClient.ts` wrapper (which imports `'vscode'`) |
+| `server.ts` | `buildMcpServer(transport, clientFactory, configFactory)`: JSON-RPC dispatch for `initialize`/`ping`/`tools/list`/`tools/call`; `runServer()` script entry point |
+| `tools/index.ts` | Exports `ALL_TOOLS` array (27 tools) + `findTool(name)`; v2 write tools append here |
+| `tools/framework.ts` | `Tool`/`ToolHandler` interfaces, `resolveOwner`/`resolveRepo`/`resolveNumber` helpers, `ImageToolResult` interface (sentinel `{__image: true, data, mimeType, filename?}`) |
+| `tools/{meta,repositories,issues,pullRequests}.ts` | Tool groups: `list_instances`, `get_current_user`, `search_repositories`, `list_issues`, `get_issue`, `list_issue_comments`, `get_issue_timeline`, `list_repo_labels`, `list_pull_requests`, `get_pull_request`, `list_pull_request_files`, `list_pull_request_commits`, `get_pull_request_refs`, `list_pull_request_reviews`, `list_review_comments` |
+| `tools/ciStatus.ts` | 2 tools: `get_pr_ci_status` (resolves PR head SHA → getCommitStatuses → dedup → summary), `get_commit_statuses` (raw SHA) |
+| `tools/reactions.ts` | 2 read tools via `rawRequest`: `list_comment_reactions`, `list_issue_reactions` |
+| `tools/branchProtection.ts` | 2 tools via `rawRequest`: `list_branch_protections`, `get_branch_protection` |
+| `tools/attachments.ts` | 2 tools: `list_issue_attachments` (rawRequest GET `/issues/{n}/assets`), `get_attachment` (fetch bytes → `ImageToolResult` → server emits MCP `{type:'image'}` content block) |
+| `tools/misc.ts` | 4 tools wrapping SDK methods: `list_releases`, `get_release`, `get_file_contents`, `list_tags` |
+| `tools/schema.ts` | JSON Schema builders: `ownerSchema`, `repoSchema`, `numberSchema`, `shaSchema`, `branchSchema`, `pathSchema`, `refSchema`, `commentIdSchema`, `releaseIdSchema`, `uuidSchema`, `issueStateSchema`, `pullRequestStateSchema`, `limitSchema`, `objectSchema()` |
+| `utils/statusDedup.ts` | Pure helpers copied from extension: `deduplicateStatuses()`, `summarizeStatuses()` — no `vscode` imports |
+
+**Why no `@modelcontextprotocol/sdk`:** The official SDK pulls ~5-10MB of transitive deps (express, hono, jose, ajv, zod, pkce-challenge) and its `exports` field is incompatible with `moduleResolution: "node"`. The hand-rolled transport is fully testable and adds zero deps.
+
+**Config resolution order:** env vars → `instances.json` file (written by the export command) → throw. `getConfigFilePath()` prefers `process.env.HOME` over `os.homedir()` because Linux's `os.homedir()` ignores `$HOME`.
+
+### MCP Config Export (`src/commands/exportMcpConfig.ts`)
+The `forgejo.exportMcpConfig` command writes per-agent config files so AI agents can spawn the stdio MCP server:
+- Reads current instance URL + token from `getForgejoConfig()`
+- Warns user about plaintext token write (modal)
+- Multi-select quickpick of agents (Copilot / Claude Code / Codex)
+- Writes `.vscode/mcp.json` (Copilot), `.mcp.json` (Claude Code), `.codex/config.toml` (Codex) with `env` block containing `FORGEJO_URL`/`FORGEJO_TOKEN`/`FORGEJO_OWNER`/`FORGEJO_REPO`
+- Writes `~/.config/forgejo-mcp/instances.json` as a non-VS-Code-launched fallback
+
+Pure helpers (`buildEnvBlockJson`, `buildEnvBlockToml`, `buildAgentConfig`, `getAgentConfigPath`, `writeInstancesFile`) are exported for unit testing.
+
 ---
 
 ## Testing Infrastructure
@@ -186,6 +220,16 @@ All three (`PRDetailWebviewProvider`, `IssueDetailWebviewProvider`, `ActionDetai
 - `migration.test.ts` — Legacy config migration
 - `config.test.ts` — Config resolution, auto-detect
 - `gitUtils.test.ts` — Remote URL parsing (all formats)
+- `mcp/config.test.ts` — Env precedence, file fallback, $XDG_CONFIG_HOME resolution
+- `mcp/transport.test.ts` — JSON-RPC parsing, mock stdin/stdout, partial-buffer, error responses
+- `mcp/tools.test.ts` — All 25 tool handlers against mocked `McpForgejoClient`
+- `mcp/statusDedup.test.ts` — Dedup (12→6), summary precedence (fail > pending > pass > none), edge cases
+- `mcp/ciStatus.test.ts` — `get_pr_ci_status` SHA resolution + dedup, `get_commit_statuses` summary
+- `mcp/reactions.test.ts` — Comment/issue reaction URL paths, URL-encoding, error wrapping
+- `mcp/branchProtection.test.ts` — Branch protection paths, URL-encoding of slashes in branch names
+- `mcp/misc.test.ts` — `list_releases`/`get_release`/`get_file_contents`/`list_tags` SDK method wiring
+- `mcp/server.live.test.ts` — Live integration (~26 tests) against Docker Forgejo + setup-script fixtures; auto-skips without env vars
+- `commands/exportMcpConfig.test.ts` — Agent config generation (JSON/TOML), command body integration
 
 ---
 
@@ -207,6 +251,7 @@ All three (`PRDetailWebviewProvider`, `IssueDetailWebviewProvider`, `ActionDetai
 | `forgejo.createIssue` | `createIssue.ts` | Create issue |
 | `forgejo.createPullRequest` | `createPullRequest.ts` | Create PR |
 | `forgejo.createRelease` | `createRelease.ts` | Create release |
+| `forgejo.exportMcpConfig` | `exportMcpConfig.ts` | Write MCP server config for AI agents (Copilot/Claude/Codex) |
 | `forgejo.mergePr` | `mergePr.ts` | Merge PR |
 | `forgejo.closePr` | `closePr.ts` | Close PR |
 | `forgejo.showPrDetails` | `webview/prDetail/provider.ts` | Open PR detail webview |
@@ -249,6 +294,13 @@ Inline Comment
   → prCommentController handles comment thread creation
   → pendingReviewManager batches comments
   → On submit: forgejoClient.createReviewWithComments()
+
+MCP Server (stdio child process spawned by AI agent)
+  → Agent writes .vscode/mcp.json / .mcp.json / .codex/config.toml (via exportMcpConfig command)
+  → Agent spawns `node <ext>/out/mcp/server.js` with FORGEJO_URL/TOKEN/OWNER/REPO env vars
+  → server.ts: buildMcpServer() reads JSON-RPC from stdin, dispatches initialize/ping/tools/list/tools/call
+  → tools/*: each tool calls McpForgejoClient (extends forgejo-ts ForgejoClient) → writes JSON-RPC response to stdout
+  → Fallback: if env vars unset, config.ts reads ~/.config/forgejo-mcp/instances.json
 ```
 
 ---
@@ -261,14 +313,15 @@ Inline Comment
 | API Client | `forgejoClient.ts` (wraps forgejo-ts) |
 | Config | `config.ts` + `gitUtils.ts` |
 | Instance Mgmt | `instanceHelpers.ts` + `secretStorage.ts` + `migration.ts` |
-| Commands | `registry.ts` + 8 handler files |
+| Commands | `registry.ts` + 9 handler files |
+| MCP Server | `mcp/{transport,config,client,server}.ts` + `mcp/utils/statusDedup.ts` + `mcp/tools/{schema,framework,meta,repositories,issues,pullRequests,ciStatus,reactions,branchProtection,misc,index}.ts` |
 | Tree Views | 4 `*TreeProvider.ts` files |
 | Virtual Docs | 2 `*ContentProvider.ts` files |
 | Comments | `prCommentController.ts` + `pendingReviewManager.ts` |
 | Webviews | 3 `webview/*/provider.ts` + 3 `index.js` + 3 `styles.css` + `webview/shared/helpers.ts` |
 | Models | 5 `models/*.ts` files |
 | Utils | 6 `utils/*.ts` files |
-| Unit Tests | 25+ files in `src/__tests__/` |
+| Unit Tests | 30+ files in `src/__tests__/` (incl. `mcp/` subfolder for transport/config/tools/ciStatus/reactions/branchProtection/misc/statusDedup, `commands/exportMcpConfig.test.ts`, plus `mcp/server.live.test.ts` for live integration) |
 | Integration Tests | 4 files in `src/test/suite/` |
 | E2E Tests | 10+ files in `src/test/e2e/` + `src/test/e2e-vscode/` |
 

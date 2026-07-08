@@ -26,6 +26,7 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 ### Next version
 
+- **MCP server for AI agents:** the extension now ships with a Model Context Protocol (MCP) server that lets AI coding agents (Claude Code, Codex CLI, GitHub Copilot) read Forgejo issues and pull requests directly. Run **"Forgejo: Configure MCP for Agents..."** to write the per-agent config files. See [MCP Server for AI Agents](#mcp-server-for-ai-agents) below.
 - **Safer git remote detection:** the extension now separates repository identity from instance resolution. HTTP(S) remotes still support zero-config detection, while SSH remotes no longer guess a Forgejo web/API URL from the git transport. If you're using SSH remotes with a self-hosted instance, configure the Forgejo instance explicitly for the most reliable matching.
 
 ## Features
@@ -55,6 +56,49 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 - Auto-detect instance from your git remote
 - Select preferred remote when multiple remotes exist
 - Built-in diagnostics to troubleshoot connection issues
+
+### MCP Server for AI Agents
+
+The extension bundles a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that exposes **27 read-only tools** for browsing Forgejo issues, pull requests, CI status, reactions, branch protection, image attachments, releases, and file contents. Once configured, AI coding agents can call these tools directly from their conversation context — no copy-pasting URLs or manually fetching data.
+
+**Supported agents:**
+- **GitHub Copilot** (VS Code) → writes `.vscode/mcp.json`
+- **Claude Code** (CLI) → writes `.mcp.json`
+- **Codex CLI** → writes `.codex/config.toml`
+
+**Available MCP tools (v1, read-only):**
+
+| Group | Tools |
+|-------|-------|
+| Meta | `list_instances`, `get_current_user` |
+| Repositories | `search_repositories` |
+| Issues | `list_issues`, `get_issue`, `list_issue_comments`, `get_issue_timeline`, `list_repo_labels` |
+| Pull Requests | `list_pull_requests`, `get_pull_request`, `list_pull_request_files`, `list_pull_request_commits`, `get_pull_request_refs`, `list_pull_request_reviews`, `list_review_comments` |
+| CI Status | `get_pr_ci_status`, `get_commit_statuses` |
+| Reactions | `list_comment_reactions`, `list_issue_reactions` |
+| Branch Protection | `list_branch_protections`, `get_branch_protection` |
+| Attachments | `list_issue_attachments`, `get_attachment` |
+| Misc | `list_releases`, `get_release`, `get_file_contents`, `list_tags` |
+
+**Setup:**
+
+1. Configure a Forgejo instance first (see [Setting Up Authentication](#setting-up-authentication))
+2. Run **"Forgejo: Configure MCP for Agents..."** from the Command Palette
+3. Select which agents to configure (multi-select)
+4. Confirm the default owner/repo (pre-filled from your git remote)
+5. The command writes the per-agent config file(s) and `~/.config/forgejo-mcp/instances.json`
+6. Reload the window when prompted
+
+**How credentials work:** The stdio MCP server cannot read VS Code's SecretStorage directly, so the command writes your Forgejo token to the agent config file's `env` block (plaintext) and to `~/.config/forgejo-mcp/instances.json` as a fallback. A modal warning appears before any token is written to disk.
+
+**Environment variables (alternative to instances.json):** The server reads credentials from env vars first, falling back to the instances file:
+
+| Variable | Purpose |
+|----------|---------|
+| `FORGEJO_URL` | Instance base URL (e.g., `https://codeberg.org`) |
+| `FORGEJO_TOKEN` | Personal access token |
+| `FORGEJO_OWNER` | Default owner for tools that omit `owner` |
+| `FORGEJO_REPO` | Default repo for tools that omit `repo` |
 
 ### Browser Integration
 - Open any PR, Issue, or Action in your browser with one click
@@ -160,6 +204,7 @@ Open Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and type "Forgejo":
 | Forgejo: Refresh Issues | Reload Issue list |
 | Forgejo: Refresh Actions | Reload Actions list |
 | Forgejo: Select Git Remote | Choose which git remote to use |
+| Forgejo: Configure MCP for Agents... | Write MCP server config for Claude Code / Codex / Copilot |
 | Forgejo: Show Diagnostics | Debug connection issues |
 | Forgejo: Show Output Channel | View extension logs |
 

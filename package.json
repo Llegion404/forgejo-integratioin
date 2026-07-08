@@ -216,6 +216,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "forgejo.exportMcpConfig",
+        "title": "Forgejo: Configure MCP for Agents...",
+        "icon": "$(symbol-event)"
+      },
+      {
         "command": "forgejo.openReleaseInBrowser",
         "title": "Open Release in Browser",
         "icon": "$(link-external)"
@@ -446,7 +451,10 @@
         },
         "forgejo.prDiffMode": {
           "type": "string",
-          "enum": ["local", "remote"],
+          "enum": [
+            "local",
+            "remote"
+          ],
           "default": "local",
           "enumDescriptions": [
             "Diff against your actual local working file (editable). Requires the PR branch to be checked out.",
@@ -478,7 +486,7 @@
     "test:e2e:vscode:headed": "playwright test --config playwright.vscode.config.ts --headed",
     "test:e2e:vscode:debug": "playwright test --config playwright.vscode.config.ts --debug",
     "test:ci": "npm run lint && npm run test:unit:coverage && npm run test:integration",
-    "test:live": "jest --testPathPattern='forgejoClient\\.live\\.test'",
+    "test:live": "jest --testPathPattern='\\.live\\.test'",
     "test:e2e:live": "playwright test --config playwright.live.config.ts",
     "test:e2e:live:local": "bash scripts/run-e2e-local.sh"
   },

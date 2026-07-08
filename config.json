@@ -1,0 +1,4 @@
+{
+  "goal_checker_model": "deepseek/deepseek-v4-pro",
+  "$schema": "https://opencode.ai/config.json"
+}

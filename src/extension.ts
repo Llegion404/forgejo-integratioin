@@ -23,6 +23,7 @@ import { showDiagnostics } from './commands/diagnostics';
 import { createIssueCommand } from './commands/createIssue';
 import { createPullRequestCommand } from './commands/createPullRequest';
 import { createReleaseCommand } from './commands/createRelease';
+import { exportMcpConfigCommand } from './commands/exportMcpConfig';
 import { mergePrCommand } from './commands/mergePr';
 import { selectRemoteCommand } from './commands/selectRemote';
 import { closePrCommand } from './commands/closePr';
@@ -220,6 +221,16 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register create pull request command
   context.subscriptions.push(
     registerCommand('forgejo.createPullRequest', () => createPullRequestCommand(prTreeProvider))
+  );
+
+  // Register MCP config export command (writes .vscode/mcp.json, .mcp.json,
+  // .codex/config.toml for GitHub Copilot / Claude Code / Codex CLI).
+  context.subscriptions.push(
+    registerCommand('forgejo.exportMcpConfig', async () => {
+      await exportMcpConfigCommand(
+        () => vscode.Uri.joinPath(context.extensionUri, 'out', 'mcp', 'server.js').fsPath,
+      );
+    }),
   );
 
   context.subscriptions.push(
