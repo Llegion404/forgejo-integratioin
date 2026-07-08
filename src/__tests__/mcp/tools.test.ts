@@ -28,6 +28,7 @@ const mockClient: jest.Mocked<McpForgejoClient> = {
 	getPullRequestRefs: jest.fn(),
 	getPullRequestReviews: jest.fn(),
 	getReviewComments: jest.fn(),
+	getCommitStatuses: jest.fn(),
 	rawRequest: jest.fn(),
 	testConnection: jest.fn(),
 } as unknown as jest.Mocked<McpForgejoClient>;
@@ -92,9 +93,9 @@ describe('MCP server protocol', () => {
 		});
 	});
 
-	it('tools/list returns all 27 tools', async () => {
+	it('tools/list returns all 28 tools', async () => {
 		const tools = await listTools();
-		expect(tools.length).toBe(27);
+		expect(tools.length).toBe(28);
 		const names = tools.map((t) => t.name);
 		expect(names).toContain('list_instances');
 		expect(names).toContain('get_current_user');
@@ -123,6 +124,7 @@ describe('MCP server protocol', () => {
 		expect(names).toContain('list_tags');
 		expect(names).toContain('list_issue_attachments');
 		expect(names).toContain('get_attachment');
+		expect(names).toContain('get_pull_request_summary');
 	});
 
 	it('returns METHOD_NOT_FOUND for unknown method', async () => {
@@ -345,6 +347,46 @@ describe('MCP tool invocations', () => {
 			await callTool('list_pull_request_files', { owner: 'foo', repo: 'bar', number: 3 });
 			expect(mockClient.getPullRequestFiles).toHaveBeenCalledWith('foo', 'bar', 3);
 		});
+
+		it('returns raw array unchanged when no patch options set (backward compat)', async () => {
+			const files = [{ filename: 'a.ts', patch: '@@ -1,1 +1,1 @@\n+x' }];
+			mockClient.getPullRequestFiles.mockResolvedValueOnce(files as never);
+			const resp = await callTool('list_pull_request_files', { owner: 'foo', repo: 'bar', number: 3 });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload).toEqual(files);
+			expect(payload[0].patch).toBe('@@ -1,1 +1,1 @@\n+x');
+			expect(payload[0]).not.toHaveProperty('patch_excluded');
+		});
+
+		it('strips patches and sets patch_excluded when include_patch=false', async () => {
+			const files = [
+				{ filename: 'a.ts', additions: 1, deletions: 0, changes: 1, patch: '@@ ...\n+x' },
+				{ filename: 'b.ts', additions: 0, deletions: 1, changes: 1 },
+			];
+			mockClient.getPullRequestFiles.mockResolvedValueOnce(files as never);
+			const resp = await callTool('list_pull_request_files', {
+				owner: 'foo', repo: 'bar', number: 3, include_patch: false,
+			});
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload[0].patch_excluded).toBe(true);
+			expect(payload[0]).not.toHaveProperty('patch');
+			expect(payload[0].filename).toBe('a.ts');
+			// File with no patch also gets patch_excluded.
+			expect(payload[1].patch_excluded).toBe(true);
+		});
+
+		it('truncates patches and sets patch_truncated when max_patch_lines set', async () => {
+			const longPatch = '@@ -1,1 +1,1 @@\n' + Array.from({ length: 20 }, (_, i) => `+line${i}`).join('\n');
+			const files = [{ filename: 'a.ts', additions: 20, deletions: 0, changes: 20, patch: longPatch }];
+			mockClient.getPullRequestFiles.mockResolvedValueOnce(files as never);
+			const resp = await callTool('list_pull_request_files', {
+				owner: 'foo', repo: 'bar', number: 3, max_patch_lines: 3,
+			});
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload[0].patch_truncated).toBe(true);
+			expect(payload[0].patch).toContain('@@');
+			expect(payload[0].patch).toContain('more lines)');
+		});
 	});
 
 	describe('list_pull_request_commits', () => {
@@ -383,6 +425,135 @@ describe('MCP tool invocations', () => {
 			expect((resp.result as { isError: boolean }).isError).toBe(true);
 			const text = (resp.result as { content: { text: string }[] }).content[0].text;
 			expect(text).toMatch(/reviewId/);
+		});
+	});
+
+	describe('get_pull_request_summary', () => {
+		const mockPr = {
+			number: 42, title: 'Fix bug', state: 'open', body: 'PR body text',
+			user: { login: 'alice', avatar_url: 'http://x' },
+			created_at: '2025-01-01T00:00:00Z', updated_at: '2025-06-01T00:00:00Z',
+			html_url: 'http://pr/42',
+			head: { ref: 'feature', sha: 'a'.repeat(40), repo: { full_name: 'o/r' } },
+			base: { ref: 'main' },
+			mergeable: true, merged: false, merge_commit_sha: null,
+			draft: false, comments: 2, labels: [{ name: 'bug', color: '#f00' }],
+		};
+
+		function setupDefaults() {
+			mockClient.getPullRequest.mockResolvedValue(mockPr as never);
+			mockClient.getPullRequestCommits.mockResolvedValue([
+				{ sha: 'b'.repeat(40), commit: { message: 'Commit 1', author: { name: 'u1', email: 'e1', date: '2025-01-01' } }, author: { login: 'u1' }, html_url: 'h' },
+			] as never);
+			mockClient.getIssueComments.mockResolvedValue([
+				{ id: 1, body: 'Comment 1', user: { login: 'c1' }, created_at: '2025-01-01', html_url: 'h' },
+			] as never);
+			mockClient.getPullRequestFiles.mockResolvedValue([
+				{ filename: 'a.ts', status: 'modified', additions: 1, deletions: 0, changes: 1, patch: '@@ -1 +1 @@\n+x' },
+			] as never);
+		}
+
+		it('returns default sections (description, commits, conversation, files_overview) and omits reviews/ci', async () => {
+			setupDefaults();
+			const resp = await callTool('get_pull_request_summary', { owner: 'foo', repo: 'bar', number: 42 });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+
+			expect(payload.sections).toEqual(['description', 'commits', 'conversation', 'files_overview']);
+			expect(payload.description.title).toBe('Fix bug');
+			expect(payload.description.author).toEqual({ login: 'alice' });
+			expect(payload.commits.total).toBe(1);
+			expect(payload.commits.items[0].short_sha).toHaveLength(7);
+			expect(payload.conversation.total).toBe(1);
+			expect(payload.conversation.items[0].author).toEqual({ login: 'c1' });
+			expect(payload.files_overview.total).toBe(1);
+			// Patches dropped by default.
+			expect(payload.files_overview.items[0].patch_excluded).toBe(true);
+			expect(payload.reviews).toBeUndefined();
+			expect(payload.ci_status).toBeUndefined();
+			expect(payload._meta.truncated).toBe(false);
+		});
+
+		it('enables reviews and ci_status when sections opts request them', async () => {
+			setupDefaults();
+			mockClient.getPullRequestReviews.mockResolvedValue([
+				{ id: 1, state: 'APPROVE', body: 'LGTM', user: { login: 'r1' }, submitted_at: '2025-01-01', html_url: 'h' },
+			] as never);
+			mockClient.getCommitStatuses.mockResolvedValue([] as never);
+
+			const resp = await callTool('get_pull_request_summary', {
+				owner: 'foo', repo: 'bar', number: 42,
+				sections: { reviews: true, ci_status: true },
+			});
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+
+			expect(payload.sections).toContain('reviews');
+			expect(payload.sections).toContain('ci_status');
+			expect(payload.reviews.total).toBe(1);
+			expect(payload.reviews.items[0].state).toBe('APPROVE');
+			expect(payload.ci_status.summary).toBe('none');
+			expect(payload.ci_status.head_sha).toBe('a'.repeat(40));
+			expect(mockClient.getCommitStatuses).toHaveBeenCalledWith('foo', 'bar', 'a'.repeat(40));
+		});
+
+		it('flags truncated when max_commits < array length', async () => {
+			setupDefaults();
+			mockClient.getPullRequestCommits.mockResolvedValue(
+				Array.from({ length: 60 }, (_, i) => ({
+					sha: 'b'.repeat(40), commit: { message: `Commit ${i}`, author: { name: 'u', email: 'e', date: '2025-01-01' } },
+					author: { login: 'u' }, html_url: 'h',
+				})) as never,
+			);
+			const resp = await callTool('get_pull_request_summary', {
+				owner: 'foo', repo: 'bar', number: 42, max_commits: 10,
+			});
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.commits.total).toBe(60);
+			expect(payload.commits.returned).toBe(10);
+			expect(payload.commits.truncated).toBe(true);
+			expect(payload._meta.truncated).toBe(true);
+		});
+
+		it('respects sections.description=false to omit description', async () => {
+			setupDefaults();
+			const resp = await callTool('get_pull_request_summary', {
+				owner: 'foo', repo: 'bar', number: 42,
+				sections: { description: false, commits: false, conversation: false, files_overview: false },
+			});
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.sections).toEqual([]);
+			expect(payload.description).toBeUndefined();
+			expect(payload.commits).toBeUndefined();
+			expect(payload.conversation).toBeUndefined();
+			expect(payload.files_overview).toBeUndefined();
+		});
+
+		it('includes bounded patch in files_overview when max_patch_lines > 0', async () => {
+			setupDefaults();
+			const longPatch = '@@ -1 +1 @@\n' + Array.from({ length: 20 }, (_, i) => `+line${i}`).join('\n');
+			mockClient.getPullRequestFiles.mockResolvedValue([
+				{ filename: 'a.ts', status: 'modified', additions: 20, deletions: 0, changes: 20, patch: longPatch },
+			] as never);
+			const resp = await callTool('get_pull_request_summary', {
+				owner: 'foo', repo: 'bar', number: 42, max_patch_lines: 3,
+			});
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.files_overview.items[0].patch.truncated).toBe(true);
+			expect(payload.files_overview.items[0].patch.text).toContain('@@');
+		});
+
+		it('requires number argument', async () => {
+			const resp = await callTool('get_pull_request_summary', { owner: 'foo', repo: 'bar' });
+			const result = resp.result as { isError: boolean; content: { text: string }[] };
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toMatch(/'number'/);
+		});
+
+		it('wraps PR fetch errors as isError: true', async () => {
+			mockClient.getPullRequest.mockRejectedValueOnce(new Error('HTTP 404: not found'));
+			const resp = await callTool('get_pull_request_summary', { owner: 'foo', repo: 'bar', number: 999 });
+			const result = resp.result as { isError: boolean; content: { text: string }[] };
+			expect(result.isError).toBe(true);
+			expect(result.content[0].text).toContain('HTTP 404');
 		});
 	});
 });

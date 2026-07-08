@@ -23,6 +23,8 @@ import {
 	numberSchema,
 	pullRequestStateSchema,
 } from './schema';
+import { truncatePatch, clampInt } from '../utils/responseFormat';
+import type { PullRequestFile } from 'forgejo-ts';
 
 export const listPullRequestsTool: Tool = {
 	name: 'list_pull_requests',
@@ -42,7 +44,7 @@ export const listPullRequestsTool: Tool = {
 	async handler({ args, client, config }): Promise<unknown> {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
-		const state = (args['state'] as 'open' | 'closed' | 'all' | undefined) ?? 'open';
+		const state = (args.state as 'open' | 'closed' | 'all' | undefined) ?? 'open';
 		return client.listPullRequests(owner, repo, state);
 	},
 };
@@ -75,12 +77,36 @@ export const listPullRequestFilesTool: Tool = {
 		'List the files changed in a pull request. For each file returns ' +
 		'filename, status (added/modified/removed/renamed), additions, ' +
 		'deletions, changes, blob_url, raw_url, and (when present) the ' +
-		'unified diff patch. Use this for code review.',
+		'unified diff patch. Use this for code review. On large PRs the ' +
+		'embedded `patch` strings can blow up the response — pass ' +
+		'include_patch=false to drop patches entirely (keeps counts only), ' +
+		'or max_patch_lines=N to keep a bounded snippet per file (hunk ' +
+		'headers preserved). For a one-shot size-bounded PR overview use ' +
+		'get_pull_request_summary instead.',
 	inputSchema: objectSchema(
 		{
 			owner: ownerSchema,
 			repo: repoSchema,
 			number: numberSchema,
+			include_patch: {
+				type: 'boolean',
+				default: true,
+				description:
+					'Whether to include the unified-diff `patch` string on each ' +
+					'file. Default true (raw API behaviour). Set false to strip ' +
+					'all patches and mark each file with patch_excluded: true — ' +
+					'useful when you only need the file list + counts.',
+			},
+			max_patch_lines: {
+				type: 'integer',
+				minimum: 0,
+				maximum: 1000,
+				default: 0,
+				description:
+					'Max patch lines to keep PER FILE. 0 (default) = unlimited ' +
+					'(raw behaviour). >0 truncates each patch, preserving @@ hunk ' +
+					'headers, and sets patch_truncated: true on truncated files.',
+			},
 		},
 		[],
 	),
@@ -88,7 +114,31 @@ export const listPullRequestFilesTool: Tool = {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
 		const number = resolveNumber(args, 'number');
-		return client.getPullRequestFiles(owner, repo, number);
+		const includePatch = args.include_patch !== false;
+		const maxPatchLines = clampInt(args.max_patch_lines, 0, 1000, 0);
+
+		const files: PullRequestFile[] = await client.getPullRequestFiles(owner, repo, number);
+
+		// No options set → return the raw array unchanged (backward compat).
+		if (includePatch && maxPatchLines <= 0) {
+			return files;
+		}
+
+		// Post-process: drop or bound patches, but keep the array shape so
+		// existing callers that expect an array still work.
+		return files.map((f) => {
+			if (!f.patch) {
+				return { ...f, patch_excluded: true };
+			}
+			if (!includePatch) {
+				const stripped: PullRequestFile = { ...f };
+				delete stripped.patch;
+				return { ...stripped, patch_excluded: true };
+			}
+			// includePatch === true, maxPatchLines > 0 → bound each patch.
+			const bounded = truncatePatch(f.patch, maxPatchLines);
+			return { ...f, patch: bounded.text, patch_truncated: bounded.truncated };
+		});
 	},
 };
 
