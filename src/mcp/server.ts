@@ -16,7 +16,15 @@
  *
  * The server is read-only v1: 27 tools covering Forgejo issues, PRs, CI
  * status, reactions, branch protection, image attachments, releases, file
- * contents, and tags. Write actions (create_issue, merge_pr, etc.) are
+ * contents, and tags. Most read tools return a compact, agent-optimised
+ * summary by default (`full: false`): drops avatar URLs, trims user objects
+ * to `{login, full_name?}`, flattens labels to names-only, bounds body
+ * strings, caps list counts, and (for get_issue / get_pull_request) fans out
+ * multiple SDK calls in parallel to return a single envelope so an agent can
+ * take over an issue/PR with one tool call instead of N round trips. Pass
+ * `full: true` on any tool that supports it to receive the raw, untouched
+ * SDK payload instead — for the rare case when the agent needs a field the
+ * compact path omits. Write actions (create_issue, merge_pr, etc.) are
  * planned for v2 — see src/mcp/tools/index.ts.
  *
  * Protocol version advertised: 2025-06-18.

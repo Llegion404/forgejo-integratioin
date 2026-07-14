@@ -12,7 +12,6 @@ import { listInstancesTool, getCurrentUserTool } from './meta';
 import { searchRepositoriesTool } from './repositories';
 import { issueTools } from './issues';
 import { pullRequestTools } from './pullRequests';
-import { getPullRequestSummaryTool } from './pullRequestSummary';
 import { ciStatusTools } from './ciStatus';
 import { reactionTools } from './reactions';
 import { branchProtectionTools } from './branchProtection';
@@ -24,7 +23,6 @@ export * from './meta';
 export * from './repositories';
 export * from './issues';
 export * from './pullRequests';
-export * from './pullRequestSummary';
 export * from './ciStatus';
 export * from './reactions';
 export * from './branchProtection';
@@ -37,7 +35,6 @@ export const ALL_TOOLS: Tool[] = [
 	searchRepositoriesTool,
 	...issueTools,
 	...pullRequestTools,
-	getPullRequestSummaryTool,
 	...ciStatusTools,
 	...reactionTools,
 	...branchProtectionTools,

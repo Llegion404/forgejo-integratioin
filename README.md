@@ -61,6 +61,8 @@ For private repositories, [add a Personal Access Token](#setting-up-authenticati
 
 The extension bundles a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that exposes **27 read-only tools** for browsing Forgejo issues, pull requests, CI status, reactions, branch protection, image attachments, releases, and file contents. Once configured, AI coding agents can call these tools directly from their conversation context — no copy-pasting URLs or manually fetching data.
 
+**Compact by default, full on demand.** Most read tools accept an optional `full: boolean` parameter (default `false`). The compact shape drops noise (avatar URLs, embedded asset metadata, unbounded bodies) and caps counts/lengths so typical responses stay well under ~10 KB — exactly what an agent needs to triage an issue or PR end-to-end. Pass `full: true` when an agent needs a field the compact path omits (rare). Every bounded section carries `truncated` / `total` / `returned` flags so the agent knows when to drill in.
+
 **Supported agents:**
 - **GitHub Copilot** (VS Code) → writes `.vscode/mcp.json`
 - **Claude Code** (CLI) → writes `.mcp.json`
@@ -68,12 +70,12 @@ The extension bundles a [Model Context Protocol](https://modelcontextprotocol.io
 
 **Available MCP tools (v1, read-only):**
 
-| Group | Tools |
+| Group | Tools (add `full=true` to get the raw SDK payload) |
 |-------|-------|
 | Meta | `list_instances`, `get_current_user` |
 | Repositories | `search_repositories` |
-| Issues | `list_issues`, `get_issue`, `list_issue_comments`, `get_issue_timeline`, `list_repo_labels` |
-| Pull Requests | `list_pull_requests`, `get_pull_request`, `list_pull_request_files`, `list_pull_request_commits`, `get_pull_request_refs`, `list_pull_request_reviews`, `list_review_comments` |
+| Issues | `list_issues`, `get_issue` (default fan-outs issue + comments in parallel), `list_issue_comments`, `get_issue_timeline`, `list_repo_labels` |
+| Pull Requests | `list_pull_requests`, `get_pull_request` (one-call compact bundle — description/commits/conversation/files_overview with `sections.*` + `max_*` toggles), `list_pull_request_files`, `list_pull_request_commits`, `get_pull_request_refs`, `list_pull_request_reviews`, `list_review_comments` |
 | CI Status | `get_pr_ci_status`, `get_commit_statuses` |
 | Reactions | `list_comment_reactions`, `list_issue_reactions` |
 | Branch Protection | `list_branch_protections`, `get_branch_protection` |

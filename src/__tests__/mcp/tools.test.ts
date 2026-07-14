@@ -93,9 +93,9 @@ describe('MCP server protocol', () => {
 		});
 	});
 
-	it('tools/list returns all 28 tools', async () => {
+	it('tools/list returns all 27 tools', async () => {
 		const tools = await listTools();
-		expect(tools.length).toBe(28);
+		expect(tools.length).toBe(27);
 		const names = tools.map((t) => t.name);
 		expect(names).toContain('list_instances');
 		expect(names).toContain('get_current_user');
@@ -124,7 +124,9 @@ describe('MCP server protocol', () => {
 		expect(names).toContain('list_tags');
 		expect(names).toContain('list_issue_attachments');
 		expect(names).toContain('get_attachment');
-		expect(names).toContain('get_pull_request_summary');
+		// The standalone `get_pull_request_summary` tool has been folded into
+		// `get_pull_request` (default compact path). Verifying it's gone:
+		expect(names).not.toContain('get_pull_request_summary');
 	});
 
 	it('returns METHOD_NOT_FOUND for unknown method', async () => {
@@ -428,10 +430,10 @@ describe('MCP tool invocations', () => {
 		});
 	});
 
-	describe('get_pull_request_summary', () => {
+	describe('get_pull_request (compact / fan-out)', () => {
 		const mockPr = {
 			number: 42, title: 'Fix bug', state: 'open', body: 'PR body text',
-			user: { login: 'alice', avatar_url: 'http://x' },
+			user: { login: 'alice', avatar_url: 'http://x', full_name: 'Alice Wonder' },
 			created_at: '2025-01-01T00:00:00Z', updated_at: '2025-06-01T00:00:00Z',
 			html_url: 'http://pr/42',
 			head: { ref: 'feature', sha: 'a'.repeat(40), repo: { full_name: 'o/r' } },
@@ -455,12 +457,13 @@ describe('MCP tool invocations', () => {
 
 		it('returns default sections (description, commits, conversation, files_overview) and omits reviews/ci', async () => {
 			setupDefaults();
-			const resp = await callTool('get_pull_request_summary', { owner: 'foo', repo: 'bar', number: 42 });
+			const resp = await callTool('get_pull_request', { owner: 'foo', repo: 'bar', number: 42 });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
 
 			expect(payload.sections).toEqual(['description', 'commits', 'conversation', 'files_overview']);
 			expect(payload.description.title).toBe('Fix bug');
-			expect(payload.description.author).toEqual({ login: 'alice' });
+			// full_name is kept when present (helpful for agents drafting replies).
+			expect(payload.description.author).toEqual({ login: 'alice', full_name: 'Alice Wonder' });
 			expect(payload.commits.total).toBe(1);
 			expect(payload.commits.items[0].short_sha).toHaveLength(7);
 			expect(payload.conversation.total).toBe(1);
@@ -473,6 +476,19 @@ describe('MCP tool invocations', () => {
 			expect(payload._meta.truncated).toBe(false);
 		});
 
+		it('full=true short-circuits: returns raw SDK PR only, no fan-out', async () => {
+			setupDefaults();
+			const resp = await callTool('get_pull_request', { owner: 'foo', repo: 'bar', number: 42, full: true });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+
+			// Raw PR object: same shape that mockClient.getPullRequest returned.
+			expect(payload).toEqual(mockPr);
+			// No fan-out — the optional methods should NOT have been called.
+			expect(mockClient.getPullRequestCommits).not.toHaveBeenCalled();
+			expect(mockClient.getIssueComments).not.toHaveBeenCalled();
+			expect(mockClient.getPullRequestFiles).not.toHaveBeenCalled();
+		});
+
 		it('enables reviews and ci_status when sections opts request them', async () => {
 			setupDefaults();
 			mockClient.getPullRequestReviews.mockResolvedValue([
@@ -480,7 +496,7 @@ describe('MCP tool invocations', () => {
 			] as never);
 			mockClient.getCommitStatuses.mockResolvedValue([] as never);
 
-			const resp = await callTool('get_pull_request_summary', {
+			const resp = await callTool('get_pull_request', {
 				owner: 'foo', repo: 'bar', number: 42,
 				sections: { reviews: true, ci_status: true },
 			});
@@ -503,7 +519,7 @@ describe('MCP tool invocations', () => {
 					author: { login: 'u' }, html_url: 'h',
 				})) as never,
 			);
-			const resp = await callTool('get_pull_request_summary', {
+			const resp = await callTool('get_pull_request', {
 				owner: 'foo', repo: 'bar', number: 42, max_commits: 10,
 			});
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
@@ -515,7 +531,7 @@ describe('MCP tool invocations', () => {
 
 		it('respects sections.description=false to omit description', async () => {
 			setupDefaults();
-			const resp = await callTool('get_pull_request_summary', {
+			const resp = await callTool('get_pull_request', {
 				owner: 'foo', repo: 'bar', number: 42,
 				sections: { description: false, commits: false, conversation: false, files_overview: false },
 			});
@@ -533,7 +549,7 @@ describe('MCP tool invocations', () => {
 			mockClient.getPullRequestFiles.mockResolvedValue([
 				{ filename: 'a.ts', status: 'modified', additions: 20, deletions: 0, changes: 20, patch: longPatch },
 			] as never);
-			const resp = await callTool('get_pull_request_summary', {
+			const resp = await callTool('get_pull_request', {
 				owner: 'foo', repo: 'bar', number: 42, max_patch_lines: 3,
 			});
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
@@ -542,7 +558,7 @@ describe('MCP tool invocations', () => {
 		});
 
 		it('requires number argument', async () => {
-			const resp = await callTool('get_pull_request_summary', { owner: 'foo', repo: 'bar' });
+			const resp = await callTool('get_pull_request', { owner: 'foo', repo: 'bar' });
 			const result = resp.result as { isError: boolean; content: { text: string }[] };
 			expect(result.isError).toBe(true);
 			expect(result.content[0].text).toMatch(/'number'/);
@@ -550,10 +566,242 @@ describe('MCP tool invocations', () => {
 
 		it('wraps PR fetch errors as isError: true', async () => {
 			mockClient.getPullRequest.mockRejectedValueOnce(new Error('HTTP 404: not found'));
-			const resp = await callTool('get_pull_request_summary', { owner: 'foo', repo: 'bar', number: 999 });
+			const resp = await callTool('get_pull_request', { owner: 'foo', repo: 'bar', number: 999 });
 			const result = resp.result as { isError: boolean; content: { text: string }[] };
 			expect(result.isError).toBe(true);
 			expect(result.content[0].text).toContain('HTTP 404');
+		});
+	});
+
+	describe('list_pull_requests (compact)', () => {
+		it('default returns compact PR list items with bounded body + compact author', async () => {
+			const longBody = 'z'.repeat(4000);
+			mockClient.listPullRequests.mockResolvedValueOnce([
+				{
+					number: 7, title: 'PR 7', state: 'open', body: longBody,
+					user: { login: 'alice', avatar_url: 'u', full_name: 'Alice' },
+					created_at: '2025-01-01T00:00:00Z', updated_at: '2025-06-01T00:00:00Z',
+					html_url: 'http://pr/7', head: { ref: 'feat', sha: 's'.repeat(40), repo: { full_name: 'o/r' } },
+					base: { ref: 'main' }, mergeable: true, merged: false, merge_commit_sha: null,
+					draft: false, comments: 4, labels: [{ name: 'bug', color: '#f00' }],
+				},
+			] as never);
+
+			const resp = await callTool('list_pull_requests', { owner: 'foo', repo: 'bar' });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload).toHaveLength(1);
+			expect(payload[0].number).toBe(7);
+			expect(payload[0].author).toEqual({ login: 'alice', full_name: 'Alice' });
+			expect(payload[0].labels).toEqual([{ name: 'bug' }]);
+			expect(payload[0].body.truncated).toBe(true);
+			expect(payload[0].body.original_length).toBe(4000);
+			expect(payload[0].head_ref).toBe('feat');
+			expect(mockClient.listPullRequests).toHaveBeenCalledWith('foo', 'bar', 'open');
+		});
+
+		it('full=true returns raw SDK payload unchanged', async () => {
+			const rawItems = [{
+				number: 7, title: 'PR 7', state: 'open', body: 'x',
+				user: { login: 'alice', avatar_url: 'http://a' },
+				created_at: '2025-01-01T00:00:00Z', updated_at: '2025-06-01T00:00:00Z',
+				html_url: 'http://pr/7', head: { ref: 'feat', sha: 's'.repeat(40), repo: { full_name: 'o/r' } },
+				base: { ref: 'main' }, mergeable: true, merged: false, merge_commit_sha: null,
+				draft: false, comments: 4, labels: [{ name: 'bug', color: '#f00' }],
+			}];
+			mockClient.listPullRequests.mockResolvedValueOnce(rawItems as never);
+
+			const resp = await callTool('list_pull_requests', { owner: 'foo', repo: 'bar', full: true });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload).toEqual(rawItems);
+		});
+	});
+
+	describe('list_issues (compact)', () => {
+		it('default returns compact issue list items: bounded body, compact author, labels names only', async () => {
+			const longBody = 'q'.repeat(3500);
+			mockClient.listIssues.mockResolvedValueOnce([
+				{
+					number: 12, title: 'Issue 12', state: 'open', body: longBody, html_url: 'http://i/12',
+					created_at: '2025-01-01T00:00:00Z', updated_at: '2025-06-01T00:00:00Z', comments: 2,
+					user: { login: 'bob', avatar_url: 'http://b', full_name: 'Bob Smith' },
+					labels: [{ name: 'bug', color: '#f00' }, { name: 'urgent', color: '#0f0' }],
+				},
+			] as never);
+
+			const resp = await callTool('list_issues', { owner: 'foo', repo: 'bar' });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload).toHaveLength(1);
+			expect(payload[0].number).toBe(12);
+			expect(payload[0].author).toEqual({ login: 'bob', full_name: 'Bob Smith' });
+			expect(payload[0].labels).toEqual([{ name: 'bug' }, { name: 'urgent' }]);
+			expect(payload[0].body.truncated).toBe(true);
+			expect(mockClient.listIssues).toHaveBeenCalledWith('foo', 'bar', 'open');
+		});
+
+		it('full=true returns raw SDK payload unchanged', async () => {
+			const rawItems = [{
+				number: 12, title: 'I', state: 'open', body: 'b', html_url: 'u',
+				created_at: 'c', updated_at: 'u2', comments: 0,
+				user: { login: 'bob', avatar_url: 'http://b' },
+				labels: [{ name: 'bug', color: '#f00' }],
+			}];
+			mockClient.listIssues.mockResolvedValueOnce(rawItems as never);
+
+			const resp = await callTool('list_issues', { owner: 'foo', repo: 'bar', full: true });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload).toEqual(rawItems);
+		});
+	});
+
+	describe('get_issue (compact / fan-out)', () => {
+		const mockIssue = {
+			id: 1,
+			number: 790, title: 'Удалить информацию', state: 'open',
+			body: 'Task description',
+			html_url: 'http://i/790', comments: 2,
+			created_at: '2026-07-13T16:07:39+05:00', updated_at: '2026-07-14T13:17:11+05:00',
+			closed_at: null, due_date: '2026-07-14T23:59:59+05:00',
+			is_locked: false,
+			user: { login: 'Yeldashev_T', avatar_url: 'http://a', full_name: 'Елдашев Тахир' },
+			assignees: [{ login: 'Ai40404', avatar_url: 'http://a2', full_name: 'Хмелевцев Александр' }],
+			labels: [
+				{ name: 'IN PROGRESS', color: 'fbca04' }, { name: 'off-roadmap', color: 'e11d21' },
+			],
+			milestone: null,
+			assets: [{ id: 1, name: 'screenshot.png', size: 4096, uuid: 'abc-123', download_count: 0 }],
+		};
+
+		beforeEach(() => {
+			mockClient.getIssue.mockResolvedValue(mockIssue as never);
+			mockClient.getIssueComments.mockResolvedValue([
+				{ id: 1, body: 'Comment 1', user: { login: 'c1' }, created_at: '2025-01-01', html_url: 'h' },
+				{ id: 2, body: 'Comment 2', user: { login: 'c2' }, created_at: '2025-01-02', html_url: 'h' },
+			] as never);
+		});
+
+		it('default fan-outs issue + comments in parallel and returns compact envelope', async () => {
+			const resp = await callTool('get_issue', { owner: 'foo', repo: 'bar', number: 790 });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+
+			expect(mockClient.getIssue).toHaveBeenCalledWith('foo', 'bar', 790);
+			expect(mockClient.getIssueComments).toHaveBeenCalledWith('foo', 'bar', 790);
+
+			expect(payload.number).toBe(790);
+			expect(payload.title).toBe('Удалить информацию');
+			expect(payload.html_url).toBe('http://i/790');
+			expect(payload.due_at).toBe('2026-07-14T23:59:59+05:00');
+			expect(payload.closed_at).toBeNull();
+			expect(payload.author).toEqual({ login: 'Yeldashev_T', full_name: 'Елдашев Тахир' });
+			expect(payload.assignees).toEqual([{ login: 'Ai40404', full_name: 'Хмелевцев Александр' }]);
+			expect(payload.labels).toEqual([{ name: 'IN PROGRESS' }, { name: 'off-roadmap' }]);
+			expect(payload.is_locked).toBe(false);
+			expect(payload.comments_count).toBe(2);
+			expect(payload.milestone).toBeNull();
+			expect(payload.attachments).toEqual([{ name: 'screenshot.png', size: 4096, id: 1, uuid: 'abc-123', download_count: 0 }]);
+			// Conversation section
+			expect(payload.conversation.total).toBe(2);
+			expect(payload.conversation.items[0].author).toEqual({ login: 'c1' });
+			expect(payload._meta.truncated).toBe(false);
+			expect(payload._meta.caps).toEqual({ max_body_length: 2000, max_comments: 50 });
+			expect(payload._meta.hint).toMatch(/full=true/);
+		});
+
+		it('include_conversation=false skips the getIssueComments round trip', async () => {
+			const resp = await callTool('get_issue', { owner: 'foo', repo: 'bar', number: 790, include_conversation: false });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+
+			expect(mockClient.getIssueComments).not.toHaveBeenCalled();
+			expect(payload.conversation).toBeUndefined();
+			// Other compact fields still present
+			expect(payload.number).toBe(790);
+		});
+
+		it('full=true returns raw SDK Issue object with no fan-out', async () => {
+			const resp = await callTool('get_issue', { owner: 'foo', repo: 'bar', number: 790, full: true });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+
+			expect(payload).toEqual(mockIssue);
+			expect(mockClient.getIssueComments).not.toHaveBeenCalled();
+		});
+
+		it('flags truncated when conversation list exceeds max_comments', async () => {
+			mockClient.getIssueComments.mockResolvedValue(
+				Array.from({ length: 60 }, (_, i) => ({
+					id: i, body: `C${i}`, user: { login: `u${i}` }, created_at: '2025-01-01', html_url: 'h',
+				})) as never,
+			);
+			const resp = await callTool('get_issue', { owner: 'foo', repo: 'bar', number: 790, max_comments: 10 });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.conversation.total).toBe(60);
+			expect(payload.conversation.returned).toBe(10);
+			expect(payload.conversation.truncated).toBe(true);
+			expect(payload._meta.truncated).toBe(true);
+		});
+	});
+
+	describe('list_issue_comments (compact)', () => {
+		it('default returns ConversationSummary shape with bounded bodies', async () => {
+			const longBody = 'y'.repeat(5000);
+			mockClient.getIssueComments.mockResolvedValue([
+				{ id: 1, body: longBody, user: { login: 'a', full_name: 'A A' }, created_at: '2025-01-01', html_url: 'h' },
+			] as never);
+			const resp = await callTool('list_issue_comments', { owner: 'foo', repo: 'bar', number: 5 });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.total).toBe(1);
+			expect(payload.items[0].author).toEqual({ login: 'a', full_name: 'A A' });
+			expect(payload.items[0].body.truncated).toBe(true);
+			expect(payload.items[0].body.original_length).toBe(5000);
+		});
+
+		it('full=true returns raw SDK payload', async () => {
+			const raw = [{ id: 1, body: 'c', user: { login: 'a', avatar_url: 'u' }, created_at: '2025-01-01', html_url: 'h' }];
+			mockClient.getIssueComments.mockResolvedValue(raw as never);
+			const resp = await callTool('list_issue_comments', { owner: 'foo', repo: 'bar', number: 5, full: true });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload).toEqual(raw);
+		});
+	});
+
+	describe('list_pull_request_commits (compact)', () => {
+		it('default returns CommitsSummary with short SHAs + subjects', async () => {
+			mockClient.getPullRequestCommits.mockResolvedValue([
+				{ sha: 'b'.repeat(40), commit: { message: 'first\n\nbody', author: { name: 'u', email: 'e', date: '2025-01-01' } }, author: { login: 'u' }, html_url: 'h' },
+			] as never);
+			const resp = await callTool('list_pull_request_commits', { owner: 'foo', repo: 'bar', number: 3 });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.total).toBe(1);
+			expect(payload.items[0].short_sha).toBe('b'.repeat(7));
+			expect(payload.items[0].subject).toBe('first');
+		});
+
+		it('full=true returns raw SDK payload', async () => {
+			const raw = [{ sha: 'b'.repeat(40), commit: { message: 'first', author: { name: 'u', email: 'e', date: '2025-01-01' } }, author: { login: 'u' }, html_url: 'h' }];
+			mockClient.getPullRequestCommits.mockResolvedValue(raw as never);
+			const resp = await callTool('list_pull_request_commits', { owner: 'foo', repo: 'bar', number: 3, full: true });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload).toEqual(raw);
+		});
+	});
+
+	describe('list_pull_request_reviews (compact)', () => {
+		it('default returns compact review items with bounded body', async () => {
+			const longBody = 'x'.repeat(3000);
+			mockClient.getPullRequestReviews.mockResolvedValue([
+				{ id: 1, state: 'APPROVE', body: longBody, user: { login: 'r', full_name: 'R R' }, submitted_at: '2025-01-01', html_url: 'h' },
+			] as never);
+			const resp = await callTool('list_pull_request_reviews', { owner: 'foo', repo: 'bar', number: 3 });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.total).toBe(1);
+			expect(payload.items[0].author).toEqual({ login: 'r', full_name: 'R R' });
+			expect(payload.items[0].body.truncated).toBe(true);
+		});
+
+		it('full=true returns raw SDK payload', async () => {
+			const raw = [{ id: 1, state: 'APPROVE', body: 'LGTM', user: { login: 'r', avatar_url: 'u' }, submitted_at: '2025-01-01', html_url: 'h' }];
+			mockClient.getPullRequestReviews.mockResolvedValue(raw as never);
+			const resp = await callTool('list_pull_request_reviews', { owner: 'foo', repo: 'bar', number: 3, full: true });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload).toEqual(raw);
 		});
 	});
 });

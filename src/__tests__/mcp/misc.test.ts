@@ -42,16 +42,51 @@ describe('MCP misc tools', () => {
 	beforeEach(() => jest.clearAllMocks());
 
 	describe('list_releases', () => {
-		it('calls listReleases(owner, repo) and returns Release[]', async () => {
+		it('calls listReleases(owner, repo): full=true returns raw SDK payload unchanged', async () => {
 			const mockReleases = [
-				{ id: 1, tag_name: 'v1.0.0', name: 'First', body: 'changelog', draft: false, prerelease: false },
+				{
+					id: 1, tag_name: 'v1.0.0', name: 'First', body: 'changelog',
+					draft: false, prerelease: false, author: { login: 'a', avatar_url: 'http://x' },
+					created_at: '2025-01-01T00:00:00Z', published_at: '2025-01-02T00:00:00Z',
+					html_url: 'http://rel/1', tarball_url: 'tb', zipball_url: 'zb',
+					assets: [{ id: 11, name: 'asset.zip', size: 999, download_count: 3, browser_download_url: 'http://dl' }],
+				},
+			];
+			(mockClient.listReleases as jest.Mock).mockResolvedValue(mockReleases);
+
+			const resp = await callTool('list_releases', { owner: 'foo', repo: 'bar', full: true });
+
+			expect(mockClient.listReleases).toHaveBeenCalledWith('foo', 'bar');
+			expect(extractContent(resp)).toEqual(mockReleases);
+		});
+
+		it('default (full=false) returns compact summaries: bounded body, compact author, assets reduced', async () => {
+			const longBody = 'x'.repeat(5000);
+			const mockReleases = [
+				{
+					id: 1, tag_name: 'v1.0.0', name: 'First', body: longBody,
+					draft: false, prerelease: false,
+					author: { login: 'alice', avatar_url: 'http://x', full_name: 'Alice' },
+					created_at: '2025-01-01T00:00:00Z', published_at: '2025-01-02T00:00:00Z',
+					html_url: 'http://rel/1', tarball_url: 'tb', zipball_url: 'zb',
+					assets: [{ id: 11, name: 'asset.zip', size: 999, download_count: 3, browser_download_url: 'http://dl' }],
+				},
 			];
 			(mockClient.listReleases as jest.Mock).mockResolvedValue(mockReleases);
 
 			const resp = await callTool('list_releases', { owner: 'foo', repo: 'bar' });
+			const payload = extractContent(resp) as Array<Record<string, unknown>>;
 
-			expect(mockClient.listReleases).toHaveBeenCalledWith('foo', 'bar');
-			expect(extractContent(resp)).toEqual(mockReleases);
+			expect(payload).toHaveLength(1);
+			expect(payload[0].id).toBe(1);
+			expect(payload[0].tag_name).toBe('v1.0.0');
+			expect((payload[0].body as { truncated: boolean; original_length: number }).truncated).toBe(true);
+			expect((payload[0].body as { original_length: number }).original_length).toBe(5000);
+			expect(payload[0].author).toEqual({ login: 'alice', full_name: 'Alice' });
+			expect(payload[0].assets).toEqual([{ name: 'asset.zip', size: 999, id: 11, download_count: 3 }]);
+			expect(payload[0]).not.toHaveProperty('tarball_url');
+			expect(payload[0]).not.toHaveProperty('zipball_url');
+			expect((payload[0].author as Record<string, unknown>).avatar_url).toBeUndefined();
 		});
 
 		it('returns empty array when no releases', async () => {
@@ -75,14 +110,43 @@ describe('MCP misc tools', () => {
 	});
 
 	describe('get_release', () => {
-		it('calls getRelease(owner, repo, id) with numeric id', async () => {
-			const mockRelease = { id: 5, tag_name: 'v2.0', name: 'Second', body: '', draft: false, prerelease: false };
+		it('calls getRelease(owner, repo, id): full=true returns raw SDK payload unchanged', async () => {
+			const mockRelease = {
+				id: 5, tag_name: 'v2.0', name: 'Second', body: 'changelog',
+				draft: false, prerelease: false, author: { login: 'a', avatar_url: 'http://x' },
+				created_at: '2025-01-01T00:00:00Z', published_at: '2025-01-02T00:00:00Z',
+				html_url: 'http://rel/5', tarball_url: 'tb', zipball_url: 'zb', assets: [],
+			};
 			(mockClient.getRelease as jest.Mock).mockResolvedValue(mockRelease);
 
-			const resp = await callTool('get_release', { owner: 'foo', repo: 'bar', id: 5 });
+			const resp = await callTool('get_release', { owner: 'foo', repo: 'bar', id: 5, full: true });
 
 			expect(mockClient.getRelease).toHaveBeenCalledWith('foo', 'bar', 5);
 			expect(extractContent(resp)).toEqual(mockRelease);
+		});
+
+		it('default (full=false) returns compact shape — author reduced, body bounded, tarball_url dropped', async () => {
+			const longBody = 'y'.repeat(3000);
+			(mockClient.getRelease as jest.Mock).mockResolvedValue({
+				id: 5, tag_name: 'v2.0', name: 'Second', body: longBody,
+				draft: false, prerelease: false,
+				author: { login: 'alice', avatar_url: 'http://x', full_name: 'Alice Liddell' },
+				created_at: '2025-01-01T00:00:00Z', published_at: '2025-01-02T00:00:00Z',
+				html_url: 'http://rel/5', tarball_url: 'tb', zipball_url: 'zb',
+				assets: [{ id: 1, name: 'bin', size: 50, download_count: 0, browser_download_url: 'http://d' }],
+			});
+
+			const resp = await callTool('get_release', { owner: 'foo', repo: 'bar', id: 5 });
+			const payload = extractContent(resp) as Record<string, unknown>;
+
+			expect(mockClient.getRelease).toHaveBeenCalledWith('foo', 'bar', 5);
+			expect(payload.id).toBe(5);
+			expect(payload.tag_name).toBe('v2.0');
+			expect((payload.body as { truncated: boolean }).truncated).toBe(true);
+			expect(payload.author).toEqual({ login: 'alice', full_name: 'Alice Liddell' });
+			expect(payload).not.toHaveProperty('tarball_url');
+			expect(payload).not.toHaveProperty('zipball_url');
+			expect((payload.assets as Array<Record<string, unknown>>)[0]).not.toHaveProperty('browser_download_url');
 		});
 
 		it('accepts string-coercible numeric id', async () => {

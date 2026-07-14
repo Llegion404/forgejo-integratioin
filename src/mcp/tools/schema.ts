@@ -98,6 +98,22 @@ export const uuidSchema: JsonSchema = {
 	minLength: 1,
 };
 
+/**
+ * Shared "give me the raw, untouched SDK response" toggle.
+ *
+ * Tools that ship a compact-by-default shape accept `full: false` (default)
+ * → returns the agent-optimised summary. `full: true` short-circuits the
+ * handler to return the raw underlying API payload unchanged — for the
+ * (rare) case where an agent needs a field the compact path drops.
+ */
+export const fullSchema: JsonSchema = {
+	type: 'boolean',
+	default: false,
+	description:
+		'Return the raw unchanged SDK response instead of the compact agent-optimised shape. ' +
+		'Default false (compact). Set true only when you need a field the compact path omits.',
+};
+
 /** Helper to build an object schema with required + optional fields. */
 export function objectSchema(
 	properties: Record<string, JsonSchema>,

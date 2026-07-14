@@ -3,8 +3,9 @@ import type {
 	PullRequestCommit,
 	PullRequestFile,
 	PullRequestReview,
+	Release,
 } from 'forgejo-ts';
-import type { IssueComment } from 'forgejo-ts';
+import type { Issue, IssueComment } from 'forgejo-ts';
 
 import {
 	truncateText,
@@ -19,6 +20,10 @@ import {
 	summarizeComments,
 	summarizeFilesOverview,
 	summarizeReviews,
+	summarizeIssue,
+	summarizeIssueListItem,
+	summarizePrListItem,
+	summarizeRelease,
 	clampInt,
 	readBool,
 	DEFAULT_MAX_BODY_LENGTH,
@@ -405,5 +410,213 @@ describe('readBool', () => {
 		expect(readBool(undefined, true)).toBe(true);
 		expect(readBool(null, false)).toBe(false);
 		expect(readBool('yes', true)).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// summarizeIssue  (default compact shape for get_issue tool)
+// ---------------------------------------------------------------------------
+
+const mockIssue: Issue & {
+	due_date?: string | null;
+	is_locked?: boolean;
+	assets?: unknown[];
+	milestone?: { title?: string } | null;
+} = {
+	id: 1,
+	number: 790,
+	title: 'Удалить информацию о руководителях',
+	body: 'sample body',
+	state: 'open',
+	user: { login: 'Yeldashev_T', avatar_url: 'http://x' },
+	labels: [
+		{ name: 'IN PROGRESS', color: 'fbca04' },
+		{ name: 'off-roadmap', color: 'e11d21' },
+	],
+	assignees: [{ login: 'Ai40404' }],
+	created_at: '2026-07-13T16:07:39+05:00',
+	updated_at: '2026-07-14T13:17:11+05:00',
+	closed_at: null,
+	html_url: 'http://git.example.com/sarkor/project_management/issues/790',
+	comments: 2,
+	due_date: '2026-07-14T23:59:59+05:00',
+	is_locked: false,
+	milestone: null,
+	assets: [
+		{ id: 1, name: 'screenshot.png', size: 4096, uuid: 'abc-123', download_count: 0, browser_download_url: 'http://dl' },
+	],
+};
+
+describe('summarizeIssue', () => {
+	it('keeps identifier + dates + bounded body', () => {
+		const r = summarizeIssue(mockIssue, { maxBodyLength: 100 });
+		expect(r.number).toBe(790);
+		expect(r.title).toBe('Удалить информацию о руководителях');
+		expect(r.state).toBe('open');
+		expect(r.created_at).toBe(mockIssue.created_at);
+		expect(r.updated_at).toBe(mockIssue.updated_at);
+		expect(r.closed_at).toBeNull();
+		expect(r.due_at).toBe('2026-07-14T23:59:59+05:00');
+		expect(r.html_url).toBe(mockIssue.html_url);
+		expect(r.body.original_length).toBe(mockIssue.body.length);
+	});
+
+	it('compact user: keeps login + full_name when present, drops avatar_url', () => {
+		const r = summarizeIssue(mockIssue);
+		expect(r.author).toEqual({ login: 'Yeldashev_T' });
+		expect(r.assignees).toEqual([{ login: 'Ai40404' }]);
+		// Pulls full_name in when present. The forgejo-ts stub type omits
+		// `full_name` but real API responses include it (cast around tsc).
+		const enriched = {
+			...mockIssue,
+			user: { login: 'Yeldashev_T', avatar_url: 'u', full_name: 'Елдашев Тахир' } as unknown as typeof mockIssue.user,
+		} as typeof mockIssue;
+		expect(summarizeIssue(enriched).author).toEqual({ login: 'Yeldashev_T', full_name: 'Елдашев Тахир' });
+	});
+
+	it('labels: drops color, keeps names only', () => {
+		const r = summarizeIssue(mockIssue);
+		expect(r.labels).toEqual([{ name: 'IN PROGRESS' }, { name: 'off-roadmap' }]);
+	});
+
+	it('attachments: keeps name/size/uuid/download_count, drops browser_download_url', () => {
+		const r = summarizeIssue(mockIssue);
+		expect(r.attachments).toEqual([{ name: 'screenshot.png', size: 4096, id: 1, uuid: 'abc-123', download_count: 0 }]);
+		r.attachments.forEach((a) => expect(a).not.toHaveProperty('browser_download_url'));
+	});
+
+	it('milestone: returns {title} when set, null when absent', () => {
+		expect(summarizeIssue(mockIssue).milestone).toBeNull();
+		const withMilestone = { ...mockIssue, milestone: { title: 'Sprint 14' } };
+		expect(summarizeIssue(withMilestone).milestone).toEqual({ title: 'Sprint 14' });
+		const withEmptyMilestone = { ...mockIssue, milestone: { title: '' } };
+		expect(summarizeIssue(withEmptyMilestone).milestone).toBeNull();
+	});
+
+	it('handles any missing optional fields gracefully', () => {
+		const minimal: Issue = {
+			id: 2, number: 1, title: 't', body: 'b', state: 'open',
+			user: { login: 'u', avatar_url: 'a' }, labels: [], assignees: [],
+			created_at: 'c', updated_at: 'u', closed_at: null, html_url: 'h', comments: 0,
+		};
+		const r = summarizeIssue(minimal);
+		expect(r.due_at).toBeNull();
+		expect(r.is_locked).toBe(false);
+		expect(r.milestone).toBeNull();
+		expect(r.attachments).toEqual([]);
+		expect(r.comments_count).toBe(0);
+		expect(r.author).toEqual({ login: 'u' });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// summarizeIssueListItem / summarizePrListItem / summarizeRelease
+// ---------------------------------------------------------------------------
+
+describe('summarizeIssueListItem', () => {
+	it('returns a compact list item (bounded body, author reduced, labels flattened)', () => {
+		const longBody = 'x'.repeat(3000);
+		const issue: Issue = {
+			id: 7, number: 7, title: 'I', state: 'open', body: longBody,
+			user: { login: 'a', avatar_url: 'u' },
+			labels: [{ name: 'bug', color: '#f00' }],
+			assignees: [],
+			created_at: '2025-01-01T00:00:00Z', updated_at: '2025-06-01T00:00:00Z',
+			closed_at: null, html_url: 'http://i/7', comments: 4,
+		};
+		const r = summarizeIssueListItem(issue, { maxBodyLength: 100 });
+		expect(r.number).toBe(7);
+		expect(r.body.truncated).toBe(true);
+		expect(r.author).toEqual({ login: 'a' });
+		expect(r.labels).toEqual([{ name: 'bug' }]);
+		expect(r.comments_count).toBe(4);
+		expect(r.html_url).toBe(issue.html_url);
+	});
+});
+
+describe('summarizePrListItem', () => {
+	it('returns mergeable/merged/draft flags + base/head refs + bounded body', () => {
+		const longBody = 'y'.repeat(6000);
+		const pr: PullRequest = {
+			id: 1, number: 42, title: 'PR', body: longBody, state: 'open',
+			user: { login: 'alice', avatar_url: 'u' },
+			created_at: '2025-01-01T00:00:00Z', updated_at: '2025-06-01T00:00:00Z',
+			html_url: 'http://pr/42',
+			head: { ref: 'feature', sha: 'a'.repeat(40), repo: { full_name: 'o/r' } },
+			base: { ref: 'main' },
+			mergeable: true, merged: false, merge_commit_sha: null,
+			draft: false, comments: 5, labels: [{ name: 'bug', color: '#f00' }],
+		};
+		const r = summarizePrListItem(pr, { maxBodyLength: 200 });
+		expect(r.number).toBe(42);
+		expect(r.base_ref).toBe('main');
+		expect(r.head_ref).toBe('feature');
+		expect(r.draft).toBe(false);
+		expect(r.merged).toBe(false);
+		expect(r.mergeable).toBe(true);
+		expect(r.body.truncated).toBe(true);
+		expect(r.body.original_length).toBe(6000);
+		expect(r.author).toEqual({ login: 'alice' });
+		expect(r.labels).toEqual([{ name: 'bug' }]);
+	});
+});
+
+describe('summarizeRelease', () => {
+	const mockRelease: Release = {
+		id: 5, tag_name: 'v2.0', name: 'Second', body: 'y'.repeat(3000),
+		draft: false, prerelease: false,
+		author: { login: 'alice', avatar_url: 'http://a' },
+		created_at: '2025-01-01T00:00:00Z', published_at: '2025-01-02T00:00:00Z',
+		html_url: 'http://rel/5', tarball_url: 'http://tb', zipball_url: 'http://zb',
+		assets: [{
+			id: 11, name: 'asset.zip', size: 999, download_count: 3, browser_download_url: 'http://dl',
+		}],
+	};
+
+	it('keeps id/tag/name + draft/prerelease + dates + html_url', () => {
+		const r = summarizeRelease(mockRelease, { maxBodyLength: 100 });
+		expect(r.id).toBe(5);
+		expect(r.tag_name).toBe('v2.0');
+		expect(r.name).toBe('Second');
+		expect(r.draft).toBe(false);
+		expect(r.prerelease).toBe(false);
+		expect(r.created_at).toBe(mockRelease.created_at);
+		expect(r.published_at).toBe(mockRelease.published_at);
+		expect(r.html_url).toBe(mockRelease.html_url);
+	});
+
+	it('bounds the changelog body', () => {
+		const r = summarizeRelease(mockRelease, { maxBodyLength: 100 });
+		expect(r.body.truncated).toBe(true);
+		expect(r.body.original_length).toBe(3000);
+	});
+
+	it('compact author: keeps login + full_name when present, drops avatar_url', () => {
+		const r = summarizeRelease(mockRelease);
+		expect(r.author).toEqual({ login: 'alice' });
+		// TypeScript object literals reject extra `full_name`; the real API
+		// returns it. Cast through `unknown` to exercise the runtime path.
+		const enriched = {
+			...mockRelease,
+			author: { login: 'alice', avatar_url: 'x', full_name: 'Alice Liddell' } as unknown as typeof mockRelease.author,
+		} as typeof mockRelease;
+		expect(summarizeRelease(enriched).author).toEqual({ login: 'alice', full_name: 'Alice Liddell' });
+	});
+
+	it('assets: drops browser_download_url, keeps name/size/download_count', () => {
+		const r = summarizeRelease(mockRelease);
+		expect(r.assets).toEqual([{ name: 'asset.zip', size: 999, id: 11, download_count: 3 }]);
+		r.assets.forEach((a) => expect(a).not.toHaveProperty('browser_download_url'));
+	});
+
+	it('drops tarball_url / zipball_url', () => {
+		const r = summarizeRelease(mockRelease);
+		expect(r).not.toHaveProperty('tarball_url');
+		expect(r).not.toHaveProperty('zipball_url');
+	});
+
+	it('null published_at handled', () => {
+		const r = summarizeRelease({ ...mockRelease, published_at: '' });
+		expect(r.published_at).toBeNull();
 	});
 });

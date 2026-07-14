@@ -20,26 +20,51 @@ import {
 	pathSchema,
 	refSchema,
 	releaseIdSchema,
+	fullSchema,
 } from './schema';
+import {
+	summarizeRelease,
+	clampInt,
+	readBool,
+	DEFAULT_MAX_BODY_LENGTH,
+} from '../utils/responseFormat';
+import type { Release } from 'forgejo-ts';
 
 export const listReleasesTool: Tool = {
 	name: 'list_releases',
 	description:
-		'List all releases in a Forgejo repository. For each release ' +
-		'returns id, tag_name, name, body (markdown changelog), draft, ' +
-		'prerelease, author, created_at, published_at, html_url, and ' +
-		'assets (attached binaries with download_count). Auto-paginated.',
+		'List all releases in a Forgejo repository. Default (full=false) ' +
+		'returns a compact array: each release has id, tag_name, name, ' +
+		'bounded body (≤2000 chars, the changelog), draft, prerelease, ' +
+		'author ({login, full_name?}), created_at, published_at, html_url, ' +
+		'and assets reduced to {name, size, uuid?, download_count?}. ' +
+		'Pass full=true for the raw SDK payload (untouched, includes ' +
+		'tarball_url, zipball_url, browser_download_url on assets, full ' +
+		'author objects). Auto-paginated.',
 	inputSchema: objectSchema(
 		{
 			owner: ownerSchema,
 			repo: repoSchema,
+			full: fullSchema,
+			max_body_length: {
+				type: 'integer',
+				minimum: 100,
+				maximum: 20000,
+				default: 2000,
+				description: 'Max characters per release body (changelog) when full=false. Default 2000.',
+			},
 		},
 		[],
 	),
 	async handler({ args, client, config }): Promise<unknown> {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
-		return client.listReleases(owner, repo);
+		const releases: Release[] = await client.listReleases(owner, repo);
+		if (readBool(args.full, false)) {
+			return releases;
+		}
+		const maxBodyLength = clampInt(args.max_body_length, 100, 20000, DEFAULT_MAX_BODY_LENGTH);
+		return releases.map((r) => summarizeRelease(r, { maxBodyLength }));
 	},
 };
 
@@ -47,13 +72,24 @@ export const getReleaseTool: Tool = {
 	name: 'get_release',
 	description:
 		'Fetch a single release by its numeric id (the `id` field from a ' +
-		'list_releases entry, NOT the tag_name). Returns the full Release ' +
-		'object including body (changelog markdown) and assets.',
+		'list_releases entry, NOT the tag_name). Default (full=false) ' +
+		'returns a compact shape (bounded changelog body, author as ' +
+		'{login, full_name?}, assets as {name, size, uuid?, ' +
+		'download_count?}). Pass full=true for the raw SDK Release object ' +
+		'including tarball_url/zipball_url and unbounded changelog.',
 	inputSchema: objectSchema(
 		{
 			owner: ownerSchema,
 			repo: repoSchema,
 			id: releaseIdSchema,
+			full: fullSchema,
+			max_body_length: {
+				type: 'integer',
+				minimum: 100,
+				maximum: 20000,
+				default: 2000,
+				description: 'Max characters for the release body (changelog) when full=false. Default 2000.',
+			},
 		},
 		['id'],
 	),
@@ -61,7 +97,12 @@ export const getReleaseTool: Tool = {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
 		const id = resolveNumber(args, 'id');
-		return client.getRelease(owner, repo, id);
+		const release: Release = await client.getRelease(owner, repo, id);
+		if (readBool(args.full, false)) {
+			return release;
+		}
+		const maxBodyLength = clampInt(args.max_body_length, 100, 20000, DEFAULT_MAX_BODY_LENGTH);
+		return summarizeRelease(release, { maxBodyLength });
 	},
 };
 

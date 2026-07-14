@@ -18,12 +18,33 @@ import type {
 	PullRequestCommit,
 	PullRequestFile,
 	PullRequestReview,
+	Release,
+	ReleaseAsset,
 } from 'forgejo-ts';
-import type { IssueComment } from 'forgejo-ts';
+import type { Issue, IssueComment } from 'forgejo-ts';
 
-/** A user reference reduced to the only field an agent needs. */
+/**
+ * Compact user: login + optional full_name (kept because it carries
+ * human context an agent may reference when drafting replies; avatar_url
+ * is always dropped — pure noise for non-rendering agents).
+ */
 export interface CompactUser {
 	login: string;
+	full_name?: string;
+}
+
+/**
+ * Defensive shorthand to read an optional string property from a loosely
+ * shaped API object. The forgejo-ts stub types omit a lot of fields the
+ * real API actually returns (e.g. Issue.due_date, User.full_name), so
+ * summarizers below accept `Record<string, unknown>`-ish inputs and use
+ * this helper instead of optional chaining alone.
+ */
+function readString(v: unknown): string | undefined {
+	if (typeof v === 'string' && v.trim() !== '') {
+		return v;
+	}
+	return undefined;
 }
 
 /** Result of truncating a long string. `text` always fits within `maxLen`. */
@@ -100,12 +121,23 @@ export function shortSha(sha: string, len = 7): string {
 	return sha ? sha.slice(0, len) : '';
 }
 
-/** Reduce a User to `{ login }` (drops avatar_url — pure noise for agents). */
-export function compactUser(u: { login?: string | null } | null | undefined): CompactUser | null {
+/**
+ * Reduce a User-like object to `{ login, full_name? }`. Drops avatar_url,
+ * id, email, language, followers_count and every other bloated field the
+ * Forgejo REST API stuffs onto User objects. `full_name` is kept when
+ * present and non-empty — agents drafting replies benefit from the human
+ * name; everything else is noise.
+ */
+export function compactUser(u: { login?: string | null; full_name?: string | null } | null | undefined): CompactUser | null {
 	if (!u?.login) {
 		return null;
 	}
-	return { login: u.login };
+	const fullName = readString(u.full_name);
+	const out: CompactUser = { login: u.login };
+	if (fullName) {
+		out.full_name = fullName;
+	}
+	return out;
 }
 
 /** First line of a commit message (subject); trailing whitespace trimmed. */
@@ -405,6 +437,297 @@ export function summarizeReviews(
 			submitted_at: r.submitted_at,
 			body: truncateText(r.body, maxBodyLength),
 		})),
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Compact list-item summarizers — bounded per-item shapes for the *list*
+// tools (list_issues, list_pull_requests, list_releases). Each drops noise
+// (avatar_urls, full user objects, multi-line bodies, assets) and keeps
+// only what an agent needs to triage one item in a list. To drill in,
+// call the single-resource tool which returns a fuller compact shape.
+// ---------------------------------------------------------------------------
+
+/**
+ * Options controlling the per-item compaction of list responses.
+ * Same field caps as the full-summary path, applied per list item.
+ */
+export interface ListItemOptions {
+	/** Maximum characters per body string. Default 2000. */
+	maxBodyLength?: number;
+}
+
+/**
+ * Compact attachment reference kept on issue/PR bodies and comments.
+ * Drops `browser_download_url` (an agent can re-derive it from owner/repo
+ * + uuid) but keeps `uuid` so `get_attachment` can fetch the bytes.
+ */
+export interface AttachmentItem {
+	uuid?: string;
+	id?: number;
+	name: string;
+	size: number;
+	download_count?: number;
+}
+
+/** Defensive attachment normaliser: accepts full Forgejo Asset shape. */
+function compactAttachment(a: Record<string, unknown>): AttachmentItem {
+	const item: AttachmentItem = {
+		name: readString(a.name) ?? '(unnamed)',
+		size: typeof a.size === 'number' ? a.size : 0,
+	};
+	const id = a.id;
+	if (typeof id === 'number') {
+		item.id = id;
+	}
+	const uuid = readString(a.uuid);
+	if (uuid) {
+		item.uuid = uuid;
+	}
+	const dc = a.download_count;
+	if (typeof dc === 'number') {
+		item.download_count = dc;
+	}
+	return item;
+}
+
+/**
+ * Compact label: just the name (drops color, id, description, url —
+ * an agent triaging issue taxonomy rarely needs the hex code).
+ */
+export interface CompactLabel {
+	name: string;
+}
+
+/** Defensive label normaliser: keeps name only, skips invalid entries. */
+function compactLabel(l: Record<string, unknown> | null | undefined): CompactLabel | null {
+	const name = readString(l?.name);
+	if (!name) {
+		return null;
+	}
+	return { name };
+}
+
+/** Options controlling `summarizeIssue`. */
+export interface IssueSummaryOptions {
+	/** Maximum characters for the issue body. Default 2000. */
+	maxBodyLength?: number;
+}
+
+/**
+ * Compact issue shape returned by `get_issue` (default path).
+ *
+ * Includes everything an agent needs to fully take over an issue:
+ * number/title/state for identity, body (bounded) for the actual task,
+ * html_url for cross-reference, dates (created/updated/closed + due) for
+ * SLA context, labels (names only) + milestone (title only) for taxonomy,
+ * author + assignees as `{ login, full_name? }` so the agent knows who
+ * to loop in, comment count to gauge existing discussion, `is_locked` to
+ * short-circuit attempts to comment. The conversation thread is fetched
+ * separately by `get_issue` and merged into the response envelope.
+ */
+export interface IssueSummary {
+	number: number;
+	title: string;
+	state: 'open' | 'closed';
+	body: TruncatedText;
+	html_url: string;
+	created_at: string;
+	updated_at: string;
+	closed_at: string | null;
+	due_at: string | null;
+	author: CompactUser | null;
+	assignees: CompactUser[];
+	labels: CompactLabel[];
+	milestone: { title: string } | null;
+	comments_count: number;
+	is_locked: boolean;
+	attachments: AttachmentItem[];
+}
+
+/**
+ * Summarise a full Forgejo Issue object into the compact agent shape.
+ *
+ * The forgejo-ts stub types omit fields the real API returns (`due_date`,
+ * `is_locked`, `assets`, `assignee` singular, `milestone`, `pull_request`,
+ * `repository`); the Issue type the SDK declares only models a subset. The
+ * runtime Object is much richer (see the example Issue returned by
+ * `GET /repos/{owner}/{repo}/issues/{number}`), so this function accepts
+ * the typed `Issue` plus the extra known fields via an intersection and
+ * falls back gracefully (null / false / []) when any are missing.
+ */
+export function summarizeIssue(
+	issue: Issue & {
+		due_date?: string | null;
+		is_locked?: boolean;
+		assets?: unknown[] | null;
+		milestone?: { title?: string } | null;
+		closed_at?: string | null;
+	},
+	opts: IssueSummaryOptions = {},
+): IssueSummary {
+	const maxBodyLength = opts.maxBodyLength ?? DEFAULT_MAX_BODY_LENGTH;
+	const assetsArr = Array.isArray(issue.assets) ? issue.assets : [];
+	const milestoneTitle = issue.milestone ? readString(issue.milestone.title) : undefined;
+	return {
+		number: issue.number,
+		title: issue.title,
+		state: issue.state,
+		body: truncateText(issue.body, maxBodyLength),
+		html_url: issue.html_url,
+		created_at: issue.created_at,
+		updated_at: issue.updated_at,
+		closed_at: issue.closed_at ?? null,
+		due_at: readString(issue.due_date) ?? null,
+		author: compactUser(issue.user),
+		assignees: (issue.assignees ?? [])
+			.map((a) => compactUser(a))
+			.filter((x): x is CompactUser => x !== null),
+		labels: (issue.labels ?? [])
+			.map((l) => compactLabel(l as unknown as Record<string, unknown>))
+			.filter((x): x is CompactLabel => x !== null),
+		milestone: milestoneTitle ? { title: milestoneTitle } : null,
+		comments_count: typeof issue.comments === 'number' ? issue.comments : 0,
+		is_locked: issue.is_locked === true,
+		attachments: assetsArr
+			.filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
+			.map(compactAttachment),
+	};
+}
+
+/** Compact issue list item: enough to triage one issue out of many. */
+export interface IssueListItemSummary {
+	number: number;
+	title: string;
+	state: 'open' | 'closed';
+	body: TruncatedText;
+	html_url: string;
+	created_at: string;
+	updated_at?: string;
+	closed_at?: string | null;
+	author: CompactUser | null;
+	labels: CompactLabel[];
+	comments_count: number;
+}
+
+/**
+ * Summarise a single issue from `list_issues`. The Forgejo REST `/issues`
+ * endpoint returns the full Issue shape (not the `IssueListItem` the SDK
+ * type stub declares), so we can include the bounded body + labels +
+ * author — enough to triage without a second round-trip to `get_issue`.
+ */
+export function summarizeIssueListItem(
+	issue: Issue & { updated_at?: string; closed_at?: string | null },
+	opts: ListItemOptions = {},
+): IssueListItemSummary {
+	const maxBodyLength = opts.maxBodyLength ?? DEFAULT_MAX_BODY_LENGTH;
+	return {
+		number: issue.number,
+		title: issue.title,
+		state: issue.state,
+		body: truncateText(issue.body, maxBodyLength),
+		html_url: issue.html_url,
+		created_at: issue.created_at,
+		updated_at: readString(issue.updated_at),
+		closed_at: issue.closed_at ?? null,
+		author: compactUser(issue.user),
+		labels: (issue.labels ?? [])
+			.map((l) => compactLabel(l as unknown as Record<string, unknown>))
+			.filter((x): x is CompactLabel => x !== null),
+		comments_count: typeof issue.comments === 'number' ? issue.comments : 0,
+	};
+}
+
+/** Compact PR list item: enough to triage one PR out of many. */
+export interface PrListItemSummary {
+	number: number;
+	title: string;
+	state: 'open' | 'closed';
+	draft: boolean;
+	merged: boolean;
+	mergeable: boolean;
+	base_ref: string;
+	head_ref: string;
+	body: TruncatedText;
+	html_url: string;
+	author: CompactUser | null;
+	created_at: string;
+	updated_at: string;
+	labels: CompactLabel[];
+	comments_count: number;
+}
+
+/**
+ * Summarise a single PR from `list_pull_requests`. The SDK returns the
+ * full PullRequest shape (not PullRequestListItem), so we keep the merge
+ * state + refs + bounded body and drop everything else.
+ */
+export function summarizePrListItem(pr: PullRequest, opts: ListItemOptions = {}): PrListItemSummary {
+	const maxBodyLength = opts.maxBodyLength ?? DEFAULT_MAX_BODY_LENGTH;
+	return {
+		number: pr.number,
+		title: pr.title,
+		state: pr.state,
+		draft: pr.draft,
+		merged: pr.merged,
+		mergeable: pr.mergeable,
+		base_ref: pr.base.ref,
+		head_ref: pr.head.ref,
+		body: truncateText(pr.body, maxBodyLength),
+		html_url: pr.html_url,
+		author: compactUser(pr.user),
+		created_at: pr.created_at,
+		updated_at: pr.updated_at,
+		labels: (pr.labels ?? [])
+			.map((l) => compactLabel(l as unknown as Record<string, unknown>))
+			.filter((x): x is CompactLabel => x !== null),
+		comments_count: typeof pr.comments === 'number' ? pr.comments : 0,
+	};
+}
+
+/** Options controlling `summarizeRelease`. */
+export interface ReleaseSummaryOptions {
+	/** Maximum characters for the release body (changelog). Default 2000. */
+	maxBodyLength?: number;
+}
+
+/** Compact release item. */
+export interface ReleaseSummary {
+	id: number;
+	tag_name: string;
+	name: string;
+	body: TruncatedText;
+	draft: boolean;
+	prerelease: boolean;
+	author: CompactUser | null;
+	created_at: string;
+	published_at: string | null;
+	html_url: string;
+	assets: AttachmentItem[];
+}
+
+/**
+ * Summarise a single Release: bounded changelog body, author as
+ * `{ login, full_name? }`, assets reduced to `{ name, size, uuid?,
+ * download_count? }` (drops browser_download_url — agent can rebuild the
+ * URL from owner/repo + tag).
+ */
+export function summarizeRelease(release: Release, opts: ReleaseSummaryOptions = {}): ReleaseSummary {
+	const maxBodyLength = opts.maxBodyLength ?? DEFAULT_MAX_BODY_LENGTH;
+	return {
+		id: release.id,
+		tag_name: release.tag_name,
+		name: release.name,
+		body: truncateText(release.body, maxBodyLength),
+		draft: release.draft,
+		prerelease: release.prerelease,
+		author: compactUser(release.author),
+		created_at: release.created_at,
+		published_at: readString(release.published_at) ?? null,
+		html_url: release.html_url,
+		assets: (release.assets ?? [])
+			.filter((a): a is ReleaseAsset => !!a && typeof a === 'object')
+			.map((a) => compactAttachment(a as unknown as Record<string, unknown>)),
 	};
 }
 
