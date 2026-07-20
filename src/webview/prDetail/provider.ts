@@ -5,12 +5,13 @@ import { PullRequest, CommitStatus } from '../../models/pullRequest';
 import { Reaction } from '../../models/comment';
 import { executeCommand } from '../../commands/registry';
 import { logDebug, logInfo, logError } from '../../utils/logger';
+import { BaseDetailWebviewProvider } from '../shared/baseWebviewProvider';
 
 export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'checkout' }
   | { type: 'refresh' }
-  | { type: 'merge'; strategy: string; title?: string; message?: string }
+  | { type: 'merge'; strategy: string; title?: string; message?: string; deleteBranch?: boolean }
   | { type: 'revert'; commitSha: string }
   | { type: 'addComment'; body: string }
   | { type: 'addReview'; state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; body: string }
@@ -21,6 +22,8 @@ export type WebviewMessage =
   | { type: 'openCIStatus'; url: string }
   | { type: 'addReaction'; commentId: number; reaction: string }
   | { type: 'removeReaction'; commentId: number; reaction: string }
+  | { type: 'addPRReaction'; reaction: string }
+  | { type: 'removePRReaction'; reaction: string }
   | { type: 'openUserProfile'; username: string }
   | { type: 'openInBrowserFromUrl'; url: string }
   | { type: 'editComment'; commentId: number; body: string }
@@ -31,7 +34,13 @@ export type WebviewMessage =
   | { type: 'deleteComment'; commentId: number }
   | { type: 'manageLabels' }
   | { type: 'manageAssignees' }
-  | { type: 'manageReviewers' };
+  | { type: 'manageReviewers' }
+  | { type: 'removeLabel'; label: string }
+  | { type: 'removeAssignee'; assignee: string }
+  | { type: 'removeReviewer'; reviewer: string }
+  | { type: 'manageMilestone' }
+  | { type: 'showConfirm'; id: number; message: string }
+  | { type: 'showInputBox'; id: number; prompt: string; defaultValue?: string };
 
 export type ExtensionMessage =
   | { type: 'update'; data: PRDetailViewData }
@@ -65,6 +74,7 @@ export interface PRDetailViewData {
   pr: PullRequest;
   activities: PRActivity[];
   statuses: CommitStatus[];
+  prReactions: Reaction[];
   owner: string;
   repo: string;
 }
@@ -76,13 +86,14 @@ interface PanelState {
   number: number;
   isReady: boolean;
   pendingData?: PRDetailViewData | null;
+  lastRequestId: number;
 }
 
-export class PRDetailWebviewProvider {
+export class PRDetailWebviewProvider extends BaseDetailWebviewProvider<PanelState> {
   public static readonly viewType = 'forgejo.prDetail';
-  private _panels = new Map<string, PanelState>();
+  public readonly viewType = 'forgejo.prDetail';
 
-  constructor(private readonly _extensionUri: vscode.Uri) {}
+  constructor(extensionUri: vscode.Uri) { super(extensionUri); }
 
   public async showPRDetails(owner: string, repo: string, number: number): Promise<void> {
     logInfo('Showing PR details in webview:', { owner, repo, number });
@@ -115,7 +126,8 @@ export class PRDetailWebviewProvider {
       repo,
       number,
       isReady: false,
-      pendingData: null
+      pendingData: null,
+      lastRequestId: 0
     };
     this._panels.set(panelKey, state);
 
@@ -141,8 +153,9 @@ export class PRDetailWebviewProvider {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
+    const requestId = ++state.lastRequestId;
     const { panel, owner, repo, number } = state;
-    logInfo('_fetchPRData starting:', { panelKey, isReady: state.isReady });
+    logInfo('_fetchPRData starting:', { panelKey, isReady: state.isReady, requestId });
 
     try {
       const config = await getForgejoConfig();
@@ -151,12 +164,30 @@ export class PRDetailWebviewProvider {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       logInfo('Fetching PR details from API...');
       const prDetails = await client.getPullRequestDetails(owner, repo, number);
+      if (requestId !== state.lastRequestId) {
+        logInfo('PR fetch superseded by newer request, ignoring', { requestId });
+        return;
+      }
       logInfo('PR details fetched:', { title: prDetails.title });
 
       const [activities, allStatuses] = await Promise.all([
         this._fetchActivities(client, owner, repo, number),
         prDetails.head.sha ? client.getCommitStatuses(owner, repo, prDetails.head.sha) : Promise.resolve([])
       ]);
+      if (requestId !== state.lastRequestId) {
+        logInfo('PR fetch (activities+statuses) superseded, ignoring', { requestId });
+        return;
+      }
+
+      // Fetch description-level reactions (Forgejo treats PR as issue ID)
+      let prReactions: Reaction[] = [];
+      try {
+        prReactions = await client.getIssueReactions(owner, repo, prDetails.id);
+      } catch (e) { logDebug('Could not fetch PR-level reactions:', e); }
+      if (requestId !== state.lastRequestId) {
+        logInfo('PR fetch (reactions) superseded, ignoring', { requestId });
+        return;
+      }
 
       // Deduplicate statuses by context, keeping only the latest per context.
       // The API returns all historical statuses (pending + final) for a SHA.
@@ -175,7 +206,7 @@ export class PRDetailWebviewProvider {
       const statuses = Array.from(latestByContext.values());
       logInfo('Activities and statuses fetched:', { activities: activities.length, statuses: statuses.length, raw: allStatuses.length });
 
-      state.pendingData = { pr: prDetails, activities, statuses, owner, repo };
+      state.pendingData = { pr: prDetails, activities, statuses, prReactions, owner, repo };
       logInfo('pendingData set, isReady:', state.isReady);
 
       if (state.isReady) {
@@ -279,7 +310,7 @@ export class PRDetailWebviewProvider {
         break;
       case 'checkout': await this._checkoutBranch(owner, repo, number); break;
       case 'refresh': await this._fetchPRData(panelKey); break;
-      case 'merge': await this._mergePR(owner, repo, number, message.strategy, message.title, message.message, panelKey); break;
+      case 'merge': await this._mergePR(owner, repo, number, message.strategy, message.title, message.message, message.deleteBranch, panelKey); break;
       case 'revert': this._revertCommit(message.commitSha); break;
       case 'addComment': await this._addComment(owner, repo, number, message.body, panelKey); break;
       case 'addReview': await this._addReview(owner, repo, number, message.state, message.body, panelKey); break;
@@ -295,6 +326,12 @@ export class PRDetailWebviewProvider {
         break;
       case 'removeReaction':
         await this._handleReaction(owner, repo, message.commentId, message.reaction, 'remove', panelKey);
+        break;
+      case 'addPRReaction':
+        await this._handlePRReaction(owner, repo, number, message.reaction, 'add', panelKey);
+        break;
+      case 'removePRReaction':
+        await this._handlePRReaction(owner, repo, number, message.reaction, 'remove', panelKey);
         break;
       case 'openUserProfile':
         await this._openUserProfile(message.username);
@@ -313,8 +350,14 @@ export class PRDetailWebviewProvider {
       case 'manageLabels': await this._manageLabels(owner, repo, number, panelKey); break;
       case 'manageAssignees': await this._manageAssignees(owner, repo, number, panelKey); break;
       case 'manageReviewers': await this._manageReviewers(owner, repo, number, panelKey); break;
+      case 'removeLabel': await this._removeLabel(owner, repo, number, message.label, panelKey); break;
+      case 'removeAssignee': await this._removeAssignee(owner, repo, number, message.assignee, panelKey); break;
+      case 'removeReviewer': await this._removeReviewer(owner, repo, number, message.reviewer, panelKey); break;
+      case 'manageMilestone': await this._manageMilestone(owner, repo, number, panelKey); break;
       case 'viewCommit': await this._viewCommit(owner, repo, message.sha); break;
       case 'viewFile': await this._viewFile(owner, repo, number, message.filename); break;
+      case 'showConfirm': await this._handleShowConfirm(state.panel.webview, message.id, message.message); break;
+      case 'showInputBox': await this._handleShowInputBox(state.panel.webview, message.id, message.prompt, message.defaultValue); break;
     }
   }
 
@@ -374,6 +417,22 @@ export class PRDetailWebviewProvider {
     }
   }
 
+  private async _handlePRReaction(owner: string, repo: string, number: number, reaction: string, action: 'add' | 'remove', panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      if (action === 'add') {
+        await client.addIssueReaction(owner, repo, number, reaction);
+      } else {
+        await client.deleteIssueReaction(owner, repo, number, reaction);
+      }
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to ${action} PR reaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   private async _openUserProfile(username: string): Promise<void> {
     try {
       const config = await getForgejoConfig();
@@ -429,7 +488,7 @@ export class PRDetailWebviewProvider {
     }
   }
 
-  private async _mergePR(owner: string, repo: string, number: number, strategy: string, mergeTitle?: string, mergeMessage?: string, panelKey?: string): Promise<void> {
+  private async _mergePR(owner: string, repo: string, number: number, strategy: string, mergeTitle?: string, mergeMessage?: string, deleteBranch?: boolean, panelKey?: string): Promise<void> {
     const panelState = panelKey ? this._panels.get(panelKey) : undefined;
     try {
       const config = await getForgejoConfig();
@@ -439,7 +498,8 @@ export class PRDetailWebviewProvider {
         owner, repo, number,
         strategy as 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only',
         mergeTitle ?? '',
-        mergeMessage ?? ''
+        mergeMessage ?? '',
+        deleteBranch === true
       );
       void vscode.window.showInformationMessage('Pull request merged successfully');
       if (panelState) {
@@ -731,6 +791,79 @@ export class PRDetailWebviewProvider {
     }
   }
 
+  private async _removeLabel(owner: string, repo: string, number: number, label: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.removePRLabel(owner, repo, number, label);
+      void vscode.window.showInformationMessage(`Removed label: ${label}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to remove label: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _removeAssignee(owner: string, repo: string, number: number, assignee: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.removePRAssignees(owner, repo, number, [assignee]);
+      void vscode.window.showInformationMessage(`Removed assignee: ${assignee}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to remove assignee: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _removeReviewer(owner: string, repo: string, number: number, reviewer: string, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.removePRReview(owner, repo, number, reviewer);
+      void vscode.window.showInformationMessage(`Removed reviewer: ${reviewer}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to remove reviewer: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async _manageMilestone(owner: string, repo: string, number: number, panelKey?: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+
+      const [milestones, pr] = await Promise.all([
+        client.listMilestones(owner, repo).catch(() => []),
+        client.getPullRequestDetails(owner, repo, number)
+      ]);
+      const currentMilestoneId = (pr as any).milestone?.id;
+      const items = [
+        { label: 'No milestone', picked: !currentMilestoneId, description: '' },
+        ...milestones.map((m: any) => ({
+          label: m.title,
+          picked: m.id === currentMilestoneId,
+          description: m.due_on ? `due ${new Date(m.due_on).toLocaleDateString()}` : ''
+        }))
+      ];
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select milestone',
+        title: `Milestone for PR #${number}`
+      });
+      if (!selected) return;
+      const milestone = milestones.find((m: any) => m.title === selected.label);
+      const milestoneId = milestone?.id ?? null;
+      await client.updatePullRequest(owner, repo, number, { milestone: milestoneId } as any);
+      void vscode.window.showInformationMessage(`Milestone set to: ${selected.label}`);
+      if (panelKey) await this._fetchPRData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to manage milestone: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   private async _openInBrowser(owner: string, repo: string, number: number): Promise<void> {
     try {
       const config = await getForgejoConfig();
@@ -742,28 +875,22 @@ export class PRDetailWebviewProvider {
     }
   }
 
-  private _getThemeName(kind: vscode.ColorThemeKind): 'light' | 'dark' | 'high-contrast' {
-    switch (kind) {
-      case vscode.ColorThemeKind.Light: return 'light';
-      case vscode.ColorThemeKind.HighContrast: return 'high-contrast';
-      case vscode.ColorThemeKind.HighContrastLight: return 'high-contrast';
-      default: return 'dark';
-    }
-  }
-
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'prDetail', 'styles.css'));
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'prDetail', 'index.js'));
 
     const nonce = this._getNonce();
+    const csp = this._buildCsp(nonce, webview);
+    const sharedAssets = this._sharedAssetsHtml(webview);
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} https:;">
+  <meta http-equiv="Content-Security-Policy" content="${csp}">
   <title>PR Details</title>
+  ${sharedAssets}
   <link rel="stylesheet" href="${styleUri.toString()}">
 </head>
 <body>
@@ -863,6 +990,13 @@ export class PRDetailWebviewProvider {
         </div>
         <div id="reviewers-list" class="reviewers-list"></div>
       </div>
+      <div id="milestone-container" class="meta-section">
+        <div class="meta-header">
+          <span class="meta-title">Milestone</span>
+          <button id="manage-milestone-btn" class="meta-manage-btn" title="Set milestone">Set</button>
+        </div>
+        <div id="milestone-name" class="milestone-name"><span class="meta-empty">No milestone</span></div>
+      </div>
     </div>
 
     <!-- Description -->
@@ -872,6 +1006,7 @@ export class PRDetailWebviewProvider {
         <button id="edit-description-btn" class="btn btn-secondary btn-sm">Edit</button>
       </div>
       <div id="pr-description" class="markdown-body"></div>
+      <div id="pr-reactions-bar" class="reactions-bar" style="display: none;"></div>
       <div id="pr-description-editor" class="description-editor" style="display: none;">
         <textarea id="description-textarea" class="description-textarea"></textarea>
         <div class="editor-actions">
@@ -935,9 +1070,14 @@ export class PRDetailWebviewProvider {
           <option value="merge">Create a merge commit</option>
           <option value="squash">Squash and merge</option>
           <option value="rebase">Rebase and merge</option>
+          <option value="rebase-merge">Rebase then merge commit</option>
+          <option value="fast-forward-only">Fast-forward only</option>
         </select>
         <input id="merge-title" class="modal-input" placeholder="Merge title (optional)">
         <textarea id="merge-message" class="modal-textarea" placeholder="Merge message (optional)"></textarea>
+        <label class="modal-checkbox">
+          <input type="checkbox" id="merge-delete-branch"> Delete branch after merge
+        </label>
         <div class="modal-actions">
           <button id="confirm-merge-btn" class="btn btn-success">Merge</button>
           <button id="cancel-merge-btn" class="btn btn-secondary">Cancel</button>
@@ -961,14 +1101,5 @@ export class PRDetailWebviewProvider {
   <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
-  }
-
-  private _getNonce(): string {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-      text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
   }
 }

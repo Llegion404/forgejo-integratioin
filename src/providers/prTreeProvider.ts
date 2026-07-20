@@ -4,6 +4,7 @@ import { PullRequestListItem, PullRequestFile } from '../models/pullRequest';
 import { getForgejoConfig } from '../utils/config';
 import { createScmBadge } from '../utils/scmBadges';
 import { getCached, setCache } from '../utils/cacheStore';
+import { sortTreeItems, TreeSortOrder } from '../utils/treeSort';
 
 const CACHE_KEY = 'pr-list';
 
@@ -156,14 +157,42 @@ class PRSyncingItem extends vscode.TreeItem {
 
 type PRTreeElement = PRTreeItem | PRGroupItem | PRMessageItem | PRFileItem | PRLoadingItem | PROverviewItem | PRReviewAllItem | PRSyncingItem;
 
-export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
-  private _onDidChangeTreeData: vscode.EventEmitter<PRTreeElement | undefined | null | void> = new vscode.EventEmitter<PRTreeElement | undefined | null | void>();
-  readonly onDidChangeTreeData: vscode.Event<PRTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
+export type PRStateFilter = 'all' | 'open' | 'draft' | 'closed' | 'merged';
 
-  private pullRequests: PullRequestListItem[] = [];
-  private error: string | null = null;
-  private isSyncing = false;
-  private syncPromise: Promise<void> | null = null;
+export const PR_STATE_FILTER_LABELS: Record<PRStateFilter, string> = {
+	all: 'All Pull Requests',
+	open: 'Open only',
+	draft: 'Drafts only',
+	closed: 'Closed only (excl. merged)',
+	merged: 'Merged only',
+};
+
+export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
+	private _onDidChangeTreeData: vscode.EventEmitter<PRTreeElement | undefined | null | void> = new vscode.EventEmitter<PRTreeElement | undefined | null | void>();
+	readonly onDidChangeTreeData: vscode.Event<PRTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
+
+	private pullRequests: PullRequestListItem[] = [];
+	private error: string | null = null;
+	private isSyncing = false;
+	private syncPromise: Promise<void> | null = null;
+	private sortOrder: TreeSortOrder = 'newest';
+	private stateFilter: PRStateFilter = 'all';
+
+	setSortOrder(order: TreeSortOrder): void {
+		if (order === this.sortOrder) return;
+		this.sortOrder = order;
+		this._onDidChangeTreeData.fire();
+	}
+
+	setStateFilter(filter: PRStateFilter): void {
+		if (filter === this.stateFilter) return;
+		this.stateFilter = filter;
+		this._onDidChangeTreeData.fire();
+	}
+
+	getStateFilter(): PRStateFilter {
+		return this.stateFilter;
+	}
 
   constructor() {
     const cached = getCached<PullRequestListItem[]>(CACHE_KEY);
@@ -228,17 +257,36 @@ export class PRTreeProvider implements vscode.TreeDataProvider<PRTreeElement> {
       const closedPRs = this.pullRequests.filter(pr => pr.state === 'closed' && !pr.merged);
       const mergedPRs = this.pullRequests.filter(pr => pr.merged);
 
-      if (openPRs.length > 0) {
-        result.push(new PRGroupItem('Open', openPRs));
+      // Apply state filter — when set to a specific state, only that group
+      // is rendered (instead of all four). 'all' preserves the default
+      // grouped view.
+      const filter = this.stateFilter;
+      const isVisible = (group: 'open' | 'draft' | 'closed' | 'merged'): boolean =>
+        filter === 'all' || filter === group;
+
+      const sortedOpen = sortTreeItems(openPRs, this.sortOrder);
+      const sortedDraft = sortTreeItems(draftPRs, this.sortOrder);
+      const sortedClosed = sortTreeItems(closedPRs, this.sortOrder);
+      const sortedMerged = sortTreeItems(mergedPRs, this.sortOrder);
+
+      if (sortedOpen.length > 0 && isVisible('open')) {
+        result.push(new PRGroupItem('Open', sortedOpen));
       }
-      if (draftPRs.length > 0) {
-        result.push(new PRGroupItem('Draft', draftPRs));
+      if (sortedDraft.length > 0 && isVisible('draft')) {
+        result.push(new PRGroupItem('Draft', sortedDraft));
       }
-      if (mergedPRs.length > 0) {
-        result.push(new PRGroupItem('Merged', mergedPRs));
+      if (sortedMerged.length > 0 && isVisible('merged')) {
+        result.push(new PRGroupItem('Merged', sortedMerged));
       }
-      if (closedPRs.length > 0) {
-        result.push(new PRGroupItem('Closed', closedPRs));
+      if (sortedClosed.length > 0 && isVisible('closed')) {
+        result.push(new PRGroupItem('Closed', sortedClosed));
+      }
+
+      // When a specific filter is active and produced no matches, surface a
+      // clear empty-state message so the user understands why the tree is
+      // empty (instead of being left with just the syncing item).
+      if (filter !== 'all' && result.length === 0 && !this.isSyncing) {
+        return [new PRMessageItem(`No ${PR_STATE_FILTER_LABELS[filter].toLowerCase()} pull requests`, false)];
       }
 
       return result;

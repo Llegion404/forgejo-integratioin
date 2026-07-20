@@ -86,25 +86,62 @@ describe('MCP server protocol', () => {
 
 	it('initialize responds with protocol version + tools capability', async () => {
 		const resp = await callInitialize();
-		expect(resp.result).toEqual({
+		expect(resp.result).toMatchObject({
 			protocolVersion: '2025-06-18',
 			capabilities: { tools: { listChanged: false } },
 			serverInfo: { name: 'forgejo-mcp', version: '0.1.0' },
 		});
+		// `instructions` is a free-form high-level guidance string; just
+		// assert it's a non-empty string the agent can read.
+		const result = resp.result as { instructions?: string };
+		expect(typeof result.instructions).toBe('string');
+		expect((result.instructions ?? '').length).toBeGreaterThan(0);
 	});
 
-	it('tools/list returns all 27 tools', async () => {
+	it('initialize echoes back a supported client protocolVersion', async () => {
+		// Client offers an older supported version → server should accept it.
+		const fakeTransport: { onMessage?: (m: JsonRpcMessage) => Promise<JsonRpcResponse | undefined> } = {};
+		buildMcpServer(fakeTransport, () => mockClient, () => config);
+		const resp = (await fakeTransport.onMessage!({
+			jsonrpc: '2.0',
+			id: 99,
+			method: 'initialize',
+			params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } },
+		} as JsonRpcRequest)) as JsonRpcResponse;
+		expect((resp.result as { protocolVersion: string }).protocolVersion).toBe('2025-03-26');
+	});
+
+	it('initialize falls back to newest version when client version is unknown', async () => {
+		const fakeTransport: { onMessage?: (m: JsonRpcMessage) => Promise<JsonRpcResponse | undefined> } = {};
+		buildMcpServer(fakeTransport, () => mockClient, () => config);
+		const resp = (await fakeTransport.onMessage!({
+			jsonrpc: '2.0',
+			id: 99,
+			method: 'initialize',
+			params: { protocolVersion: '2099-01-01', capabilities: {}, clientInfo: { name: 'test', version: '1' } },
+		} as JsonRpcRequest)) as JsonRpcResponse;
+		expect((resp.result as { protocolVersion: string }).protocolVersion).toBe('2025-06-18');
+	});
+
+	it('tools/list returns all 40 tools', async () => {
 		const tools = await listTools();
-		expect(tools.length).toBe(27);
+		expect(tools.length).toBe(40);
 		const names = tools.map((t) => t.name);
+		// Meta
 		expect(names).toContain('list_instances');
 		expect(names).toContain('get_current_user');
+		// Search & discovery
 		expect(names).toContain('search_repositories');
+		expect(names).toContain('search_issues');
+		expect(names).toContain('search_code');
+		expect(names).toContain('search_users');
+		// Issues
 		expect(names).toContain('list_issues');
 		expect(names).toContain('get_issue');
 		expect(names).toContain('list_issue_comments');
 		expect(names).toContain('get_issue_timeline');
 		expect(names).toContain('list_repo_labels');
+		// Pull requests
 		expect(names).toContain('list_pull_requests');
 		expect(names).toContain('get_pull_request');
 		expect(names).toContain('list_pull_request_files');
@@ -112,18 +149,35 @@ describe('MCP server protocol', () => {
 		expect(names).toContain('get_pull_request_refs');
 		expect(names).toContain('list_pull_request_reviews');
 		expect(names).toContain('list_review_comments');
+		// CI status
 		expect(names).toContain('get_pr_ci_status');
 		expect(names).toContain('get_commit_statuses');
+		// Reactions
 		expect(names).toContain('list_comment_reactions');
 		expect(names).toContain('list_issue_reactions');
+		// Branch protection
 		expect(names).toContain('list_branch_protections');
 		expect(names).toContain('get_branch_protection');
+		// Misc
 		expect(names).toContain('list_releases');
 		expect(names).toContain('get_release');
 		expect(names).toContain('get_file_contents');
 		expect(names).toContain('list_tags');
+		// Attachments
 		expect(names).toContain('list_issue_attachments');
 		expect(names).toContain('get_attachment');
+		// Workflows (v2)
+		expect(names).toContain('list_workflows');
+		expect(names).toContain('list_workflow_runs');
+		expect(names).toContain('get_workflow_run');
+		expect(names).toContain('get_workflow_jobs');
+		expect(names).toContain('get_workflow_logs');
+		expect(names).toContain('list_workflow_artifacts');
+		// Repo navigation (v2)
+		expect(names).toContain('list_repo_branches');
+		expect(names).toContain('get_branch');
+		expect(names).toContain('list_repo_commits');
+		expect(names).toContain('compare_commits');
 		// The standalone `get_pull_request_summary` tool has been folded into
 		// `get_pull_request` (default compact path). Verifying it's gone:
 		expect(names).not.toContain('get_pull_request_summary');
@@ -154,6 +208,100 @@ describe('MCP server protocol', () => {
 			method: 'notifications/initialized',
 		} as unknown as JsonRpcRequest);
 		expect(resp).toBeUndefined();
+	});
+});
+
+describe('MCP argument type validation', () => {
+	beforeEach(() => {
+		jest.clearAllMocks();
+	});
+
+	it('rejects boolean arg passed as string (full:"true")', async () => {
+		// Previously the schema skipped boolean validation, so `full: "true"`
+		// passed validation, then readBool("true", false) silently returned
+		// false — the agent thought it asked for full payload, got compact.
+		const resp = await callTool('list_issues', { owner: 'o', repo: 'r', full: 'true' });
+		expect((resp.result as { isError: boolean }).isError).toBe(true);
+		const text = (resp.result as { content: { text: string }[] }).content[0].text;
+		expect(text).toMatch(/'full' must be a boolean/);
+	});
+
+	it('rejects boolean arg passed as number (full:1)', async () => {
+		const resp = await callTool('list_issues', { owner: 'o', repo: 'r', full: 1 });
+		expect((resp.result as { isError: boolean }).isError).toBe(true);
+		expect((resp.result as { content: { text: string }[] }).content[0].text).toMatch(/'full' must be a boolean/);
+	});
+
+	it('rejects boolean arg passed as null', async () => {
+		const resp = await callTool('list_issues', { owner: 'o', repo: 'r', full: null });
+		// null is treated as missing required → for optional just falls through; but
+		// the new validator explicitly rejects null on boolean properties.
+		expect((resp.result as { isError: boolean }).isError).toBe(true);
+		expect((resp.result as { content: { text: string }[] }).content[0].text).toMatch(/'full' must be a boolean/);
+	});
+
+	it('rejects enum arg passed as non-string (state:42)', async () => {
+		// Previously enum check was nested in the string branch and skipped
+		// entirely for non-strings — letting `state: 42` hit the SDK as a
+		// number. Now the enum check runs for any value type.
+		const resp = await callTool('list_issues', { owner: 'o', repo: 'r', state: 42 });
+		expect((resp.result as { isError: boolean }).isError).toBe(true);
+		const text = (resp.result as { content: { text: string }[] }).content[0].text;
+		expect(text).toMatch(/'state' must be one of/);
+	});
+
+	it('rejects enum arg passed as boolean (state:true)', async () => {
+		const resp = await callTool('list_issues', { owner: 'o', repo: 'r', state: true });
+		expect((resp.result as { isError: boolean }).isError).toBe(true);
+		expect((resp.result as { content: { text: string }[] }).content[0].text).toMatch(/'state' must be one of/);
+	});
+
+	it('rejects enum arg passed as null', async () => {
+		const resp = await callTool('list_issues', { owner: 'o', repo: 'r', state: null });
+		expect((resp.result as { isError: boolean }).isError).toBe(true);
+	});
+
+	it('rejects sections passed as a string (get_pull_request)', async () => {
+		const resp = await callTool('get_pull_request', { owner: 'o', repo: 'r', number: 1, sections: 'reviews' });
+		expect((resp.result as { isError: boolean }).isError).toBe(true);
+		expect((resp.result as { content: { text: string }[] }).content[0].text).toMatch(/'sections' must be an object/);
+	});
+
+	it('rejects unknown section keys (get_pull_request.sections.bogus)', async () => {
+		const resp = await callTool('get_pull_request', {
+			owner: 'o', repo: 'r', number: 1,
+			sections: { bogus: true },
+		});
+		expect((resp.result as { isError: boolean }).isError).toBe(true);
+		expect((resp.result as { content: { text: string }[] }).content[0].text).toMatch(/sections\.bogus.*not allowed/);
+	});
+
+	it('rejects section value of wrong type (sections.reviews:"yes")', async () => {
+		const resp = await callTool('get_pull_request', {
+			owner: 'o', repo: 'r', number: 1,
+			sections: { reviews: 'yes' },
+		});
+		expect((resp.result as { isError: boolean }).isError).toBe(true);
+		expect((resp.result as { content: { text: string }[] }).content[0].text).toMatch(/sections\.reviews.*must be a boolean/);
+	});
+
+	it('accepts valid section toggles', async () => {
+		mockClient.getPullRequest.mockResolvedValueOnce({
+			number: 1, title: 't', state: 'open', draft: false, merged: false, mergeable: true,
+			base: { ref: 'main' }, head: { ref: 'feature', sha: 'a'.repeat(40) },
+			user: { login: 'alice' }, labels: [], created_at: '', updated_at: '',
+		} as never);
+		const resp = await callTool('get_pull_request', {
+			owner: 'o', repo: 'r', number: 1,
+			sections: { reviews: true, ci_status: false, description: true },
+		});
+		expect((resp.result as { isError: boolean }).isError ?? false).toBe(false);
+	});
+
+	it('accepts legitimate boolean args (full:true still works)', async () => {
+		mockClient.listIssues.mockResolvedValueOnce([]);
+		const resp = await callTool('list_issues', { owner: 'o', repo: 'r', full: true });
+		expect((resp.result as { isError: boolean }).isError ?? false).toBe(false);
 	});
 });
 
@@ -248,26 +396,63 @@ describe('MCP tool invocations', () => {
 
 	describe('list_issues', () => {
 		it('calls listIssues with owner/repo from args', async () => {
-			mockClient.listIssues.mockResolvedValueOnce([]);
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_issues', { owner: 'foo', repo: 'bar', state: 'closed' });
-			expect(mockClient.listIssues).toHaveBeenCalledWith('foo', 'bar', 'closed');
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/issues\?state=closed&type=issues&page=1&limit=30/),
+			);
 		});
 
 		it('falls back to default owner/repo from config', async () => {
-			mockClient.listIssues.mockResolvedValueOnce([]);
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_issues', {});
-			expect(mockClient.listIssues).toHaveBeenCalledWith('default-owner', 'default-repo', 'open');
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/default-owner\/default-repo\/issues\?state=open&type=issues&page=1&limit=30/),
+			);
 		});
 
 		it('defaults state to "open" when omitted', async () => {
-			mockClient.listIssues.mockResolvedValueOnce([]);
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_issues', { owner: 'foo', repo: 'bar' });
-			expect(mockClient.listIssues).toHaveBeenCalledWith('foo', 'bar', 'open');
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/state=open/),
+			);
 		});
 
 		it('rejects invalid state value', async () => {
 			const resp = await callTool('list_issues', { owner: 'foo', repo: 'bar', state: 'invalid' });
 			expect((resp.result as { isError: boolean }).isError).toBe(true);
+		});
+
+		it('honours page + page_size args', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
+			await callTool('list_issues', { owner: 'foo', repo: 'bar', page: 3, page_size: 50 });
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/page=3&limit=50$/),
+			);
+		});
+
+		it('returns pagination envelope with has_more=true when page is full', async () => {
+			// Return exactly page_size items → has_more should be true.
+			const fullPage = Array.from({ length: 30 }, (_, i) => ({ number: i + 1, title: 't', state: 'open' }));
+			mockClient.rawRequest.mockResolvedValueOnce(fullPage);
+			const resp = await callTool('list_issues', { owner: 'foo', repo: 'bar' });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload._meta.pagination).toEqual({
+				page: 1, page_size: 30, returned: 30, has_more: true,
+			});
+		});
+
+		it('returns pagination envelope with has_more=false on partial page', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([{ number: 1, title: 't', state: 'open' }]);
+			const resp = await callTool('list_issues', { owner: 'foo', repo: 'bar' });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload._meta.pagination.has_more).toBe(false);
+			expect(payload._meta.pagination.returned).toBe(1);
 		});
 	});
 
@@ -295,21 +480,67 @@ describe('MCP tool invocations', () => {
 			const text = (resp.result as { content: { text: string }[] }).content[0].text;
 			expect(text).toMatch(/must be an integer/);
 		});
+
+		it('returns degraded envelope with _meta.warnings when conversation fetch fails', async () => {
+			// Primary getIssue succeeds, secondary comments pagedRequest rejects
+			// (e.g. 403 on private repo). Previously this rejected the whole call.
+			mockClient.getIssue.mockResolvedValueOnce({
+				number: 42, title: 't', state: 'open', body: 'b', html_url: 'u',
+				created_at: '', updated_at: '', user: { login: 'a' }, labels: [], assignees: [],
+			} as never);
+			mockClient.rawRequest.mockRejectedValueOnce(new Error('HTTP 403: forbidden'));
+
+			const resp = await callTool('get_issue', { owner: 'foo', repo: 'bar', number: 42 });
+			expect((resp.result as { isError: boolean }).isError ?? false).toBe(false);
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.number).toBe(42);
+			expect(payload._meta.warnings).toEqual(
+				expect.arrayContaining([expect.stringMatching(/Failed to fetch conversation.*403/)]),
+			);
+		});
+
+		it('propagates primary getIssue failure as isError:true', async () => {
+			mockClient.getIssue.mockRejectedValueOnce(new Error('HTTP 404: not found'));
+			mockClient.rawRequest.mockResolvedValueOnce([] as never);
+
+			const resp = await callTool('get_issue', { owner: 'foo', repo: 'bar', number: 999 });
+			expect((resp.result as { isError: boolean }).isError).toBe(true);
+			const text = (resp.result as { content: { text: string }[] }).content[0].text;
+			expect(text).toMatch(/404/);
+		});
+
+		it('synthesizes empty conversation envelope when issue has zero comments', async () => {
+			mockClient.getIssue.mockResolvedValueOnce({
+				number: 7, title: 't', state: 'open', body: 'b', html_url: 'u',
+				created_at: '', updated_at: '', user: { login: 'a' }, labels: [], assignees: [],
+			} as never);
+			mockClient.rawRequest.mockResolvedValueOnce([] as never);
+
+			const resp = await callTool('get_issue', { owner: 'foo', repo: 'bar', number: 7 });
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.conversation).toEqual({ total: 0, returned: 0, truncated: false, items: [] });
+		});
 	});
 
 	describe('list_issue_comments', () => {
-		it('calls getIssueComments with owner/repo/number', async () => {
-			mockClient.getIssueComments.mockResolvedValueOnce([]);
+		it('calls rawRequest with paged issue-comments path', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_issue_comments', { owner: 'foo', repo: 'bar', number: 7 });
-			expect(mockClient.getIssueComments).toHaveBeenCalledWith('foo', 'bar', 7);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/issues\/7\/comments\?page=1&limit=30/),
+			);
 		});
 	});
 
 	describe('get_issue_timeline', () => {
-		it('calls getIssueTimeline', async () => {
-			mockClient.getIssueTimeline.mockResolvedValueOnce([]);
+		it('calls rawRequest with paged timeline path', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('get_issue_timeline', { owner: 'foo', repo: 'bar', number: 1 });
-			expect(mockClient.getIssueTimeline).toHaveBeenCalledWith('foo', 'bar', 1);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/issues\/1\/timeline\?page=1&limit=30/),
+			);
 		});
 	});
 
@@ -328,10 +559,13 @@ describe('MCP tool invocations', () => {
 	});
 
 	describe('list_pull_requests', () => {
-		it('calls listPullRequests with state filter', async () => {
-			mockClient.listPullRequests.mockResolvedValueOnce([]);
+		it('calls rawRequest with state filter', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_pull_requests', { owner: 'foo', repo: 'bar', state: 'closed' });
-			expect(mockClient.listPullRequests).toHaveBeenCalledWith('foo', 'bar', 'closed');
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/pulls\?state=closed&page=1&limit=30/),
+			);
 		});
 	});
 
@@ -341,23 +575,69 @@ describe('MCP tool invocations', () => {
 			await callTool('get_pull_request', { owner: 'foo', repo: 'bar', number: 99 });
 			expect(mockClient.getPullRequest).toHaveBeenCalledWith('foo', 'bar', 99);
 		});
+
+		it('returns degraded envelope with _meta.warnings when a section fails', async () => {
+			// Primary getPullRequest succeeds; one of the section fetches rejects.
+			mockClient.getPullRequest.mockResolvedValueOnce({
+				number: 99, title: 't', state: 'open', draft: false, merged: false, mergeable: true,
+				base: { ref: 'main' }, head: { ref: 'feature', sha: 'a'.repeat(40) },
+				user: { login: 'a' }, labels: [], created_at: '', updated_at: '',
+			} as never);
+			// Section fetches are sequential pagedRequest calls: commits, conversation (rejects), files.
+			mockClient.rawRequest
+				.mockResolvedValueOnce([] as never)                                // commits
+				.mockRejectedValueOnce(new Error('HTTP 403: forbidden'))           // conversation
+				.mockResolvedValueOnce([] as never);                               // files
+
+			const resp = await callTool('get_pull_request', { owner: 'foo', repo: 'bar', number: 99 });
+			expect((resp.result as { isError: boolean }).isError ?? false).toBe(false);
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.number).toBe(99);
+			expect(payload._meta.warnings).toEqual(
+				expect.arrayContaining([expect.stringMatching(/conversation.*403/i)]),
+			);
+			// Other sections still populated despite the conversation failure.
+			expect(payload.sections).toEqual(expect.arrayContaining(['description', 'commits', 'files_overview']));
+		});
+
+		it('handles PR with deleted head repo (head=null)', async () => {
+			mockClient.getPullRequest.mockResolvedValueOnce({
+				number: 99, title: 't', state: 'open', draft: false, merged: false, mergeable: false,
+				base: { ref: 'main' }, head: null,
+				user: { login: 'a' }, labels: [], created_at: '', updated_at: '',
+			} as never);
+
+			const resp = await callTool('get_pull_request', {
+				owner: 'foo', repo: 'bar', number: 99,
+				sections: { ci_status: true },
+			});
+			expect((resp.result as { isError: boolean }).isError ?? false).toBe(false);
+			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
+			expect(payload.ci_status.head_sha).toBe('');
+			expect(payload.ci_status.summary).toBe('none');
+			expect(payload.ci_status.warning).toMatch(/head.*unavailable|head.*deleted/i);
+		});
 	});
 
 	describe('list_pull_request_files', () => {
-		it('calls getPullRequestFiles', async () => {
-			mockClient.getPullRequestFiles.mockResolvedValueOnce([]);
+		it('calls rawRequest with paged files path', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_pull_request_files', { owner: 'foo', repo: 'bar', number: 3 });
-			expect(mockClient.getPullRequestFiles).toHaveBeenCalledWith('foo', 'bar', 3);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/pulls\/3\/files\?page=1&limit=30/),
+			);
 		});
 
-		it('returns raw array unchanged when no patch options set (backward compat)', async () => {
+		it('returns items unchanged when no patch options set (backward compat for per-file shape)', async () => {
 			const files = [{ filename: 'a.ts', patch: '@@ -1,1 +1,1 @@\n+x' }];
-			mockClient.getPullRequestFiles.mockResolvedValueOnce(files as never);
+			mockClient.rawRequest.mockResolvedValueOnce(files as never);
 			const resp = await callTool('list_pull_request_files', { owner: 'foo', repo: 'bar', number: 3 });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload).toEqual(files);
-			expect(payload[0].patch).toBe('@@ -1,1 +1,1 @@\n+x');
-			expect(payload[0]).not.toHaveProperty('patch_excluded');
+			expect(payload.items).toEqual(files);
+			expect(payload.items[0].patch).toBe('@@ -1,1 +1,1 @@\n+x');
+			expect(payload.items[0]).not.toHaveProperty('patch_excluded');
+			expect(payload._meta.pagination).toBeDefined();
 		});
 
 		it('strips patches and sets patch_excluded when include_patch=false', async () => {
@@ -365,37 +645,39 @@ describe('MCP tool invocations', () => {
 				{ filename: 'a.ts', additions: 1, deletions: 0, changes: 1, patch: '@@ ...\n+x' },
 				{ filename: 'b.ts', additions: 0, deletions: 1, changes: 1 },
 			];
-			mockClient.getPullRequestFiles.mockResolvedValueOnce(files as never);
+			mockClient.rawRequest.mockResolvedValueOnce(files as never);
 			const resp = await callTool('list_pull_request_files', {
 				owner: 'foo', repo: 'bar', number: 3, include_patch: false,
 			});
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload[0].patch_excluded).toBe(true);
-			expect(payload[0]).not.toHaveProperty('patch');
-			expect(payload[0].filename).toBe('a.ts');
-			// File with no patch also gets patch_excluded.
-			expect(payload[1].patch_excluded).toBe(true);
+			expect(payload.items[0].patch_excluded).toBe(true);
+			expect(payload.items[0]).not.toHaveProperty('patch');
+			expect(payload.items[0].filename).toBe('a.ts');
+			expect(payload.items[1].patch_excluded).toBe(true);
 		});
 
 		it('truncates patches and sets patch_truncated when max_patch_lines set', async () => {
 			const longPatch = '@@ -1,1 +1,1 @@\n' + Array.from({ length: 20 }, (_, i) => `+line${i}`).join('\n');
 			const files = [{ filename: 'a.ts', additions: 20, deletions: 0, changes: 20, patch: longPatch }];
-			mockClient.getPullRequestFiles.mockResolvedValueOnce(files as never);
+			mockClient.rawRequest.mockResolvedValueOnce(files as never);
 			const resp = await callTool('list_pull_request_files', {
 				owner: 'foo', repo: 'bar', number: 3, max_patch_lines: 3,
 			});
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload[0].patch_truncated).toBe(true);
-			expect(payload[0].patch).toContain('@@');
-			expect(payload[0].patch).toContain('more lines)');
+			expect(payload.items[0].patch_truncated).toBe(true);
+			expect(payload.items[0].patch).toContain('@@');
+			expect(payload.items[0].patch).toContain('more lines)');
 		});
 	});
 
 	describe('list_pull_request_commits', () => {
-		it('calls getPullRequestCommits', async () => {
-			mockClient.getPullRequestCommits.mockResolvedValueOnce([]);
+		it('calls rawRequest with paged commits path', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_pull_request_commits', { owner: 'foo', repo: 'bar', number: 3 });
-			expect(mockClient.getPullRequestCommits).toHaveBeenCalledWith('foo', 'bar', 3);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/pulls\/3\/commits\?page=1&limit=30/),
+			);
 		});
 	});
 
@@ -408,18 +690,24 @@ describe('MCP tool invocations', () => {
 	});
 
 	describe('list_pull_request_reviews', () => {
-		it('calls getPullRequestReviews', async () => {
-			mockClient.getPullRequestReviews.mockResolvedValueOnce([]);
+		it('calls rawRequest with paged reviews path', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_pull_request_reviews', { owner: 'foo', repo: 'bar', number: 3 });
-			expect(mockClient.getPullRequestReviews).toHaveBeenCalledWith('foo', 'bar', 3);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/pulls\/3\/reviews\?page=1&limit=30/),
+			);
 		});
 	});
 
 	describe('list_review_comments', () => {
-		it('calls getReviewComments with both prNumber and reviewId', async () => {
-			mockClient.getReviewComments.mockResolvedValueOnce([]);
+		it('calls rawRequest with paged review-comments path', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_review_comments', { owner: 'foo', repo: 'bar', number: 3, reviewId: 5 });
-			expect(mockClient.getReviewComments).toHaveBeenCalledWith('foo', 'bar', 3, 5);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/pulls\/3\/reviews\/5\/comments\?page=1&limit=30/),
+			);
 		});
 
 		it('rejects when reviewId missing', async () => {
@@ -444,15 +732,19 @@ describe('MCP tool invocations', () => {
 
 		function setupDefaults() {
 			mockClient.getPullRequest.mockResolvedValue(mockPr as never);
-			mockClient.getPullRequestCommits.mockResolvedValue([
-				{ sha: 'b'.repeat(40), commit: { message: 'Commit 1', author: { name: 'u1', email: 'e1', date: '2025-01-01' } }, author: { login: 'u1' }, html_url: 'h' },
-			] as never);
-			mockClient.getIssueComments.mockResolvedValue([
-				{ id: 1, body: 'Comment 1', user: { login: 'c1' }, created_at: '2025-01-01', html_url: 'h' },
-			] as never);
-			mockClient.getPullRequestFiles.mockResolvedValue([
-				{ filename: 'a.ts', status: 'modified', additions: 1, deletions: 0, changes: 1, patch: '@@ -1 +1 @@\n+x' },
-			] as never);
+			// pagedRequest is called in deterministic order: commits, comments, files.
+			// Each gets its own resolved value.
+			mockClient.rawRequest.mockReset();
+			mockClient.rawRequest
+				.mockResolvedValueOnce([
+					{ sha: 'b'.repeat(40), commit: { message: 'Commit 1', author: { name: 'u1', email: 'e1', date: '2025-01-01' } }, author: { login: 'u1' }, html_url: 'h' },
+				] as never)
+				.mockResolvedValueOnce([
+					{ id: 1, body: 'Comment 1', user: { login: 'c1' }, created_at: '2025-01-01', html_url: 'h' },
+				] as never)
+				.mockResolvedValueOnce([
+					{ filename: 'a.ts', status: 'modified', additions: 1, deletions: 0, changes: 1, patch: '@@ -1 +1 @@\n+x' },
+				] as never);
 		}
 
 		it('returns default sections (description, commits, conversation, files_overview) and omits reviews/ci', async () => {
@@ -462,14 +754,12 @@ describe('MCP tool invocations', () => {
 
 			expect(payload.sections).toEqual(['description', 'commits', 'conversation', 'files_overview']);
 			expect(payload.description.title).toBe('Fix bug');
-			// full_name is kept when present (helpful for agents drafting replies).
 			expect(payload.description.author).toEqual({ login: 'alice', full_name: 'Alice Wonder' });
 			expect(payload.commits.total).toBe(1);
 			expect(payload.commits.items[0].short_sha).toHaveLength(7);
 			expect(payload.conversation.total).toBe(1);
 			expect(payload.conversation.items[0].author).toEqual({ login: 'c1' });
 			expect(payload.files_overview.total).toBe(1);
-			// Patches dropped by default.
 			expect(payload.files_overview.items[0].patch_excluded).toBe(true);
 			expect(payload.reviews).toBeUndefined();
 			expect(payload.ci_status).toBeUndefined();
@@ -481,20 +771,19 @@ describe('MCP tool invocations', () => {
 			const resp = await callTool('get_pull_request', { owner: 'foo', repo: 'bar', number: 42, full: true });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
 
-			// Raw PR object: same shape that mockClient.getPullRequest returned.
 			expect(payload).toEqual(mockPr);
-			// No fan-out — the optional methods should NOT have been called.
-			expect(mockClient.getPullRequestCommits).not.toHaveBeenCalled();
-			expect(mockClient.getIssueComments).not.toHaveBeenCalled();
-			expect(mockClient.getPullRequestFiles).not.toHaveBeenCalled();
+			// No fan-out — rawRequest should NOT have been called for section fetches.
+			expect(mockClient.rawRequest).not.toHaveBeenCalled();
 		});
 
 		it('enables reviews and ci_status when sections opts request them', async () => {
 			setupDefaults();
-			mockClient.getPullRequestReviews.mockResolvedValue([
-				{ id: 1, state: 'APPROVE', body: 'LGTM', user: { login: 'r1' }, submitted_at: '2025-01-01', html_url: 'h' },
-			] as never);
-			mockClient.getCommitStatuses.mockResolvedValue([] as never);
+			// Add two more pagedRequest responses: reviews + commit statuses.
+			mockClient.rawRequest
+				.mockResolvedValueOnce([
+					{ id: 1, state: 'APPROVE', body: 'LGTM', user: { login: 'r1' }, submitted_at: '2025-01-01', html_url: 'h' },
+				] as never)
+				.mockResolvedValueOnce([] as never); // commit statuses (empty)
 
 			const resp = await callTool('get_pull_request', {
 				owner: 'foo', repo: 'bar', number: 42,
@@ -508,17 +797,21 @@ describe('MCP tool invocations', () => {
 			expect(payload.reviews.items[0].state).toBe('APPROVE');
 			expect(payload.ci_status.summary).toBe('none');
 			expect(payload.ci_status.head_sha).toBe('a'.repeat(40));
-			expect(mockClient.getCommitStatuses).toHaveBeenCalledWith('foo', 'bar', 'a'.repeat(40));
 		});
 
 		it('flags truncated when max_commits < array length', async () => {
 			setupDefaults();
-			mockClient.getPullRequestCommits.mockResolvedValue(
-				Array.from({ length: 60 }, (_, i) => ({
-					sha: 'b'.repeat(40), commit: { message: `Commit ${i}`, author: { name: 'u', email: 'e', date: '2025-01-01' } },
-					author: { login: 'u' }, html_url: 'h',
-				})) as never,
-			);
+			// Override the first pagedRequest (commits) with 60 items.
+			mockClient.rawRequest.mockReset();
+			mockClient.rawRequest
+				.mockResolvedValueOnce(
+					Array.from({ length: 60 }, (_, i) => ({
+						sha: 'b'.repeat(40), commit: { message: `Commit ${i}`, author: { name: 'u', email: 'e', date: '2025-01-01' } },
+						author: { login: 'u' }, html_url: 'h',
+					})) as never,
+				)
+				.mockResolvedValueOnce([] as never)
+				.mockResolvedValueOnce([] as never);
 			const resp = await callTool('get_pull_request', {
 				owner: 'foo', repo: 'bar', number: 42, max_commits: 10,
 			});
@@ -546,9 +839,13 @@ describe('MCP tool invocations', () => {
 		it('includes bounded patch in files_overview when max_patch_lines > 0', async () => {
 			setupDefaults();
 			const longPatch = '@@ -1 +1 @@\n' + Array.from({ length: 20 }, (_, i) => `+line${i}`).join('\n');
-			mockClient.getPullRequestFiles.mockResolvedValue([
-				{ filename: 'a.ts', status: 'modified', additions: 20, deletions: 0, changes: 20, patch: longPatch },
-			] as never);
+			mockClient.rawRequest.mockReset();
+			mockClient.rawRequest
+				.mockResolvedValueOnce([] as never)
+				.mockResolvedValueOnce([] as never)
+				.mockResolvedValueOnce([
+					{ filename: 'a.ts', status: 'modified', additions: 20, deletions: 0, changes: 20, patch: longPatch },
+				] as never);
 			const resp = await callTool('get_pull_request', {
 				owner: 'foo', repo: 'bar', number: 42, max_patch_lines: 3,
 			});
@@ -565,6 +862,7 @@ describe('MCP tool invocations', () => {
 		});
 
 		it('wraps PR fetch errors as isError: true', async () => {
+			mockClient.getPullRequest.mockReset();
 			mockClient.getPullRequest.mockRejectedValueOnce(new Error('HTTP 404: not found'));
 			const resp = await callTool('get_pull_request', { owner: 'foo', repo: 'bar', number: 999 });
 			const result = resp.result as { isError: boolean; content: { text: string }[] };
@@ -576,7 +874,7 @@ describe('MCP tool invocations', () => {
 	describe('list_pull_requests (compact)', () => {
 		it('default returns compact PR list items with bounded body + compact author', async () => {
 			const longBody = 'z'.repeat(4000);
-			mockClient.listPullRequests.mockResolvedValueOnce([
+			mockClient.rawRequest.mockResolvedValueOnce([
 				{
 					number: 7, title: 'PR 7', state: 'open', body: longBody,
 					user: { login: 'alice', avatar_url: 'u', full_name: 'Alice' },
@@ -589,17 +887,20 @@ describe('MCP tool invocations', () => {
 
 			const resp = await callTool('list_pull_requests', { owner: 'foo', repo: 'bar' });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload).toHaveLength(1);
-			expect(payload[0].number).toBe(7);
-			expect(payload[0].author).toEqual({ login: 'alice', full_name: 'Alice' });
-			expect(payload[0].labels).toEqual([{ name: 'bug' }]);
-			expect(payload[0].body.truncated).toBe(true);
-			expect(payload[0].body.original_length).toBe(4000);
-			expect(payload[0].head_ref).toBe('feat');
-			expect(mockClient.listPullRequests).toHaveBeenCalledWith('foo', 'bar', 'open');
+			expect(payload.items).toHaveLength(1);
+			expect(payload.items[0].number).toBe(7);
+			expect(payload.items[0].author).toEqual({ login: 'alice', full_name: 'Alice' });
+			expect(payload.items[0].labels).toEqual([{ name: 'bug' }]);
+			expect(payload.items[0].body.truncated).toBe(true);
+			expect(payload.items[0].body.original_length).toBe(4000);
+			expect(payload.items[0].head_ref).toBe('feat');
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/pulls\?state=open&page=1&limit=30/),
+			);
 		});
 
-		it('full=true returns raw SDK payload unchanged', async () => {
+		it('full=true returns raw SDK payload wrapped in items envelope', async () => {
 			const rawItems = [{
 				number: 7, title: 'PR 7', state: 'open', body: 'x',
 				user: { login: 'alice', avatar_url: 'http://a' },
@@ -608,18 +909,19 @@ describe('MCP tool invocations', () => {
 				base: { ref: 'main' }, mergeable: true, merged: false, merge_commit_sha: null,
 				draft: false, comments: 4, labels: [{ name: 'bug', color: '#f00' }],
 			}];
-			mockClient.listPullRequests.mockResolvedValueOnce(rawItems as never);
+			mockClient.rawRequest.mockResolvedValueOnce(rawItems as never);
 
 			const resp = await callTool('list_pull_requests', { owner: 'foo', repo: 'bar', full: true });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload).toEqual(rawItems);
+			expect(payload.items).toEqual(rawItems);
+			expect(payload._meta.pagination).toBeDefined();
 		});
 	});
 
 	describe('list_issues (compact)', () => {
 		it('default returns compact issue list items: bounded body, compact author, labels names only', async () => {
 			const longBody = 'q'.repeat(3500);
-			mockClient.listIssues.mockResolvedValueOnce([
+			mockClient.rawRequest.mockResolvedValueOnce([
 				{
 					number: 12, title: 'Issue 12', state: 'open', body: longBody, html_url: 'http://i/12',
 					created_at: '2025-01-01T00:00:00Z', updated_at: '2025-06-01T00:00:00Z', comments: 2,
@@ -630,26 +932,25 @@ describe('MCP tool invocations', () => {
 
 			const resp = await callTool('list_issues', { owner: 'foo', repo: 'bar' });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload).toHaveLength(1);
-			expect(payload[0].number).toBe(12);
-			expect(payload[0].author).toEqual({ login: 'bob', full_name: 'Bob Smith' });
-			expect(payload[0].labels).toEqual([{ name: 'bug' }, { name: 'urgent' }]);
-			expect(payload[0].body.truncated).toBe(true);
-			expect(mockClient.listIssues).toHaveBeenCalledWith('foo', 'bar', 'open');
+			expect(payload.items).toHaveLength(1);
+			expect(payload.items[0].number).toBe(12);
+			expect(payload.items[0].author).toEqual({ login: 'bob', full_name: 'Bob Smith' });
+			expect(payload.items[0].labels).toEqual([{ name: 'bug' }, { name: 'urgent' }]);
+			expect(payload.items[0].body.truncated).toBe(true);
 		});
 
-		it('full=true returns raw SDK payload unchanged', async () => {
+		it('full=true returns raw SDK payload wrapped in items envelope', async () => {
 			const rawItems = [{
 				number: 12, title: 'I', state: 'open', body: 'b', html_url: 'u',
 				created_at: 'c', updated_at: 'u2', comments: 0,
 				user: { login: 'bob', avatar_url: 'http://b' },
 				labels: [{ name: 'bug', color: '#f00' }],
 			}];
-			mockClient.listIssues.mockResolvedValueOnce(rawItems as never);
+			mockClient.rawRequest.mockResolvedValueOnce(rawItems as never);
 
 			const resp = await callTool('list_issues', { owner: 'foo', repo: 'bar', full: true });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload).toEqual(rawItems);
+			expect(payload.items).toEqual(rawItems);
 		});
 	});
 
@@ -673,10 +974,14 @@ describe('MCP tool invocations', () => {
 
 		beforeEach(() => {
 			mockClient.getIssue.mockResolvedValue(mockIssue as never);
-			mockClient.getIssueComments.mockResolvedValue([
+			mockClient.rawRequest.mockResolvedValue([
 				{ id: 1, body: 'Comment 1', user: { login: 'c1' }, created_at: '2025-01-01', html_url: 'h' },
 				{ id: 2, body: 'Comment 2', user: { login: 'c2' }, created_at: '2025-01-02', html_url: 'h' },
 			] as never);
+		});
+
+		afterEach(() => {
+			mockClient.rawRequest.mockReset();
 		});
 
 		it('default fan-outs issue + comments in parallel and returns compact envelope', async () => {
@@ -684,7 +989,10 @@ describe('MCP tool invocations', () => {
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
 
 			expect(mockClient.getIssue).toHaveBeenCalledWith('foo', 'bar', 790);
-			expect(mockClient.getIssueComments).toHaveBeenCalledWith('foo', 'bar', 790);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/issues\/790\/comments\?page=1&limit=50/),
+			);
 
 			expect(payload.number).toBe(790);
 			expect(payload.title).toBe('Удалить информацию');
@@ -698,7 +1006,6 @@ describe('MCP tool invocations', () => {
 			expect(payload.comments_count).toBe(2);
 			expect(payload.milestone).toBeNull();
 			expect(payload.attachments).toEqual([{ name: 'screenshot.png', size: 4096, id: 1, uuid: 'abc-123', download_count: 0 }]);
-			// Conversation section
 			expect(payload.conversation.total).toBe(2);
 			expect(payload.conversation.items[0].author).toEqual({ login: 'c1' });
 			expect(payload._meta.truncated).toBe(false);
@@ -706,13 +1013,12 @@ describe('MCP tool invocations', () => {
 			expect(payload._meta.hint).toMatch(/full=true/);
 		});
 
-		it('include_conversation=false skips the getIssueComments round trip', async () => {
+		it('include_conversation=false skips the comments round trip', async () => {
 			const resp = await callTool('get_issue', { owner: 'foo', repo: 'bar', number: 790, include_conversation: false });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
 
-			expect(mockClient.getIssueComments).not.toHaveBeenCalled();
+			expect(mockClient.rawRequest).not.toHaveBeenCalled();
 			expect(payload.conversation).toBeUndefined();
-			// Other compact fields still present
 			expect(payload.number).toBe(790);
 		});
 
@@ -721,11 +1027,11 @@ describe('MCP tool invocations', () => {
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
 
 			expect(payload).toEqual(mockIssue);
-			expect(mockClient.getIssueComments).not.toHaveBeenCalled();
+			expect(mockClient.rawRequest).not.toHaveBeenCalled();
 		});
 
 		it('flags truncated when conversation list exceeds max_comments', async () => {
-			mockClient.getIssueComments.mockResolvedValue(
+			mockClient.rawRequest.mockResolvedValue(
 				Array.from({ length: 60 }, (_, i) => ({
 					id: i, body: `C${i}`, user: { login: `u${i}` }, created_at: '2025-01-01', html_url: 'h',
 				})) as never,
@@ -740,68 +1046,68 @@ describe('MCP tool invocations', () => {
 	});
 
 	describe('list_issue_comments (compact)', () => {
-		it('default returns ConversationSummary shape with bounded bodies', async () => {
+		it('default returns compact comment items with bounded bodies', async () => {
 			const longBody = 'y'.repeat(5000);
-			mockClient.getIssueComments.mockResolvedValue([
+			mockClient.rawRequest.mockResolvedValueOnce([
 				{ id: 1, body: longBody, user: { login: 'a', full_name: 'A A' }, created_at: '2025-01-01', html_url: 'h' },
 			] as never);
 			const resp = await callTool('list_issue_comments', { owner: 'foo', repo: 'bar', number: 5 });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload.total).toBe(1);
+			expect(payload.items).toHaveLength(1);
 			expect(payload.items[0].author).toEqual({ login: 'a', full_name: 'A A' });
 			expect(payload.items[0].body.truncated).toBe(true);
 			expect(payload.items[0].body.original_length).toBe(5000);
 		});
 
-		it('full=true returns raw SDK payload', async () => {
+		it('full=true returns raw SDK payload wrapped in items envelope', async () => {
 			const raw = [{ id: 1, body: 'c', user: { login: 'a', avatar_url: 'u' }, created_at: '2025-01-01', html_url: 'h' }];
-			mockClient.getIssueComments.mockResolvedValue(raw as never);
+			mockClient.rawRequest.mockResolvedValueOnce(raw as never);
 			const resp = await callTool('list_issue_comments', { owner: 'foo', repo: 'bar', number: 5, full: true });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload).toEqual(raw);
+			expect(payload.items).toEqual(raw);
 		});
 	});
 
 	describe('list_pull_request_commits (compact)', () => {
 		it('default returns CommitsSummary with short SHAs + subjects', async () => {
-			mockClient.getPullRequestCommits.mockResolvedValue([
+			mockClient.rawRequest.mockResolvedValueOnce([
 				{ sha: 'b'.repeat(40), commit: { message: 'first\n\nbody', author: { name: 'u', email: 'e', date: '2025-01-01' } }, author: { login: 'u' }, html_url: 'h' },
 			] as never);
 			const resp = await callTool('list_pull_request_commits', { owner: 'foo', repo: 'bar', number: 3 });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload.total).toBe(1);
+			expect(payload.items).toHaveLength(1);
 			expect(payload.items[0].short_sha).toBe('b'.repeat(7));
 			expect(payload.items[0].subject).toBe('first');
 		});
 
-		it('full=true returns raw SDK payload', async () => {
+		it('full=true returns raw SDK payload wrapped in items envelope', async () => {
 			const raw = [{ sha: 'b'.repeat(40), commit: { message: 'first', author: { name: 'u', email: 'e', date: '2025-01-01' } }, author: { login: 'u' }, html_url: 'h' }];
-			mockClient.getPullRequestCommits.mockResolvedValue(raw as never);
+			mockClient.rawRequest.mockResolvedValueOnce(raw as never);
 			const resp = await callTool('list_pull_request_commits', { owner: 'foo', repo: 'bar', number: 3, full: true });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload).toEqual(raw);
+			expect(payload.items).toEqual(raw);
 		});
 	});
 
 	describe('list_pull_request_reviews (compact)', () => {
 		it('default returns compact review items with bounded body', async () => {
 			const longBody = 'x'.repeat(3000);
-			mockClient.getPullRequestReviews.mockResolvedValue([
+			mockClient.rawRequest.mockResolvedValueOnce([
 				{ id: 1, state: 'APPROVE', body: longBody, user: { login: 'r', full_name: 'R R' }, submitted_at: '2025-01-01', html_url: 'h' },
 			] as never);
 			const resp = await callTool('list_pull_request_reviews', { owner: 'foo', repo: 'bar', number: 3 });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload.total).toBe(1);
+			expect(payload.items).toHaveLength(1);
 			expect(payload.items[0].author).toEqual({ login: 'r', full_name: 'R R' });
 			expect(payload.items[0].body.truncated).toBe(true);
 		});
 
-		it('full=true returns raw SDK payload', async () => {
+		it('full=true returns raw SDK payload wrapped in items envelope', async () => {
 			const raw = [{ id: 1, state: 'APPROVE', body: 'LGTM', user: { login: 'r', avatar_url: 'u' }, submitted_at: '2025-01-01', html_url: 'h' }];
-			mockClient.getPullRequestReviews.mockResolvedValue(raw as never);
+			mockClient.rawRequest.mockResolvedValueOnce(raw as never);
 			const resp = await callTool('list_pull_request_reviews', { owner: 'foo', repo: 'bar', number: 3, full: true });
 			const payload = JSON.parse((resp.result as { content: { text: string }[] }).content[0].text);
-			expect(payload).toEqual(raw);
+			expect(payload.items).toEqual(raw);
 		});
 	});
 });

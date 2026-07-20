@@ -158,24 +158,37 @@ All three (`PRDetailWebviewProvider`, `IssueDetailWebviewProvider`, `ActionDetai
 - **Migration**: `migrateToMultiInstance()` + `migrateTokensToSecretStorage()` run on activation
 
 ### MCP Server (`src/mcp/`)
-Bundles a Model Context Protocol (MCP) stdio server that exposes Forgejo issues + PRs to AI coding agents (Claude Code, Codex CLI, GitHub Copilot). The server runs as a child process spawned by the agent — not by VS Code — so it cannot read SecretStorage or import `'vscode'`. The default response shape on most tools is **compact + size-bounded** (drops avatar URLs, embedded asset metadata, caps body strings/etc.); pass `full=true` to opt into the raw SDK payload unchanged.
+Bundles a Model Context Protocol (MCP) stdio server that exposes Forgejo issues, PRs, CI, releases, search, workflows, and repo navigation to AI coding agents (Claude Code, Codex CLI, GitHub Copilot). The server runs as a child process spawned by the agent — not by VS Code — so it cannot read SecretStorage or import `'vscode'`. **Read-only by design** (per the v2 decision: agents can fully inspect Forgejo state but not mutate it). Most read tools return a compact + size-bounded shape; pass `full=true` to opt into the raw SDK payload unchanged. All list tools take `page` (1-based, default 1) and `page_size` (default 30, max 50) and return a `_meta.pagination` envelope with `has_more` flag.
+
+**v2 hardening:**
+- Strict argument validation (booleans, enums, nested objects with `additionalProperties: false`).
+- `Promise.allSettled` fan-out with `_meta.warnings` — single section failure doesn't kill the whole envelope.
+- Bounded single-page fetches replace the SDK's unbounded `requestAllPages` (DoS protection).
+- `get_attachment` capped at 25 MB + 30 s timeout. `get_file_contents` detects binary + caps at 5 MB.
+- Transport: 16 MB max buffer, 4-concurrent-request limit (prevents client-side DoS).
+- Structured HTTP errors — `ForgejoApiError` surfaces `http_status`/`http_status_text`/`response_body` in a second JSON content block; 429 auto-retries once after 1 s.
+- `get_branch_protection` returns `{protected: false}` on 404 instead of `isError`.
+
+**Tool count: 40** across 11 groups.
 
 | File | Responsibility |
 |---|---|
-| `transport.ts` | Hand-rolled newline-delimited JSON-RPC 2.0 stdio transport (~250 lines, no `@modelcontextprotocol/sdk` dep) |
+| `transport.ts` | Hand-rolled newline-delimited JSON-RPC 2.0 stdio transport (~280 lines, no `@modelcontextprotocol/sdk` dep). Buffer-size cap + concurrency limit. |
 | `config.ts` | `resolveConfig()`: env vars (`FORGEJO_URL`/`TOKEN`/`OWNER`/`REPO`) → `~/.config/forgejo-mcp/instances.json` fallback → throw |
 | `client.ts` | `McpForgejoClient extends ForgejoClient` (from `forgejo-ts`) with `noopLogger` — bypasses extension's `forgejoClient.ts` wrapper (which imports `'vscode'`) |
-| `server.ts` | `buildMcpServer(transport, clientFactory, configFactory)`: JSON-RPC dispatch for `initialize`/`ping`/`tools/list`/`tools/call`; `runServer()` script entry point |
-| `tools/index.ts` | Exports `ALL_TOOLS` array (27 tools) + `findTool(name)`; v2 write tools append here |
-| `tools/framework.ts` | `Tool`/`ToolHandler` interfaces, `resolveOwner`/`resolveRepo`/`resolveNumber` helpers, `ImageToolResult` interface (sentinel `{__image: true, data, mimeType, filename?}`) |
-| `tools/schema.ts` | JSON Schema builders: `ownerSchema`, `repoSchema`, `numberSchema`, `shaSchema`, `branchSchema`, `pathSchema`, `refSchema`, `commentIdSchema`, `releaseIdSchema`, `uuidSchema`, `issueStateSchema`, `pullRequestStateSchema`, `limitSchema`, `fullSchema` (shared `full: boolean` toggle for compact-by-default tools), `objectSchema()` |
-| `tools/{meta,repositories,issues,pullRequests}.ts` | Tool groups: `list_instances`, `get_current_user`, `search_repositories`, `list_issues`, `get_issue` (default fan-out issue + comments + assets in parallel, compact envelope with `_meta`), `list_issue_comments` (compact ConversationSummary), `get_issue_timeline`, `list_repo_labels`, `list_pull_requests` (compact PrListItem[]), `get_pull_request` (default returns the multi-section compact bundle that used to be `get_pull_request_summary`: description/commits/conversation/files_overview + opt-in reviews/ci_status; `full=true` returns raw PR only), `list_pull_request_files`, `list_pull_request_commits` (compact CommitsSummary), `get_pull_request_refs`, `list_pull_request_reviews` (compact), `list_review_comments` |
-| `tools/ciStatus.ts` | 2 tools: `get_pr_ci_status` (resolves PR head SHA → getCommitStatuses → dedup → summary), `get_commit_statuses` (raw SHA) |
+| `server.ts` | `buildMcpServer(transport, clientFactory, configFactory)`: JSON-RPC dispatch for `initialize`/`ping`/`tools/list`/`tools/call`; protocol-version negotiation; structured error translation; 429 retry; `notifications/initialized` handling |
+| `tools/framework.ts` | `Tool`/`ToolHandler`/`ImageToolResult` interfaces, `resolveOwner`/`resolveRepo`/`resolveNumber`/`resolvePagination`/`buildPaginationMeta`/`pagedRequest` helpers |
+| `tools/schema.ts` | JSON Schema builders: `ownerSchema`, `repoSchema`, `numberSchema`, `shaSchema`, `branchSchema`, `pathSchema`, `refSchema`, `commentIdSchema`, `releaseIdSchema`, `uuidSchema`, `issueStateSchema`, `pullRequestStateSchema`, `limitSchema`, `pageSchema`, `pageSizeSchema`, `fullSchema`, `objectSchema()` |
+| `tools/{meta,repositories,issues,pullRequests}.ts` | v1 tools: `list_instances`, `get_current_user`, `search_repositories`, `list_issues` (compact fan-out), `get_issue`, `list_issue_comments`, `get_issue_timeline`, `list_repo_labels`, `list_pull_requests`, `get_pull_request`, `list_pull_request_files`, `list_pull_request_commits`, `get_pull_request_refs`, `list_pull_request_reviews`, `list_review_comments` |
+| `tools/ciStatus.ts` | 2 tools: `get_pr_ci_status` (resolves PR head SHA → paged status fetch → dedup → summary), `get_commit_statuses` (raw SHA) |
 | `tools/reactions.ts` | 2 read tools via `rawRequest`: `list_comment_reactions`, `list_issue_reactions` |
-| `tools/branchProtection.ts` | 2 tools via `rawRequest`: `list_branch_protections`, `get_branch_protection` |
-| `tools/attachments.ts` | 2 tools: `list_issue_attachments` (rawRequest GET `/issues/{n}/assets`), `get_attachment` (fetch bytes → `ImageToolResult` → server emits MCP `{type:'image'}` content block) |
-| `tools/misc.ts` | 4 tools: `list_releases` (compact ReleaseSummary[]), `get_release` (compact), `get_file_contents`, `list_tags`. Default shapes drop tarball_url/zipball_url/browser_download_url; pass `full=true` for the raw SDK object. |
-| `utils/responseFormat.ts` | Pure helpers: `truncateText`, `truncatePatch`, `shortSha`, `compactUser` (returns `{login, full_name?}`), `commitSubject`, `totalAdditions`, `totalDeletions`; section summarizers — `summarizePrDescription`, `summarizeCommits`, `summarizeComments`, `summarizeFilesOverview`, `summarizeReviews`, `summarizeIssue` (compact Issue shape with attachments + dates), `summarizeIssueListItem`, `summarizePrListItem`, `summarizeRelease`; `clampInt`/`readBool` arg helpers — no `vscode` imports |
+| `tools/branchProtection.ts` | 2 tools via `rawRequest`: `list_branch_protections`, `get_branch_protection` (404 → `{protected:false}` envelope) |
+| `tools/attachments.ts` | 2 tools: `list_issue_attachments`, `get_attachment` (25 MB cap + 30 s timeout + Content-Disposition filename hint) |
+| `tools/misc.ts` | 4 tools: `list_releases`, `get_release`, `get_file_contents` (binary detection + size cap), `list_tags` |
+| **`tools/workflows.ts`** | **v2**: 6 tools — `list_workflows`, `list_workflow_runs`, `get_workflow_run`, `get_workflow_jobs`, `get_workflow_logs`, `list_workflow_artifacts` |
+| **`tools/search.ts`** | **v2**: 3 tools — `search_issues` (cross-repo), `search_code`, `search_users` |
+| **`tools/repo.ts`** | **v2**: 4 tools — `list_repo_branches`, `get_branch`, `list_repo_commits`, `compare_commits` |
+| `utils/responseFormat.ts` | Pure helpers: `truncateText`, `truncatePatch`, `shortSha`, `compactUser`, `commitSubject`, `totalAdditions`, `totalDeletions`; section summarizers — `summarizePrDescription`, `summarizeCommits`, `summarizeComments`, `summarizeFilesOverview`, `summarizeReviews`, `summarizeIssue`, `summarizeIssueListItem`, `summarizePrListItem`, `summarizeRelease`; `clampInt`/`readBool` arg helpers — no `vscode` imports. All summarizers null-guard against missing fields (deleted-head PRs, ghost commit authors, missing labels). |
 | `utils/statusDedup.ts` | Pure helpers copied from extension: `deduplicateStatuses()`, `summarizeStatuses()` — no `vscode` imports |
 
 **Why no `@modelcontextprotocol/sdk`:** The official SDK pulls ~5-10MB of transitive deps (express, hono, jose, ajv, zod, pkce-challenge) and its `exports` field is incompatible with `moduleResolution: "node"`. The hand-rolled transport is fully testable and adds zero deps.

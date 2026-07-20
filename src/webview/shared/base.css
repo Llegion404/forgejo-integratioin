@@ -1,0 +1,289 @@
+/*
+ * Shared base stylesheet for all Forgejo webviews.
+ *
+ * Each per-webview styles.css only needs to declare its own truly-specific
+ * rules (e.g. .pr-header, .job-item) and link this file via:
+ *   <link rel="stylesheet" href="${sharedCssUri}">
+ *   <link rel="stylesheet" href="${tokensCssUri}">
+ */
+
+/* ===== Reset + page ===== */
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--forgejo-fg);
+  background-color: var(--forgejo-bg);
+}
+body { padding: 16px 20px 80px; }
+a { color: var(--forgejo-link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ===== Buttons ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 2px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  background-color: var(--forgejo-button-secondary-bg);
+  color: var(--forgejo-button-secondary-fg);
+  transition: background-color 0.15s;
+}
+.btn:hover { background-color: var(--vscode-list-hoverBackground); }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-primary { background-color: var(--forgejo-button-bg); color: var(--forgejo-button-fg); }
+.btn-primary:hover { background-color: var(--forgejo-button-hover-bg); }
+
+.btn-secondary { background-color: var(--forgejo-button-secondary-bg); color: var(--forgejo-button-secondary-fg); }
+
+.btn-success { background-color: var(--forgejo-success); color: #fff; }
+.btn-success:hover { filter: brightness(1.1); }
+
+.btn-danger { background-color: var(--forgejo-danger); color: #fff; }
+.btn-danger:hover { filter: brightness(1.1); }
+
+.btn-sm { padding: 3px 8px; font-size: 12px; }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--forgejo-fg-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 14px;
+}
+.icon-btn:hover { background-color: var(--forgejo-bg-hover); color: var(--forgejo-fg); }
+
+/* ===== Labels / status badges ===== */
+.label {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.label-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  background-color: var(--forgejo-badge-bg);
+  color: var(--forgejo-badge-fg);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.status-badge.open    { background-color: var(--forgejo-success-bg); color: var(--forgejo-success); }
+.status-badge.closed  { background-color: var(--forgejo-danger-bg);  color: var(--forgejo-danger); }
+.status-badge.merged  { background-color: var(--forgejo-purple-bg);  color: var(--forgejo-purple); }
+.status-badge.draft   { background-color: var(--forgejo-warning-bg); color: var(--forgejo-warning); }
+.status-badge.success { background-color: var(--forgejo-success-bg); color: var(--forgejo-success); }
+.status-badge.failure { background-color: var(--forgejo-danger-bg);  color: var(--forgejo-danger); }
+
+/* ===== Markdown body ===== */
+.markdown-body { line-height: 1.55; word-wrap: break-word; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3,
+.markdown-body h4, .markdown-body h5, .markdown-body h6 {
+  margin: 1em 0 0.5em;
+  color: var(--forgejo-fg);
+}
+.markdown-body p { margin: 0.5em 0; }
+.markdown-body ul, .markdown-body ol { margin: 0.5em 0; padding-left: 1.6em; }
+.markdown-body li { margin: 0.2em 0; }
+.markdown-body code {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+  background-color: var(--vscode-textCodeBlock-background, var(--forgejo-bg-hover));
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.markdown-body pre {
+  background-color: var(--vscode-textCodeBlock-background, var(--forgejo-bg-hover));
+  padding: 10px 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.markdown-body pre code { background: none; padding: 0; }
+.markdown-body blockquote {
+  margin: 0.5em 0;
+  padding: 0.2em 0 0.2em 1em;
+  border-left: 3px solid var(--forgejo-border);
+  color: var(--forgejo-fg-muted);
+}
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--forgejo-border);
+  padding: 4px 10px;
+  text-align: left;
+}
+.markdown-body th { background-color: var(--forgejo-bg-hover); font-weight: 600; }
+.markdown-body img { max-width: 100%; }
+.markdown-body hr { border: none; border-top: 1px solid var(--forgejo-border); margin: 1em 0; }
+.markdown-body .task-list-item { list-style: none; }
+.markdown-body .task-list-item input[type=checkbox] { margin-right: 6px; }
+
+/* ===== Modal overlay (shared shell — specific webviews override width) ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background-color: var(--forgejo-bg);
+  border: 1px solid var(--forgejo-border);
+  border-radius: 6px;
+  padding: 20px;
+  min-width: 380px;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modal h3 { margin: 0 0 6px 0; }
+.modal-select, .modal-input, .modal-textarea {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--forgejo-border);
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: 13px;
+  border-radius: 2px;
+}
+.modal-textarea { min-height: 80px; resize: vertical; font-family: var(--vscode-editor-font-family); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+.modal-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--forgejo-fg);
+  cursor: pointer;
+}
+.modal-checkbox input { cursor: pointer; }
+
+/* ===== Skeleton loaders ===== */
+.loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--forgejo-bg-hover) 0%, var(--vscode-list-activeSelectionBackground, rgba(128,128,128,0.15)) 50%, var(--forgejo-bg-hover) 100%);
+  background-size: 200% 100%;
+  animation: forgejo-skeleton-shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+@keyframes forgejo-skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-title    { width: 60%; height: 28px; }
+.skeleton-subtitle { width: 40%; height: 18px; }
+.skeleton-line     { width: 100%; height: 14px; }
+.skeleton-line.short { width: 60%; }
+.skeleton-avatar   { width: 32px; height: 32px; border-radius: 50%; }
+.skeleton-activity { display: flex; gap: 10px; align-items: center; }
+.skeleton-body { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.spinner {
+  width: 28px; height: 28px;
+  border: 3px solid var(--forgejo-border);
+  border-top-color: var(--forgejo-info);
+  border-radius: 50%;
+  animation: forgejo-spin 0.8s linear infinite;
+  margin: 0 auto 10px;
+}
+@keyframes forgejo-spin { to { transform: rotate(360deg); } }
+
+/* ===== Scrollbars (VS Code style) ===== */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: var(--vscode-scrollbarSlider-background);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover { background-color: var(--vscode-scrollbarSlider-hoverBackground); }
+::-webkit-scrollbar-thumb:active { background-color: var(--vscode-scrollbarSlider-activeBackground); }
+
+/* ===== Error banner ===== */
+.error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: var(--forgejo-danger);
+  text-align: center;
+}
+.error-icon { font-size: 32px; }
+.error h3 { margin: 0; color: var(--forgejo-fg); }
+.error p { margin: 0; color: var(--forgejo-fg-muted); }
+
+/* ===== Meta grid (PR/Issue/Release all share this) ===== */
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.meta-section {
+  background-color: var(--vscode-sideBar-background);
+  border: 1px solid var(--forgejo-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.meta-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.meta-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--forgejo-fg-muted);
+}
+.meta-manage-btn {
+  background: transparent;
+  border: none;
+  color: var(--forgejo-link);
+  cursor: pointer;
+  font-size: 12px;
+}
+.meta-manage-btn:hover { text-decoration: underline; }
+.meta-empty { color: var(--forgejo-fg-muted); font-style: italic; font-size: 12px; }

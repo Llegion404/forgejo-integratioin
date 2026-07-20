@@ -2,6 +2,7 @@
   const vscode = acquireVsCodeApi();
   let currentData = null;
   let isReady = false;
+  let pollTimer = null;
 
   console.log('[Forgejo Action Webview] Script loaded');
 
@@ -69,6 +70,42 @@
     openWebBtn.addEventListener('click', () => {
       console.log('[Forgejo Action Webview] Open in Browser clicked');
       vscode.postMessage({ type: 'openInBrowser' });
+    });
+
+    // Delegated handlers for job/step interactions (replaces inline onclick)
+    jobsList.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+
+      const toggleEl = target.closest('[data-action="toggle-job"]');
+      if (toggleEl) {
+        const idx = Number(toggleEl.dataset.jobIndex);
+        const jobItem = jobsList.querySelector(`.job-item[data-job-index="${String(idx)}"]`);
+        if (jobItem) {
+          jobItem.classList.toggle('expanded');
+        }
+        return;
+      }
+
+      const viewLogsBtn = target.closest('[data-action="view-logs"]');
+      if (viewLogsBtn) {
+        const jobIndex = Number(viewLogsBtn.dataset.jobIndex);
+        const job = currentData && currentData.jobs ? currentData.jobs[jobIndex] : null;
+        console.log('[Forgejo Action Webview] View logs clicked for job:', jobIndex, job && job.id);
+        if (!job) {
+          vscode.postMessage({ type: 'refresh' });
+          return;
+        }
+        vscode.postMessage({
+          type: 'viewLogs',
+          jobRef: {
+            jobId: job.id,
+            jobHtmlUrl: job.html_url,
+            jobIndex: jobIndex
+          }
+        });
+        return;
+      }
     });
   }
 
@@ -169,6 +206,28 @@
     // Show content
     setLoading(false);
     console.log('[Forgejo Action Webview] Action details updated successfully');
+
+    // Re-evaluate poll-on-active-run (B3.4.1)
+    scheduleRunPolling(run);
+  }
+
+  // B3.4.1: poll the run while it is still in flight so log/status stay fresh.
+  function scheduleRunPolling(run) {
+    stopRunPolling();
+    if (!run) return;
+    const activeStates = ['in_progress', 'queued', 'waiting', 'blocked'];
+    if (!activeStates.includes(run.status)) return;
+    pollTimer = setInterval(() => {
+      vscode.postMessage({ type: 'refresh' });
+    }, 2000);
+    console.log('[Forgejo Action Webview] Run still', run.status, '— polling every 2s');
+  }
+
+  function stopRunPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
   }
 
   function getOverallStatus(run, jobs) {
@@ -227,7 +286,7 @@
 
       return `
         <div class="job-item" data-job-index="${index}">
-          <div class="job-header ${job.status}" onclick="toggleJob(${index})">
+          <div class="job-header ${job.status}" data-action="toggle-job" data-job-index="${index}">
             <span class="job-status-icon">${statusIcon}</span>
             <span class="job-name">${escapeHtml(job.name)}</span>
             <span class="job-duration">${duration}</span>
@@ -261,7 +320,7 @@
           `;
         }).join('')}
         <div class="step-item" style="justify-content: flex-end;">
-          <button class="view-logs-btn" onclick="viewLogs(${jobIndex})">View Logs</button>
+          <button class="view-logs-btn" data-action="view-logs" data-job-index="${jobIndex}">View Logs</button>
         </div>
       </div>
     `;
@@ -381,31 +440,6 @@
       document.body.classList.add('vscode-high-contrast');
     }
   }
-
-  // Global functions for onclick handlers
-  window.toggleJob = function(jobIndex) {
-    const jobItem = document.querySelector(`.job-item[data-job-index="${jobIndex}"]`);
-    if (jobItem) {
-      jobItem.classList.toggle('expanded');
-    }
-  };
-
-  window.viewLogs = function(jobIndex) {
-    const job = currentData && currentData.jobs ? currentData.jobs[jobIndex] : null;
-    console.log('[Forgejo Action Webview] View logs clicked for job:', jobIndex, job && job.id);
-    if (!job) {
-      vscode.postMessage({ type: 'refresh' });
-      return;
-    }
-    vscode.postMessage({
-      type: 'viewLogs',
-      jobRef: {
-        jobId: job.id,
-        jobHtmlUrl: job.html_url,
-        jobIndex: jobIndex
-      }
-    });
-  };
 
   // Start
   console.log('[Forgejo Action Webview] Starting initialization');

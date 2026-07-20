@@ -3,6 +3,7 @@ import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
 import { PullRequestFile } from '../../models/pullRequest';
 import { logInfo, logError } from '../../utils/logger';
+import { BaseDetailWebviewProvider } from '../shared/baseWebviewProvider';
 
 export type ReviewWebviewMessage =
   | { type: 'ready' }
@@ -34,13 +35,14 @@ interface PanelState {
   number: number;
   isReady: boolean;
   pendingData?: ReviewViewData | null;
+  lastRequestId: number;
 }
 
-export class ReviewProvider {
+export class ReviewProvider extends BaseDetailWebviewProvider<PanelState> {
   public static readonly viewType = 'forgejo.review';
-  private _panels = new Map<string, PanelState>();
+  public readonly viewType = 'forgejo.review';
 
-  constructor(private readonly _extensionUri: vscode.Uri) {}
+  constructor(extensionUri: vscode.Uri) { super(extensionUri); }
 
   public async show(owner: string, repo: string, number: number): Promise<void> {
     logInfo('Showing PR review webview:', { owner, repo, number });
@@ -73,7 +75,8 @@ export class ReviewProvider {
       repo,
       number,
       isReady: false,
-      pendingData: null
+      pendingData: null,
+      lastRequestId: 0
     };
     this._panels.set(panelKey, state);
 
@@ -238,28 +241,22 @@ export class ReviewProvider {
     }
   }
 
-  private _getThemeName(kind: vscode.ColorThemeKind): 'light' | 'dark' | 'high-contrast' {
-    switch (kind) {
-      case vscode.ColorThemeKind.Light: return 'light';
-      case vscode.ColorThemeKind.HighContrast: return 'high-contrast';
-      case vscode.ColorThemeKind.HighContrastLight: return 'high-contrast';
-      default: return 'dark';
-    }
-  }
-
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'review', 'styles.css'));
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'review', 'index.js'));
 
     const nonce = this._getNonce();
+    const csp = this._buildCsp(nonce, webview);
+    const sharedAssets = this._sharedAssetsHtml(webview);
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="${csp}">
   <title>PR Review</title>
+  ${sharedAssets}
   <link rel="stylesheet" href="${styleUri.toString()}">
 </head>
 <body>
@@ -315,14 +312,5 @@ export class ReviewProvider {
   <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
-  }
-
-  private _getNonce(): string {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-      text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
   }
 }

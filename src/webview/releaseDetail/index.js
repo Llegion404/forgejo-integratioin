@@ -45,6 +45,47 @@
       }
     });
 
+    const editBtn = document.getElementById('edit-btn');
+    const editDialog = document.getElementById('edit-dialog');
+    const editName = document.getElementById('edit-name');
+    const editBody = document.getElementById('edit-body');
+    const confirmEditBtn = document.getElementById('confirm-edit-btn');
+    const cancelEditBtn = document.getElementById('cancel-edit-btn');
+    const deleteBtn = document.getElementById('delete-btn');
+    const markLatestBtn = document.getElementById('mark-latest-btn');
+    const togglePrereleaseBtn = document.getElementById('toggle-prerelease-btn');
+
+    if (editBtn) {
+      editBtn.addEventListener('click', () => {
+        if (!currentData?.release) return;
+        editName.value = currentData.release.name || '';
+        editBody.value = currentData.release.body || '';
+        editDialog.style.display = 'flex';
+        editName.focus();
+      });
+    }
+    if (confirmEditBtn) {
+      confirmEditBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'editRelease', name: editName.value, body: editBody.value });
+        editDialog.style.display = 'none';
+      });
+    }
+    if (cancelEditBtn) {
+      cancelEditBtn.addEventListener('click', () => { editDialog.style.display = 'none'; });
+    }
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', () => vscode.postMessage({ type: 'deleteRelease' }));
+    }
+    if (markLatestBtn) {
+      markLatestBtn.addEventListener('click', () => vscode.postMessage({ type: 'markLatest' }));
+    }
+    if (togglePrereleaseBtn) {
+      togglePrereleaseBtn.addEventListener('click', () => {
+        const isPre = currentData?.release?.prerelease === true;
+        vscode.postMessage({ type: 'togglePrerelease', isPrerelease: !isPre });
+      });
+    }
+
     assetsList.addEventListener('click', (e) => {
       var assetItem = e.target.closest('.asset-item');
       if (assetItem && assetItem.dataset.url) {

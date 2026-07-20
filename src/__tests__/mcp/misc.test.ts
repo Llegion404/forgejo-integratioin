@@ -2,6 +2,7 @@ import { buildMcpServer } from '../../mcp/server';
 import { JsonRpcResponse, JsonRpcRequest, JsonRpcMessage } from '../../mcp/transport';
 import { McpInstanceConfig } from '../../mcp/config';
 import { McpForgejoClient } from '../../mcp/client';
+import { ForgejoApiError } from 'forgejo-ts';
 
 const config: McpInstanceConfig = {
 	instanceUrl: 'https://git.example.com',
@@ -10,15 +11,15 @@ const config: McpInstanceConfig = {
 	defaultRepo: 'default-repo',
 };
 
-/** Mock client exposing only the four SDK methods misc tools call. */
-const mockClient: jest.Mocked<
-	Pick<McpForgejoClient, 'listReleases' | 'getRelease' | 'getFileContents' | 'listTags'>
-> = {
-	listReleases: jest.fn(),
+/**
+ * Mock client exposing the surface our rewritten misc tools actually use:
+ * - getRelease (single fetch; unchanged)
+ * - rawRequest (list_releases, list_tags, get_file_contents all paginate via rawRequest now)
+ */
+const mockClient: jest.Mocked<Pick<McpForgejoClient, 'getRelease' | 'rawRequest'>> = {
 	getRelease: jest.fn(),
-	getFileContents: jest.fn(),
-	listTags: jest.fn(),
-} as unknown as jest.Mocked<Pick<McpForgejoClient, 'listReleases' | 'getRelease' | 'getFileContents' | 'listTags'>>;
+	rawRequest: jest.fn(),
+} as unknown as jest.Mocked<Pick<McpForgejoClient, 'getRelease' | 'rawRequest'>>;
 
 async function callTool(name: string, args: unknown): Promise<JsonRpcResponse> {
 	const fakeTransport: { onMessage?: (m: JsonRpcMessage) => Promise<JsonRpcResponse | undefined> } = {};
@@ -42,7 +43,7 @@ describe('MCP misc tools', () => {
 	beforeEach(() => jest.clearAllMocks());
 
 	describe('list_releases', () => {
-		it('calls listReleases(owner, repo): full=true returns raw SDK payload unchanged', async () => {
+		it('calls rawRequest with paged releases path: full=true returns raw SDK payload', async () => {
 			const mockReleases = [
 				{
 					id: 1, tag_name: 'v1.0.0', name: 'First', body: 'changelog',
@@ -52,12 +53,16 @@ describe('MCP misc tools', () => {
 					assets: [{ id: 11, name: 'asset.zip', size: 999, download_count: 3, browser_download_url: 'http://dl' }],
 				},
 			];
-			(mockClient.listReleases as jest.Mock).mockResolvedValue(mockReleases);
+			mockClient.rawRequest.mockResolvedValueOnce(mockReleases);
 
 			const resp = await callTool('list_releases', { owner: 'foo', repo: 'bar', full: true });
 
-			expect(mockClient.listReleases).toHaveBeenCalledWith('foo', 'bar');
-			expect(extractContent(resp)).toEqual(mockReleases);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/releases\?page=1&limit=30/),
+			);
+			const payload = extractContent(resp) as { items: unknown[] };
+			expect(payload.items).toEqual(mockReleases);
 		});
 
 		it('default (full=false) returns compact summaries: bounded body, compact author, assets reduced', async () => {
@@ -72,37 +77,41 @@ describe('MCP misc tools', () => {
 					assets: [{ id: 11, name: 'asset.zip', size: 999, download_count: 3, browser_download_url: 'http://dl' }],
 				},
 			];
-			(mockClient.listReleases as jest.Mock).mockResolvedValue(mockReleases);
+			mockClient.rawRequest.mockResolvedValueOnce(mockReleases);
 
 			const resp = await callTool('list_releases', { owner: 'foo', repo: 'bar' });
-			const payload = extractContent(resp) as Array<Record<string, unknown>>;
+			const payload = extractContent(resp) as { items: Array<Record<string, unknown>> };
 
-			expect(payload).toHaveLength(1);
-			expect(payload[0].id).toBe(1);
-			expect(payload[0].tag_name).toBe('v1.0.0');
-			expect((payload[0].body as { truncated: boolean; original_length: number }).truncated).toBe(true);
-			expect((payload[0].body as { original_length: number }).original_length).toBe(5000);
-			expect(payload[0].author).toEqual({ login: 'alice', full_name: 'Alice' });
-			expect(payload[0].assets).toEqual([{ name: 'asset.zip', size: 999, id: 11, download_count: 3 }]);
-			expect(payload[0]).not.toHaveProperty('tarball_url');
-			expect(payload[0]).not.toHaveProperty('zipball_url');
-			expect((payload[0].author as Record<string, unknown>).avatar_url).toBeUndefined();
+			expect(payload.items).toHaveLength(1);
+			expect(payload.items[0].id).toBe(1);
+			expect(payload.items[0].tag_name).toBe('v1.0.0');
+			expect((payload.items[0].body as { truncated: boolean; original_length: number }).truncated).toBe(true);
+			expect((payload.items[0].body as { original_length: number }).original_length).toBe(5000);
+			expect(payload.items[0].author).toEqual({ login: 'alice', full_name: 'Alice' });
+			expect(payload.items[0].assets).toEqual([{ name: 'asset.zip', size: 999, id: 11, download_count: 3 }]);
+			expect(payload.items[0]).not.toHaveProperty('tarball_url');
+			expect(payload.items[0]).not.toHaveProperty('zipball_url');
+			expect((payload.items[0].author as Record<string, unknown>).avatar_url).toBeUndefined();
 		});
 
-		it('returns empty array when no releases', async () => {
-			(mockClient.listReleases as jest.Mock).mockResolvedValue([]);
+		it('returns empty items array when no releases', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			const resp = await callTool('list_releases', { owner: 'foo', repo: 'bar' });
-			expect(extractContent(resp)).toEqual([]);
+			const payload = extractContent(resp) as { items: unknown[] };
+			expect(payload.items).toEqual([]);
 		});
 
 		it('uses default owner/repo from config', async () => {
-			(mockClient.listReleases as jest.Mock).mockResolvedValue([]);
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_releases', {});
-			expect(mockClient.listReleases).toHaveBeenCalledWith('default-owner', 'default-repo');
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/default-owner\/default-repo\/releases/),
+			);
 		});
 
 		it('wraps API errors as isError: true', async () => {
-			(mockClient.listReleases as jest.Mock).mockRejectedValue(new Error('HTTP 500'));
+			mockClient.rawRequest.mockRejectedValueOnce(new Error('HTTP 500'));
 			const resp = await callTool('list_releases', { owner: 'foo', repo: 'bar' });
 			const result = resp.result as { isError: boolean; content: { text: string }[] };
 			expect(result.isError).toBe(true);
@@ -117,7 +126,7 @@ describe('MCP misc tools', () => {
 				created_at: '2025-01-01T00:00:00Z', published_at: '2025-01-02T00:00:00Z',
 				html_url: 'http://rel/5', tarball_url: 'tb', zipball_url: 'zb', assets: [],
 			};
-			(mockClient.getRelease as jest.Mock).mockResolvedValue(mockRelease);
+			mockClient.getRelease.mockResolvedValueOnce(mockRelease as never);
 
 			const resp = await callTool('get_release', { owner: 'foo', repo: 'bar', id: 5, full: true });
 
@@ -127,14 +136,14 @@ describe('MCP misc tools', () => {
 
 		it('default (full=false) returns compact shape — author reduced, body bounded, tarball_url dropped', async () => {
 			const longBody = 'y'.repeat(3000);
-			(mockClient.getRelease as jest.Mock).mockResolvedValue({
+			mockClient.getRelease.mockResolvedValueOnce({
 				id: 5, tag_name: 'v2.0', name: 'Second', body: longBody,
 				draft: false, prerelease: false,
 				author: { login: 'alice', avatar_url: 'http://x', full_name: 'Alice Liddell' },
 				created_at: '2025-01-01T00:00:00Z', published_at: '2025-01-02T00:00:00Z',
 				html_url: 'http://rel/5', tarball_url: 'tb', zipball_url: 'zb',
 				assets: [{ id: 1, name: 'bin', size: 50, download_count: 0, browser_download_url: 'http://d' }],
-			});
+			} as never);
 
 			const resp = await callTool('get_release', { owner: 'foo', repo: 'bar', id: 5 });
 			const payload = extractContent(resp) as Record<string, unknown>;
@@ -150,9 +159,8 @@ describe('MCP misc tools', () => {
 		});
 
 		it('accepts string-coercible numeric id', async () => {
-			(mockClient.getRelease as jest.Mock).mockResolvedValue({ id: 7 });
+			mockClient.getRelease.mockResolvedValueOnce({ id: 7 } as never);
 			await callTool('get_release', { owner: 'foo', repo: 'bar', id: '7' });
-			// resolveNumber should coerce the string '7' to integer 7
 			expect(mockClient.getRelease).toHaveBeenCalledWith('foo', 'bar', 7);
 		});
 
@@ -171,40 +179,112 @@ describe('MCP misc tools', () => {
 	});
 
 	describe('get_file_contents', () => {
-		it('calls getFileContents(owner, repo, path, ref) in correct order', async () => {
-			(mockClient.getFileContents as jest.Mock).mockResolvedValue('# Test Repo\n\nA README.');
+		it('returns decoded text content for a small text file', async () => {
+			// rawRequest returns the Forgejo contents envelope (JSON), not the
+			// pre-decoded string the SDK wrapper returned. Our tool now inspects
+			// size/encoding and decodes base64 itself.
+			const textContent = '# Test Repo\n\nA README.';
+			mockClient.rawRequest.mockResolvedValueOnce({
+				content: Buffer.from(textContent, 'utf8').toString('base64'),
+				encoding: 'base64',
+				size: textContent.length,
+				name: 'README.md',
+				path: 'README.md',
+				sha: 's'.repeat(40),
+				html_url: 'http://x',
+			});
 
 			const resp = await callTool('get_file_contents', {
 				owner: 'foo', repo: 'bar', path: 'README.md', ref: 'main',
 			});
 
-			expect(mockClient.getFileContents).toHaveBeenCalledWith('foo', 'bar', 'README.md', 'main');
-			// get_file_contents returns a raw string (not a JSON object), so the
-			// server's text content is the file content verbatim — no JSON.parse.
-			const result = resp.result as { content: { text: string }[] };
-			expect(result.content[0].text).toBe('# Test Repo\n\nA README.');
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/contents\/README\.md\?ref=main/),
+			);
+			const payload = extractContent(resp) as Record<string, unknown>;
+			expect(payload.is_binary).toBe(false);
+			expect(payload.content).toBe(textContent);
+			expect(payload.encoding).toBe('utf8');
+			expect(payload.size).toBe(textContent.length);
 		});
 
 		it('passes through file paths containing slashes', async () => {
-			(mockClient.getFileContents as jest.Mock).mockResolvedValue('src code');
+			const text = 'src code';
+			mockClient.rawRequest.mockResolvedValueOnce({
+				content: Buffer.from(text, 'utf8').toString('base64'),
+				encoding: 'base64',
+				size: text.length,
+				name: 'index.ts',
+				path: 'src/index.ts',
+			});
 			await callTool('get_file_contents', {
 				owner: 'foo', repo: 'bar', path: 'src/index.ts', ref: 'main',
 			});
-			expect(mockClient.getFileContents).toHaveBeenCalledWith('foo', 'bar', 'src/index.ts', 'main');
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/contents\/src%2Findex\.ts\?ref=main/),
+			);
 		});
 
 		it('accepts a commit SHA as ref', async () => {
-			(mockClient.getFileContents as jest.Mock).mockResolvedValue('content');
+			const text = 'content';
+			mockClient.rawRequest.mockResolvedValueOnce({
+				content: Buffer.from(text, 'utf8').toString('base64'),
+				encoding: 'base64',
+				size: text.length,
+				name: 'file.txt',
+				path: 'file.txt',
+			});
 			await callTool('get_file_contents', {
 				owner: 'foo', repo: 'bar', path: 'file.txt', ref: '0'.repeat(40),
 			});
-			expect(mockClient.getFileContents).toHaveBeenCalledWith('foo', 'bar', 'file.txt', '0'.repeat(40));
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/ref=0{40}/),
+			);
 		});
 
-		it('requires ref argument (handler-throws via resolveOwner when only path given)', async () => {
-			// `path` is required at schema level, so {owner,repo,path} passes validation.
-			// But `ref` is also required at schema level — wait, ref IS in required[] list.
-			// So {owner,repo,path} missing ref SHOULD fail schema validation.
+		it('returns binary envelope for files over max_bytes', async () => {
+			// Pretend the file is 2 MB; default max_bytes is 512 KB.
+			const hugeContent = Buffer.alloc(2 * 1024 * 1024, 65).toString('base64');
+			mockClient.rawRequest.mockResolvedValueOnce({
+				content: hugeContent,
+				encoding: 'base64',
+				size: 2 * 1024 * 1024,
+				name: 'big.bin',
+				path: 'big.bin',
+			});
+			const resp = await callTool('get_file_contents', {
+				owner: 'foo', repo: 'bar', path: 'big.bin', ref: 'main',
+			});
+			const payload = extractContent(resp) as Record<string, unknown>;
+			expect(payload.is_binary).toBe(true);
+			expect(payload.truncated).toBe(true);
+			expect(payload.content).toBeUndefined();
+			expect(payload.warning).toMatch(/exceeds max_bytes/);
+		});
+
+		it('returns binary envelope when decoded content has NUL bytes', async () => {
+			// NUL byte in first 8 KB → looksBinary returns true.
+			const binary = Buffer.from('hello\u0000world', 'utf8').toString('base64');
+			mockClient.rawRequest.mockResolvedValueOnce({
+				content: binary,
+				encoding: 'base64',
+				size: 11,
+				name: 'data.bin',
+				path: 'data.bin',
+			});
+			const resp = await callTool('get_file_contents', {
+				owner: 'foo', repo: 'bar', path: 'data.bin', ref: 'main',
+			});
+			const payload = extractContent(resp) as Record<string, unknown>;
+			expect(payload.is_binary).toBe(true);
+			expect(payload.warning).toMatch(/binary/i);
+			expect(payload.content).toBeUndefined();
+		});
+
+		it('requires ref argument', async () => {
 			const resp = await callTool('get_file_contents', { owner: 'foo', repo: 'bar', path: 'README.md' });
 			const result = resp.result as { isError: boolean; content: { text: string }[] };
 			expect(result.isError).toBe(true);
@@ -212,8 +292,8 @@ describe('MCP misc tools', () => {
 		});
 
 		it('wraps 404 errors as isError: true', async () => {
-			(mockClient.getFileContents as jest.Mock).mockRejectedValue(
-				new Error('HTTP 404: file not found'),
+			mockClient.rawRequest.mockRejectedValueOnce(
+				new ForgejoApiError(404, 'Not Found', 'file not found'),
 			);
 			const resp = await callTool('get_file_contents', {
 				owner: 'foo', repo: 'bar', path: 'nope.md', ref: 'main',
@@ -221,37 +301,48 @@ describe('MCP misc tools', () => {
 			const result = resp.result as { isError: boolean; content: { text: string }[] };
 			expect(result.isError).toBe(true);
 			expect(result.content[0].text).toContain('HTTP 404');
+			// Structured second content block should include http_status.
+			const structured = JSON.parse(result.content[1].text);
+			expect(structured.http_status).toBe(404);
 		});
 	});
 
 	describe('list_tags', () => {
-		it('calls listTags(owner, repo) and returns Tag[]', async () => {
+		it('calls rawRequest with paged tags path and returns Tag[]', async () => {
 			const mockTags = [
 				{ name: 'v1.0', id: 'abc', message: 'release 1.0', commit: { sha: 'def', url: '' } },
 				{ name: 'v0.9', id: 'xyz', message: 'release 0.9', commit: { sha: '123', url: '' } },
 			];
-			(mockClient.listTags as jest.Mock).mockResolvedValue(mockTags);
+			mockClient.rawRequest.mockResolvedValueOnce(mockTags);
 
 			const resp = await callTool('list_tags', { owner: 'foo', repo: 'bar' });
 
-			expect(mockClient.listTags).toHaveBeenCalledWith('foo', 'bar');
-			expect(extractContent(resp)).toEqual(mockTags);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/tags\?page=1&limit=30/),
+			);
+			const payload = extractContent(resp) as { items: unknown[] };
+			expect(payload.items).toEqual(mockTags);
 		});
 
-		it('returns empty array when repo has no tags', async () => {
-			(mockClient.listTags as jest.Mock).mockResolvedValue([]);
+		it('returns empty items array when repo has no tags', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			const resp = await callTool('list_tags', { owner: 'foo', repo: 'bar' });
-			expect(extractContent(resp)).toEqual([]);
+			const payload = extractContent(resp) as { items: unknown[] };
+			expect(payload.items).toEqual([]);
 		});
 
 		it('uses default owner/repo from config', async () => {
-			(mockClient.listTags as jest.Mock).mockResolvedValue([]);
+			mockClient.rawRequest.mockResolvedValueOnce([]);
 			await callTool('list_tags', {});
-			expect(mockClient.listTags).toHaveBeenCalledWith('default-owner', 'default-repo');
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/default-owner\/default-repo\/tags/),
+			);
 		});
 
 		it('wraps API errors as isError: true', async () => {
-			(mockClient.listTags as jest.Mock).mockRejectedValue(new Error('HTTP 403: forbidden'));
+			mockClient.rawRequest.mockRejectedValueOnce(new ForgejoApiError(403, 'Forbidden', 'denied'));
 			const resp = await callTool('list_tags', { owner: 'foo', repo: 'bar' });
 			const result = resp.result as { isError: boolean; content: { text: string }[] };
 			expect(result.isError).toBe(true);

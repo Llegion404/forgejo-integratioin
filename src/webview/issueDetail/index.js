@@ -2,8 +2,27 @@
   const vscode = acquireVsCodeApi();
   let currentData = null;
   let isReady = false;
+  let modalIdCounter = 0;
+  const modalResolvers = new Map();
 
   console.log('[Forgejo Issue Webview] Script loaded');
+
+  // Promise-based modal helpers (postMessage round-trip through the extension)
+  function showConfirm(message) {
+    return new Promise((resolve) => {
+      const id = ++modalIdCounter;
+      modalResolvers.set(id, resolve);
+      vscode.postMessage({ type: 'showConfirm', id, message });
+    });
+  }
+
+  function showInputBox(prompt, defaultValue) {
+    return new Promise((resolve) => {
+      const id = ++modalIdCounter;
+      modalResolvers.set(id, resolve);
+      vscode.postMessage({ type: 'showInputBox', id, prompt, defaultValue: defaultValue || '' });
+    });
+  }
 
   // DOM Elements
   const loadingEl = document.getElementById('loading');
@@ -267,7 +286,6 @@
         picker.dataset.isIssueReaction = '';
         return;
       }
-      }
 
       var copyBtn = e.target.closest('.copy-comment-btn');
       if (copyBtn) {
@@ -318,9 +336,8 @@
         if (editorEl && commentId > 0) {
           var newBody = editorEl.querySelector('.edit-comment-textarea').value;
           vscode.postMessage({ type: 'editComment', commentId: commentId, body: newBody });
-          editorEl.style.display = 'none';
-          var bodyEl = editorEl.closest('.activity-content')?.querySelector('.activity-body');
-          if (bodyEl) bodyEl.style.display = 'block';
+          saveEditBtn.disabled = true;
+          saveEditBtn.textContent = 'Saving...';
         }
         return;
       }
@@ -354,9 +371,9 @@
         var activityItem = deleteBtn.closest('[data-comment-id]');
         if (activityItem && activityItem.dataset.commentId) {
           var commentId = parseInt(activityItem.dataset.commentId, 10);
-          if (confirm('Delete this comment?')) {
-            vscode.postMessage({ type: 'deleteComment', commentId: commentId });
-          }
+          showConfirm('Delete this comment?').then(function(ok) {
+            if (ok) vscode.postMessage({ type: 'deleteComment', commentId: commentId });
+          });
         }
         return;
       }
@@ -412,9 +429,9 @@
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const label = btn.dataset.label;
-        if (confirm(`Remove label "${label}"?`)) {
-          vscode.postMessage({ type: 'removeLabel', label });
-        }
+        showConfirm('Remove label "' + label + '"?').then(function(ok) {
+          if (ok) vscode.postMessage({ type: 'removeLabel', label });
+        });
       });
     });
 
@@ -423,9 +440,9 @@
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const assignee = btn.dataset.assignee;
-        if (confirm(`Remove assignee "${assignee}"?`)) {
-          vscode.postMessage({ type: 'removeAssignees', assignees: [assignee] });
-        }
+        showConfirm('Remove assignee "' + assignee + '"?').then(function(ok) {
+          if (ok) vscode.postMessage({ type: 'removeAssignees', assignees: [assignee] });
+        });
       });
     });
 
@@ -433,10 +450,11 @@
     const addLabelBtn = document.getElementById('add-label-btn');
     if (addLabelBtn) {
       addLabelBtn.addEventListener('click', () => {
-        var label = prompt('Enter label name:');
-        if (label && label.trim()) {
-          vscode.postMessage({ type: 'addLabels', labels: [label.trim()] });
-        }
+        showInputBox('Enter label name:').then(function(label) {
+          if (label && label.trim()) {
+            vscode.postMessage({ type: 'addLabels', labels: [label.trim()] });
+          }
+        });
       });
     }
 
@@ -444,10 +462,11 @@
     const addAssigneeBtn = document.getElementById('add-assignee-btn');
     if (addAssigneeBtn) {
       addAssigneeBtn.addEventListener('click', () => {
-        var assignee = prompt('Enter username:');
-        if (assignee && assignee.trim()) {
-          vscode.postMessage({ type: 'addAssignees', assignees: [assignee.trim()] });
-        }
+        showInputBox('Enter username:').then(function(assignee) {
+          if (assignee && assignee.trim()) {
+            vscode.postMessage({ type: 'addAssignees', assignees: [assignee.trim()] });
+          }
+        });
       });
     }
   }
@@ -508,7 +527,25 @@
             }
           }
           if (message.action === 'editComment') {
-            // Content will be refreshed from API
+            // On success: data will be refreshed from API and DOM replaced.
+            // On failure: re-enable any open Save buttons so user can retry.
+            if (!message.success) {
+              document.querySelectorAll('.save-edit-btn').forEach(function(btn) {
+                btn.disabled = false;
+                btn.textContent = 'Save';
+              });
+            }
+          }
+          break;
+        case 'modalResult':
+          console.log('[Forgejo Issue Webview] Modal result received for id:', message.id);
+          {
+            const resolver = modalResolvers.get(message.id);
+            if (resolver) {
+              modalResolvers.delete(message.id);
+              if (typeof message.confirmed === 'boolean') resolver(message.confirmed);
+              else resolver(message.value);
+            }
           }
           break;
         default:
@@ -1112,16 +1149,12 @@
   }
 
   function getContrastColor(hexColor) {
-    // Convert hex to RGB
-    const r = parseInt(hexColor.substr(0, 2), 16);
-    const g = parseInt(hexColor.substr(2, 2), 16);
-    const b = parseInt(hexColor.substr(4, 2), 16);
-
-    // Calculate luminance
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-    // Return black or white based on luminance
-    return luminance > 0.5 ? '#000000' : '#ffffff';
+    let hex = (hexColor || '000000').replace('#', '');
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#000000' : '#ffffff';
   }
 
   function applyTheme(theme) {

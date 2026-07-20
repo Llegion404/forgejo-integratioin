@@ -20,7 +20,7 @@
  * case where an agent needs an omitted field.
  */
 
-import { Tool, resolveOwner, resolveRepo, resolveNumber } from './framework';
+import { Tool, resolveOwner, resolveRepo, resolveNumber, resolvePagination, buildPaginationMeta, pagedRequest } from './framework';
 import {
 	objectSchema,
 	ownerSchema,
@@ -28,6 +28,8 @@ import {
 	numberSchema,
 	issueStateSchema,
 	fullSchema,
+	pageSchema,
+	pageSizeSchema,
 } from './schema';
 import {
 	summarizeIssue,
@@ -51,13 +53,17 @@ export const listIssuesTool: Tool = {
 		'({login, full_name?}), labels (names only), and comment count. ' +
 		'Use state=open (default), closed, or all. PRs are NOT included ' +
 		'(the SDK filters them). Pass full=true for the raw SDK payload ' +
-		'(untouched, includes avatar_urls, assets, milestone, assignee, etc.).',
+		'(untouched, includes avatar_urls, assets, milestone, assignee, etc.). ' +
+		'Paginated: pass page (default 1) and page_size (default 30, max 50). ' +
+		'Response includes _meta.pagination.has_more to signal more pages.',
 	inputSchema: objectSchema(
 		{
 			owner: ownerSchema,
 			repo: repoSchema,
 			state: issueStateSchema,
 			full: fullSchema,
+			page: pageSchema,
+			page_size: pageSizeSchema,
 			max_body_length: {
 				type: 'integer',
 				minimum: 100,
@@ -72,14 +78,18 @@ export const listIssuesTool: Tool = {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
 		const state = (args['state'] as 'open' | 'closed' | 'all' | undefined) ?? 'open';
-		const issues = await client.listIssues(owner, repo, state);
+		const { page, pageSize } = resolvePagination(args);
+		const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?state=${state}&type=issues`;
+		const issues = await pagedRequest<Issue>(client, path, page, pageSize);
+		const pagination = buildPaginationMeta(page, pageSize, issues.length);
 		if (readBool(args.full, false)) {
-			return issues;
+			return { items: issues, _meta: { pagination } };
 		}
 		const maxBodyLength = clampInt(args.max_body_length, 100, 20000, DEFAULT_MAX_BODY_LENGTH);
-		// SDK declares IssueListItem[] but the real Forgejo API returns the
-		// full Issue shape (body, labels, assignees included). Cast to widen.
-		return (issues as unknown as Issue[]).map((i) => summarizeIssueListItem(i, { maxBodyLength }));
+		return {
+			items: issues.map((i) => summarizeIssueListItem(i, { maxBodyLength })),
+			_meta: { pagination },
+		};
 	},
 };
 
@@ -145,18 +155,53 @@ export const getIssueTool: Tool = {
 		// Fan out in parallel: issue + comments at once. Saves a round-trip
 		// when the agent will need both (the usual case — to fully take
 		// over an issue, you need the conversation thread).
-		const [issue, comments] = await Promise.all([
-			client.getIssue(owner, repo, number) as Promise<Issue>,
-			wantConversation
-				? (client.getIssueComments(owner, repo, number) as Promise<IssueComment[]>)
-				: Promise.resolve([] as IssueComment[]),
-		]);
+		//
+		// Use Promise.allSettled instead of Promise.all so a single
+		// failing fan-out branch (e.g. comments 403 on a private repo)
+		// doesn't discard the rest. The primary `getIssue` failure still
+		// throws (rejection becomes the tool's isError response); only the
+		// *secondary* fetches degrade to warnings.
+		//
+		// Conversation fetch is bounded to a single page of size maxComments
+		// (default 50, max 200) instead of the SDK's unbounded auto-paging
+		// — prevents DoS on issues with thousands of comments.
+		const issuePromise = client.getIssue(owner, repo, number) as Promise<Issue>;
+		const commentsPromise = wantConversation
+			? pagedRequest<IssueComment>(
+				client,
+				`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments`,
+				1,
+				maxComments,
+			)
+			: Promise.resolve([] as IssueComment[]);
+
+		const [issueSettled, commentsSettled] = await Promise.allSettled([issuePromise, commentsPromise]);
+
+		// Primary failure → throw (server wraps as MCP error).
+		if (issueSettled.status !== 'fulfilled') {
+			throw issueSettled.reason instanceof Error
+				? issueSettled.reason
+				: new Error(String(issueSettled.reason));
+		}
+		const issue = issueSettled.value;
+
+		const warnings: string[] = [];
+		let comments: IssueComment[] = [];
+		if (wantConversation) {
+			if (commentsSettled.status === 'fulfilled') {
+				comments = commentsSettled.value;
+			} else {
+				const reason = commentsSettled.reason;
+				const msg = reason instanceof Error ? reason.message : String(reason);
+				warnings.push(`Failed to fetch conversation: ${msg}`);
+			}
+		}
 
 		const summary: IssueSummary = summarizeIssue(issue, { maxBodyLength });
 
 		let conversation: ConversationSummary | undefined;
 		let anyTruncated = summary.body.truncated;
-		if (wantConversation) {
+		if (wantConversation && comments.length > 0) {
 			conversation = summarizeComments(comments, { maxItems: maxComments, maxBodyLength });
 			if (conversation.truncated) {
 				anyTruncated = true;
@@ -164,22 +209,31 @@ export const getIssueTool: Tool = {
 			if (conversation.items.some((c) => c.body.truncated)) {
 				anyTruncated = true;
 			}
+		} else if (wantConversation && comments.length === 0 && warnings.length === 0) {
+			// Synthesize an empty conversation so the agent can tell "no
+			// comments yet" apart from "didn't fetch comments".
+			conversation = { total: 0, returned: 0, truncated: false, items: [] };
+		}
+
+		const _meta: Record<string, unknown> = {
+			truncated: anyTruncated,
+			caps: {
+				max_body_length: maxBodyLength,
+				max_comments: maxComments,
+			},
+			hint:
+				'For the raw unchanged issue object pass full=true. ' +
+				'For full timeline events call get_issue_timeline. ' +
+				'For full comment list (no caps) call list_issue_comments with full=true.',
+		};
+		if (warnings.length > 0) {
+			_meta.warnings = warnings;
 		}
 
 		return {
 			...summary,
 			conversation,
-			_meta: {
-				truncated: anyTruncated,
-				caps: {
-					max_body_length: maxBodyLength,
-					max_comments: maxComments,
-				},
-				hint:
-					'For the raw unchanged issue object pass full=true. ' +
-					'For full timeline events call get_issue_timeline. ' +
-					'For full comment list (no caps) call list_issue_comments with full=true.',
-			},
+			_meta,
 		};
 	},
 };
@@ -192,13 +246,15 @@ export const listIssueCommentsTool: Tool = {
 		'comment has {id, author:{login,full_name?}, created_at, body ' +
 		'(bounded ≤2000 chars)}. Pass full=true for the raw SDK payload ' +
 		'(untouched html_url, full user objects, unbounded bodies). ' +
-		'Paginated automatically.',
+		'Paginated: pass page (default 1) and page_size (default 30, max 50).',
 	inputSchema: objectSchema(
 		{
 			owner: ownerSchema,
 			repo: repoSchema,
 			number: numberSchema,
 			full: fullSchema,
+			page: pageSchema,
+			page_size: pageSizeSchema,
 			max_body_length: {
 				type: 'integer',
 				minimum: 100,
@@ -213,12 +269,18 @@ export const listIssueCommentsTool: Tool = {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
 		const number = resolveNumber(args, 'number');
-		const comments: IssueComment[] = await client.getIssueComments(owner, repo, number);
+		const { page, pageSize } = resolvePagination(args);
+		const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments`;
+		const comments = await pagedRequest<IssueComment>(client, path, page, pageSize);
+		const pagination = buildPaginationMeta(page, pageSize, comments.length);
 		if (readBool(args.full, false)) {
-			return comments;
+			return { items: comments, _meta: { pagination } };
 		}
 		const maxBodyLength = clampInt(args.max_body_length, 100, 20000, DEFAULT_MAX_BODY_LENGTH);
-		return summarizeComments(comments, { maxItems: DEFAULT_MAX_COMMENTS, maxBodyLength });
+		return {
+			items: summarizeComments(comments, { maxItems: pageSize, maxBodyLength }).items,
+			_meta: { pagination },
+		};
 	},
 };
 
@@ -228,12 +290,15 @@ export const getIssueTimelineTool: Tool = {
 		'Fetch the timeline of an issue — every event (opened, closed, ' +
 		'labeled, assigned, locked, referenced, cross-referenced, etc.) ' +
 		'in chronological order. Useful for understanding the history of an ' +
-		'issue without reading every comment. Paginated automatically.',
+		'issue without reading every comment. Paginated: pass page (default 1) ' +
+		'and page_size (default 30, max 50).',
 	inputSchema: objectSchema(
 		{
 			owner: ownerSchema,
 			repo: repoSchema,
 			number: numberSchema,
+			page: pageSchema,
+			page_size: pageSizeSchema,
 		},
 		[],
 	),
@@ -241,7 +306,11 @@ export const getIssueTimelineTool: Tool = {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
 		const number = resolveNumber(args, 'number');
-		return client.getIssueTimeline(owner, repo, number);
+		const { page, pageSize } = resolvePagination(args);
+		const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/timeline`;
+		const items = await pagedRequest(client, path, page, pageSize);
+		const pagination = buildPaginationMeta(page, pageSize, items.length);
+		return { items, _meta: { pagination } };
 	},
 };
 

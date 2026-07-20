@@ -93,3 +93,90 @@ export function resolveNumber(args: Record<string, unknown>, key: string): numbe
 	}
 	throw new Error(`'${key}' must be a positive integer`);
 }
+
+/**
+ * Pagination metadata returned by every list tool. Agents read this to know
+ * whether more pages exist and how to fetch them.
+ */
+export interface PaginationMeta {
+	/** 1-based page number that was fetched. */
+	page: number;
+	/** Page size used for the fetch. */
+	page_size: number;
+	/** Number of items actually returned (may be < page_size on the last page). */
+	returned: number;
+	/** True when the returned items count equals the page size, suggesting more pages exist. */
+	has_more: boolean;
+}
+
+/**
+ * Clamp a tool arg to a positive integer in `[min, max]`, falling back to
+ * `fallback` when missing/invalid. Mirrors responseFormat.clampInt but lives
+ * here to keep framework.ts self-contained for tool handlers.
+ */
+function clampIntArg(value: unknown, min: number, max: number, fallback: number): number {
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		return Math.min(max, Math.max(min, Math.trunc(value)));
+	}
+	if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+		return Math.min(max, Math.max(min, parseInt(value.trim(), 10)));
+	}
+	return fallback;
+}
+
+/**
+ * Resolve `page` and `page_size` tool args. Both default to 1 and 30
+ * respectively; both clamp to their schema-declared ranges. Centralised
+ * here so every paginated tool behaves identically.
+ */
+export function resolvePagination(
+	args: Record<string, unknown>,
+	defaultPageSize = 30,
+	maxPageSize = 50,
+): { page: number; pageSize: number } {
+	return {
+		page: clampIntArg(args.page, 1, 10_000, 1),
+		pageSize: clampIntArg(args.page_size, 1, maxPageSize, defaultPageSize),
+	};
+}
+
+/**
+ * Build the pagination metadata block from the resolved args and the
+ * number of items the fetch returned.
+ */
+export function buildPaginationMeta(
+	page: number,
+	pageSize: number,
+	returned: number,
+): PaginationMeta {
+	return {
+		page,
+		page_size: pageSize,
+		returned,
+		has_more: returned >= pageSize,
+	};
+}
+
+/**
+ * Perform a SINGLE-PAGE paged GET against the Forgejo API. Replaces the
+ * SDK's `requestAllPages` (which would fetch every page until empty) with
+ * a single bounded request — prevents DoS on large repos (a 10 000-issue
+ * repo previously caused 200+ sequential page requests).
+ *
+ * `path` should already be URL-encoded; this helper appends
+ * `?page=&page_size=` (or `&page=&page_size=` if path already has a `?`).
+ *
+ * Returns the raw parsed array (untouched). Callers apply compact
+ * summarizers after the fetch.
+ */
+export async function pagedRequest<T = unknown>(
+	client: { rawRequest: <R = unknown>(method: string, endpoint: string) => Promise<R> },
+	path: string,
+	page: number,
+	pageSize: number,
+): Promise<T[]> {
+	const sep = path.includes('?') ? '&' : '?';
+	const pagedPath = `${path}${sep}page=${page}&limit=${pageSize}`;
+	const result = await client.rawRequest<unknown>('GET', pagedPath);
+	return Array.isArray(result) ? (result as T[]) : [];
+}

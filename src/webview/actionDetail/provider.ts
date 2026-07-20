@@ -3,6 +3,7 @@ import { ForgejoClient } from '../../api/forgejoClient';
 import { getForgejoConfig } from '../../utils/config';
 import { WorkflowRun, WorkflowRunListItem, WorkflowJob, WorkflowJobRef } from '../../models/action';
 import { logDebug, logInfo, logError } from '../../utils/logger';
+import { BaseDetailWebviewProvider } from '../shared/baseWebviewProvider';
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -45,13 +46,14 @@ interface PanelState {
   isReady: boolean;
   pendingData?: ActionDetailViewData | null;
   pendingError?: string | null;
+  lastRequestId: number;
 }
 
-export class ActionDetailWebviewProvider {
+export class ActionDetailWebviewProvider extends BaseDetailWebviewProvider<PanelState> {
   public static readonly viewType = 'forgejo.actionDetail';
-  private _panels = new Map<string, PanelState>();
+  public readonly viewType = 'forgejo.actionDetail';
 
-  constructor(private readonly _extensionUri: vscode.Uri) {}
+  constructor(extensionUri: vscode.Uri) { super(extensionUri); }
 
   public async showActionDetails(owner: string, repo: string, run: WorkflowRunListItem): Promise<void> {
     const runId = run.id;
@@ -87,7 +89,8 @@ export class ActionDetailWebviewProvider {
       run,
       isReady: false,
       pendingData: null,
-      pendingError: null
+      pendingError: null,
+      lastRequestId: 0
     };
     this._panels.set(panelKey, state);
 
@@ -113,8 +116,9 @@ export class ActionDetailWebviewProvider {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
+    const requestId = ++state.lastRequestId;
     const { panel, owner, repo, run } = state;
-    logInfo('_fetchActionData starting:', { panelKey, isReady: state.isReady });
+    logInfo('_fetchActionData starting:', { panelKey, isReady: state.isReady, requestId });
 
     try {
       const config = await getForgejoConfig();
@@ -136,6 +140,10 @@ export class ActionDetailWebviewProvider {
       let jobs: WorkflowJob[] = [];
       try {
         const jobsResponse = await client.getWorkflowJobs(owner, repo, run.id);
+        if (requestId !== state.lastRequestId) {
+          logInfo('Action fetch superseded by newer request, ignoring', { requestId });
+          return;
+        }
         jobs = jobsResponse.jobs;
         logInfo('Jobs fetched:', { jobCount: jobs.length });
       } catch (jobError) {
@@ -315,28 +323,22 @@ export class ActionDetailWebviewProvider {
     }
   }
 
-  private _getThemeName(kind: vscode.ColorThemeKind): 'light' | 'dark' | 'high-contrast' {
-    switch (kind) {
-      case vscode.ColorThemeKind.Light: return 'light';
-      case vscode.ColorThemeKind.HighContrast: return 'high-contrast';
-      case vscode.ColorThemeKind.HighContrastLight: return 'high-contrast';
-      default: return 'dark';
-    }
-  }
-
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'actionDetail', 'styles.css'));
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'actionDetail', 'index.js'));
 
     const nonce = this._getNonce();
+    const csp = this._buildCsp(nonce, webview);
+    const sharedAssets = this._sharedAssetsHtml(webview);
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https:;">
+  <meta http-equiv="Content-Security-Policy" content="${csp}">
   <title>Action Details</title>
+  ${sharedAssets}
   <link rel="stylesheet" href="${styleUri.toString()}">
 </head>
 <body>
@@ -408,14 +410,5 @@ export class ActionDetailWebviewProvider {
   <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
-  }
-
-  private _getNonce(): string {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-      text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
   }
 }

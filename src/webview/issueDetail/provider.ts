@@ -4,6 +4,7 @@ import { getForgejoConfig } from '../../utils/config';
 import { Issue } from '../../models/issue';
 import { Reaction } from '../../models/comment';
 import { logDebug, logInfo, logError } from '../../utils/logger';
+import { BaseDetailWebviewProvider } from '../shared/baseWebviewProvider';
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -28,7 +29,9 @@ export type WebviewMessage =
   | { type: 'addAssignees'; assignees: string[] }
   | { type: 'removeAssignees'; assignees: string[] }
   | { type: 'lockIssue'; reason?: string }
-  | { type: 'unlockIssue' };
+  | { type: 'unlockIssue' }
+  | { type: 'showConfirm'; id: number; message: string }
+  | { type: 'showInputBox'; id: number; prompt: string; defaultValue?: string };
 
 export interface IssueActivity {
   type: 'comment' | 'timeline';
@@ -59,13 +62,14 @@ interface PanelState {
   number: number;
   isReady: boolean;
   pendingData?: IssueDetailViewData | null;
+  lastRequestId: number;
 }
 
-export class IssueDetailWebviewProvider {
+export class IssueDetailWebviewProvider extends BaseDetailWebviewProvider<PanelState> {
   public static readonly viewType = 'forgejo.issueDetail';
-  private _panels = new Map<string, PanelState>();
+  public readonly viewType = 'forgejo.issueDetail';
 
-  constructor(private readonly _extensionUri: vscode.Uri) {}
+  constructor(extensionUri: vscode.Uri) { super(extensionUri); }
 
   public async showIssueDetails(owner: string, repo: string, number: number): Promise<void> {
     logInfo('Showing Issue details in webview:', { owner, repo, number });
@@ -98,7 +102,8 @@ export class IssueDetailWebviewProvider {
       repo,
       number,
       isReady: false,
-      pendingData: null
+      pendingData: null,
+      lastRequestId: 0
     };
     this._panels.set(panelKey, state);
 
@@ -124,8 +129,9 @@ export class IssueDetailWebviewProvider {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
+    const requestId = ++state.lastRequestId;
     const { panel, owner, repo, number } = state;
-    logInfo('_fetchIssueData starting:', { panelKey, isReady: state.isReady });
+    logInfo('_fetchIssueData starting:', { panelKey, isReady: state.isReady, requestId });
 
     try {
       const config = await getForgejoConfig();
@@ -134,15 +140,27 @@ export class IssueDetailWebviewProvider {
       const client = new ForgejoClient(config.instanceUrl, config.token);
       logInfo('Fetching Issue details from API...');
       const issueDetails = await client.getIssueDetails(owner, repo, number);
+      if (requestId !== state.lastRequestId) {
+        logInfo('Issue fetch superseded by newer request, ignoring', { requestId });
+        return;
+      }
       logInfo('Issue details fetched:', { title: issueDetails.title });
 
       const activities = await this._fetchActivities(client, owner, repo, number);
+      if (requestId !== state.lastRequestId) {
+        logInfo('Issue fetch (activities) superseded, ignoring', { requestId });
+        return;
+      }
       logInfo('Activities fetched:', { activities: activities.length });
 
       let issueReactions: Reaction[] = [];
       try {
         issueReactions = await client.getIssueReactions(owner, repo, issueDetails.id);
       } catch (e) { logDebug('Could not fetch issue reactions:', e); }
+      if (requestId !== state.lastRequestId) {
+        logInfo('Issue fetch (reactions) superseded, ignoring', { requestId });
+        return;
+      }
 
       state.pendingData = { issue: issueDetails, activities, issueReactions, owner, repo };
       logInfo('pendingData set, isReady:', state.isReady);
@@ -252,6 +270,7 @@ export class IssueDetailWebviewProvider {
         await this._handleEditComment(owner, repo, message.commentId, message.body, panelKey);
         break;
       case 'replyToComment':
+        await this._replyToComment(owner, repo, number, message.body, panelKey);
         break;
       case 'updateTitle': await this._updateTitle(owner, repo, number, message.title, panelKey); break;
       case 'deleteComment': await this._deleteComment(owner, repo, message.commentId, panelKey); break;
@@ -279,6 +298,8 @@ export class IssueDetailWebviewProvider {
       case 'unlockIssue':
         await this._unlockIssue(owner, repo, number, panelKey);
         break;
+      case 'showConfirm': await this._handleShowConfirm(state.panel.webview, message.id, message.message); break;
+      case 'showInputBox': await this._handleShowInputBox(state.panel.webview, message.id, message.prompt, message.defaultValue); break;
     }
   }
 
@@ -333,6 +354,26 @@ export class IssueDetailWebviewProvider {
       void vscode.window.showErrorMessage(`Failed to update comment: ${error instanceof Error ? error.message : 'Unknown error'}`);
       if (panelState) {
         void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'editComment', success: false });
+      }
+    }
+  }
+
+  private async _replyToComment(owner: string, repo: string, number: number, body: string, panelKey?: string): Promise<void> {
+    const panelState = panelKey ? this._panels.get(panelKey) : undefined;
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      await client.createComment(owner, repo, number, body);
+      void vscode.window.showInformationMessage('Reply posted');
+      if (panelState) {
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'replyToComment', success: true });
+      }
+      if (panelKey) await this._fetchIssueData(panelKey);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to post reply: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      if (panelState) {
+        void panelState.panel.webview.postMessage({ type: 'actionComplete', action: 'replyToComment', success: false });
       }
     }
   }
@@ -538,28 +579,22 @@ export class IssueDetailWebviewProvider {
     }
   }
 
-  private _getThemeName(kind: vscode.ColorThemeKind): 'light' | 'dark' | 'high-contrast' {
-    switch (kind) {
-      case vscode.ColorThemeKind.Light: return 'light';
-      case vscode.ColorThemeKind.HighContrast: return 'high-contrast';
-      case vscode.ColorThemeKind.HighContrastLight: return 'high-contrast';
-      default: return 'dark';
-    }
-  }
-
   private _getHtmlForWebview(webview: vscode.Webview): string {
     const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'issueDetail', 'styles.css'));
     const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'out', 'webview', 'issueDetail', 'index.js'));
 
     const nonce = this._getNonce();
+    const csp = this._buildCsp(nonce, webview);
+    const sharedAssets = this._sharedAssetsHtml(webview);
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} https:;">
+  <meta http-equiv="Content-Security-Policy" content="${csp}">
   <title>Issue Details</title>
+  ${sharedAssets}
   <link rel="stylesheet" href="${styleUri.toString()}">
 </head>
 <body>
@@ -674,14 +709,5 @@ export class IssueDetailWebviewProvider {
   <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
-  }
-
-  private _getNonce(): string {
-    let text = '';
-    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    for (let i = 0; i < 32; i++) {
-      text += possible.charAt(Math.floor(Math.random() * possible.length));
-    }
-    return text;
   }
 }

@@ -1,6 +1,25 @@
 (function() {
   const vscode = acquireVsCodeApi();
   let currentData = null;
+  let modalIdCounter = 0;
+  const modalResolvers = new Map();
+
+  // Promise-based modal helpers (postMessage round-trip through the extension)
+  function showConfirm(message) {
+    return new Promise((resolve) => {
+      const id = ++modalIdCounter;
+      modalResolvers.set(id, resolve);
+      vscode.postMessage({ type: 'showConfirm', id, message });
+    });
+  }
+
+  function showInputBox(prompt, defaultValue) {
+    return new Promise((resolve) => {
+      const id = ++modalIdCounter;
+      modalResolvers.set(id, resolve);
+      vscode.postMessage({ type: 'showInputBox', id, prompt, defaultValue: defaultValue || '' });
+    });
+  }
 
   // DOM Elements
   const $ = (id) => document.getElementById(id);
@@ -90,6 +109,37 @@
     addLabelBtn.addEventListener('click', () => vscode.postMessage({ type: 'manageLabels' }));
     addAssigneeBtn.addEventListener('click', () => vscode.postMessage({ type: 'manageAssignees' }));
     addReviewerBtn.addEventListener('click', () => vscode.postMessage({ type: 'manageReviewers' }));
+    $('manage-milestone-btn')?.addEventListener('click', () => vscode.postMessage({ type: 'manageMilestone' }));
+
+    // Delegated × removal for label/assignee/reviewer chips
+    document.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      const removeLabelBtn = target.closest('[data-action="remove-label"]');
+      if (removeLabelBtn?.dataset.label) {
+        e.stopPropagation();
+        showConfirm('Remove label "' + removeLabelBtn.dataset.label + '"?').then((ok) => {
+          if (ok) vscode.postMessage({ type: 'removeLabel', label: removeLabelBtn.dataset.label });
+        });
+        return;
+      }
+      const removeAssigneeBtn = target.closest('[data-action="remove-assignee"]');
+      if (removeAssigneeBtn?.dataset.assignee) {
+        e.stopPropagation();
+        showConfirm('Remove assignee "' + removeAssigneeBtn.dataset.assignee + '"?').then((ok) => {
+          if (ok) vscode.postMessage({ type: 'removeAssignee', assignee: removeAssigneeBtn.dataset.assignee });
+        });
+        return;
+      }
+      const removeReviewerBtn = target.closest('[data-action="remove-reviewer"]');
+      if (removeReviewerBtn?.dataset.reviewer) {
+        e.stopPropagation();
+        showConfirm('Remove reviewer "' + removeReviewerBtn.dataset.reviewer + '"?').then((ok) => {
+          if (ok) vscode.postMessage({ type: 'removeReviewer', reviewer: removeReviewerBtn.dataset.reviewer });
+        });
+        return;
+      }
+    });
 
     // Reopen / toggle draft
     reopenPRBtn.addEventListener('click', () => vscode.postMessage({ type: 'reopenPR' }));
@@ -101,9 +151,10 @@
       const strategy = mergeStrategy.value;
       const title = mergeTitle.value.trim() || undefined;
       const message = mergeMessage.value.trim() || undefined;
+      const deleteBranch = document.getElementById('merge-delete-branch')?.checked === true;
       confirmMergeBtn.disabled = true;
       confirmMergeBtn.textContent = 'Merging...';
-      vscode.postMessage({ type: 'merge', strategy, title, message });
+      vscode.postMessage({ type: 'merge', strategy, title, message, deleteBranch });
     });
     cancelMergeBtn.addEventListener('click', () => closeMergeDialog());
     mergeMessage.addEventListener('keydown', modalKeyHandler(() => confirmMergeBtn.click(), () => cancelMergeBtn.click()));
@@ -221,10 +272,14 @@
       const opt = e.target.closest('.emoji-option');
       if (opt?.dataset.emoji) {
         const commentId = parseInt(this.dataset.parentCommentId || '0', 10);
-        if (commentId > 0) {
+        const isPRLevel = this.dataset.isPrLevel === 'true';
+        if (isPRLevel) {
+          vscode.postMessage({ type: 'addPRReaction', reaction: opt.dataset.emoji });
+        } else if (commentId > 0) {
           vscode.postMessage({ type: 'addReaction', commentId, reaction: opt.dataset.emoji });
         }
         this.style.display = 'none';
+        this.dataset.isPrLevel = '';
       }
     });
 
@@ -245,12 +300,35 @@
       }
     });
 
-    // Image lightbox in description
+    // Image lightbox in description + PR-level reaction pills
     prDescriptionEl.addEventListener('click', (e) => {
       const img = e.target.closest('img');
       if (img?.src?.startsWith('http')) {
         e.preventDefault();
         vscode.postMessage({ type: 'openInBrowserFromUrl', url: img.src });
+      }
+    });
+
+    // PR description-level reactions bar (rendered outside the timeline)
+    const prReactionsBar = $('pr-reactions-bar');
+    prReactionsBar?.addEventListener('click', (e) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      const pill = target.closest('.reaction-pill');
+      if (pill?.dataset.reaction) {
+        vscode.postMessage({ type: 'addPRReaction', reaction: pill.dataset.reaction });
+        return;
+      }
+      const addBtn = target.closest('.add-reaction-btn');
+      if (addBtn) {
+        const picker = $('emoji-picker');
+        const rect = addBtn.getBoundingClientRect();
+        picker.style.display = 'flex';
+        picker.style.position = 'fixed';
+        picker.style.left = rect.left + 'px';
+        picker.style.top = (rect.bottom + 2) + 'px';
+        picker.dataset.parentCommentId = '';
+        picker.dataset.isPrLevel = 'true';
       }
     });
   }
@@ -276,6 +354,16 @@
           prDescriptionEl.style.display = 'block';
           editDescriptionBtn.style.display = 'inline-flex';
           break;
+        case 'modalResult':
+          {
+            const resolver = modalResolvers.get(message.id);
+            if (resolver) {
+              modalResolvers.delete(message.id);
+              if (typeof message.confirmed === 'boolean') resolver(message.confirmed);
+              else resolver(message.value);
+            }
+          }
+          break;
       }
     });
   }
@@ -298,7 +386,14 @@
         if (success) closeMergeDialog();
         break;
       case 'editComment':
-        if (success) {} // data will refresh
+        // On success: data will refresh from API and replace the DOM.
+        // On failure: re-enable Save buttons in any open editors so the user can retry.
+        if (!success) {
+          document.querySelectorAll('.save-edit-btn').forEach((btn) => {
+            btn.disabled = false;
+            btn.textContent = 'Save';
+          });
+        }
         break;
       case 'updateBody':
         saveDescriptionBtn.disabled = false;
@@ -414,7 +509,7 @@
       labelsList.innerHTML = pr.labels.map(label => {
         const bgColor = label.color ? '#' + label.color : 'var(--vscode-badge-background)';
         const textColor = getContrastColor(label.color || '000000');
-        return `<span class="label-pill" style="background-color:${bgColor};color:${textColor};">${escapeHtml(label.name)}</span>`;
+        return `<span class="label-pill" style="background-color:${bgColor};color:${textColor};">${escapeHtml(label.name)}<button class="chip-remove-btn" data-action="remove-label" data-label="${escapeHtml(label.name)}" title="Remove">\u00D7</button></span>`;
       }).join('');
     } else {
       labelsContainer.style.display = 'block';
@@ -425,7 +520,7 @@
     if (pr.assignees?.length > 0) {
       assigneesContainer.style.display = 'block';
       assigneesList.innerHTML = pr.assignees.map(a =>
-        `<span class="assignee-chip">${escapeHtml(a.login)}</span>`
+        `<span class="assignee-chip">${escapeHtml(a.login)}<button class="chip-remove-btn" data-action="remove-assignee" data-assignee="${escapeHtml(a.login)}" title="Remove">\u00D7</button></span>`
       ).join('');
     } else {
       assigneesContainer.style.display = 'block';
@@ -436,11 +531,22 @@
     if (pr.requested_reviewers?.length > 0) {
       reviewersContainer.style.display = 'block';
       reviewersList.innerHTML = pr.requested_reviewers.map(r =>
-        `<span class="reviewer-chip">${escapeHtml(r.login)}</span>`
+        `<span class="reviewer-chip">${escapeHtml(r.login)}<button class="chip-remove-btn" data-action="remove-reviewer" data-reviewer="${escapeHtml(r.login)}" title="Remove">\u00D7</button></span>`
       ).join('');
     } else {
       reviewersContainer.style.display = 'block';
       reviewersList.innerHTML = '<span class="meta-empty">None</span>';
+    }
+
+    // Milestone (PR)
+    const milestoneNameEl = $('milestone-name');
+    if (milestoneNameEl) {
+      if (pr.milestone?.title) {
+        const due = pr.milestone.due_on ? ' — due ' + new Date(pr.milestone.due_on).toLocaleDateString() : '';
+        milestoneNameEl.innerHTML = '<span class="milestone-pill">' + escapeHtml(pr.milestone.title) + due + '</span>';
+      } else {
+        milestoneNameEl.innerHTML = '<span class="meta-empty">No milestone</span>';
+      }
     }
 
     // Description
@@ -449,6 +555,18 @@
       setupCheckboxListeners();
     } else {
       prDescriptionEl.innerHTML = '<p style="color:var(--vscode-descriptionForeground)">No description provided.</p>';
+    }
+
+    // PR-level reactions on description
+    const prReactionsBar = $('pr-reactions-bar');
+    if (prReactionsBar) {
+      if (data.prReactions && data.prReactions.length > 0) {
+        prReactionsBar.innerHTML = ForgejoReactions.render(data.prReactions, escapeHtml);
+        prReactionsBar.style.display = 'flex';
+      } else {
+        prReactionsBar.innerHTML = '<span class="add-reaction-btn" data-pr-level="true" title="Add reaction">+ Add reaction</span>';
+        prReactionsBar.style.display = 'flex';
+      }
     }
     descriptionEditor.style.display = 'none';
     prDescriptionEl.style.display = 'block';
@@ -636,6 +754,7 @@
       picker.style.left = rect.left + 'px';
       picker.style.top = (rect.bottom + 2) + 'px';
       picker.dataset.parentCommentId = addBtn.closest('[data-comment-id]')?.dataset.commentId || '';
+      picker.dataset.isPrLevel = addBtn.dataset.prLevel === 'true' ? 'true' : '';
       return;
     }
 
@@ -687,9 +806,8 @@
       if (editorEl && commentId > 0) {
         const newBody = editorEl.querySelector('.comment-edit-textarea').value;
         vscode.postMessage({ type: 'editComment', commentId, body: newBody });
-        editorEl.style.display = 'none';
-        const bodyEl = editorEl.closest('.timeline-body')?.querySelector('.markdown-body');
-        if (bodyEl) bodyEl.style.display = 'block';
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
       }
       return;
     }
@@ -722,9 +840,10 @@
     if (deleteBtn) {
       const item = deleteBtn.closest('[data-comment-id]');
       if (item?.dataset.commentId) {
-        if (confirm('Delete this comment?')) {
-          vscode.postMessage({ type: 'deleteComment', commentId: parseInt(item.dataset.commentId, 10) });
-        }
+        const commentId = parseInt(item.dataset.commentId, 10);
+        showConfirm('Delete this comment?').then((ok) => {
+          if (ok) vscode.postMessage({ type: 'deleteComment', commentId });
+        });
       }
       return;
     }

@@ -64,6 +64,11 @@ export const listIssueAttachmentsTool: Tool = {
 	},
 };
 
+/** Maximum attachment size the server will fetch and base64-encode in memory. 25 MB. */
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+/** Network timeout for a single attachment fetch. */
+const ATTACHMENT_TIMEOUT_MS = 30_000;
+
 export const getAttachmentTool: Tool = {
 	name: 'get_attachment',
 	description:
@@ -73,7 +78,8 @@ export const getAttachmentTool: Tool = {
 		'tool to persist the bytes to disk (e.g. ./screenshot.png). Lookup ' +
 		'the UUID first via list_issue_attachments, or read it from the ' +
 		'`![alt](/attachments/{uuid})` markdown reference in an issue/PR ' +
-		'body or comment.',
+		'body or comment. Hard caps: 25 MB max size, 30 s timeout. ' +
+		'Attachments larger than 25 MB return a metadata envelope instead.',
 	inputSchema: objectSchema(
 		{
 			uuid: uuidSchema,
@@ -83,20 +89,67 @@ export const getAttachmentTool: Tool = {
 	async handler({ args, config }): Promise<unknown> {
 		const uuid = String(args.uuid);
 		const url = `${base(config)}/attachments/${encodeURIComponent(uuid)}`;
+
+		// Use AbortSignal.timeout so a hung Forgejo server doesn't pin the
+		// stdio process indefinitely. The SDK always sets one; raw fetch here
+		// bypasses the SDK so we must set our own.
 		const resp = await fetch(url, {
 			headers: authHeader(config.token) ? { Authorization: authHeader(config.token) } : {},
 			redirect: 'follow',
+			signal: AbortSignal.timeout(ATTACHMENT_TIMEOUT_MS),
 		});
 		if (!resp.ok) {
 			throw new Error(`HTTP ${resp.status}: attachment ${uuid} could not be fetched`);
 		}
+
+		// Check Content-Length BEFORE buffering so we can refuse oversized
+		// attachments without OOM-ing the stdio process. A 1 GB attachment
+		// would otherwise allocate ~4 GB peak (ArrayBuffer + base64 + JSON).
+		const contentLength = parseInt(resp.headers.get('content-length') ?? '', 10);
+		if (Number.isFinite(contentLength) && contentLength > MAX_ATTACHMENT_BYTES) {
+			return {
+				uuid,
+				url,
+				size: contentLength,
+				mime_type: resp.headers.get('content-type') ?? 'application/octet-stream',
+				is_binary: true,
+				truncated: true,
+				max_bytes: MAX_ATTACHMENT_BYTES,
+				warning: `Attachment is ${contentLength} bytes; exceeds ${MAX_ATTACHMENT_BYTES} cap. Fetch directly via browser or increase the cap.`,
+			};
+		}
+
 		const buf = Buffer.from(await resp.arrayBuffer());
+
+		// Defensive: if Content-Length was missing/lying, check actual size now.
+		if (buf.length > MAX_ATTACHMENT_BYTES) {
+			return {
+				uuid,
+				url,
+				size: buf.length,
+				mime_type: resp.headers.get('content-type') ?? 'application/octet-stream',
+				is_binary: true,
+				truncated: true,
+				max_bytes: MAX_ATTACHMENT_BYTES,
+				warning: `Attachment is ${buf.length} bytes; exceeds ${MAX_ATTACHMENT_BYTES} cap.`,
+			};
+		}
+
 		const mimeType = resp.headers.get('content-type') ?? 'application/octet-stream';
 		const result: ImageToolResult = {
 			__image: true,
 			data: buf.toString('base64'),
 			mimeType,
 		};
+		// Filename hint for agents that want to suggest a save path. Forgejo
+		// sends Content-Disposition; parse the filename if present.
+		const cd = resp.headers.get('content-disposition');
+		if (cd) {
+			const match = cd.match(/filename="?([^";]+)"?/i);
+			if (match) {
+				result.filename = match[1];
+			}
+		}
 		return result;
 	},
 };

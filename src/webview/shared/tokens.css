@@ -1,0 +1,38 @@
+/*
+ * Semantic design tokens for all Forgejo webviews.
+ *
+ * Every literal hex from the per-webview CSS is mapped here to a --vscode-*
+ * token with a hex fallback. Light / dark / high-contrast all work because
+ * VS Code swaps the --vscode-* variables per theme.
+ */
+:root {
+  --forgejo-success: var(--vscode-testing-iconPassed, #2da042);
+  --forgejo-danger: var(--vscode-testing-iconFailed, #f14c4c);
+  --forgejo-warning: var(--vscode-editorWarning-foreground, #ccac00);
+  --forgejo-info: var(--vscode-charts-blue, #3794ff);
+  --forgejo-purple: var(--vscode-charts-purple, #8957e5);
+  --forgejo-muted: var(--vscode-descriptionForeground, #616161);
+
+  --forgejo-success-bg: rgba(45, 160, 66, 0.15);
+  --forgejo-danger-bg: rgba(241, 76, 76, 0.15);
+  --forgejo-warning-bg: rgba(204, 172, 0, 0.15);
+  --forgejo-info-bg: rgba(55, 148, 255, 0.15);
+  --forgejo-purple-bg: rgba(137, 87, 229, 0.15);
+
+  --forgejo-border: var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  --forgejo-bg: var(--vscode-editor-background);
+  --forgejo-bg-hover: var(--vscode-editor-inactiveSelectionBackground);
+  --forgejo-fg: var(--vscode-editor-foreground);
+  --forgejo-fg-muted: var(--vscode-descriptionForeground);
+  --forgejo-link: var(--vscode-textLink-foreground);
+  --forgejo-focus-border: var(--vscode-focusBorder);
+
+  --forgejo-badge-bg: var(--vscode-badge-background);
+  --forgejo-badge-fg: var(--vscode-badge-foreground);
+
+  --forgejo-button-bg: var(--vscode-button-background);
+  --forgejo-button-fg: var(--vscode-button-foreground);
+  --forgejo-button-hover-bg: var(--vscode-button-hoverBackground);
+  --forgejo-button-secondary-bg: var(--vscode-button-secondaryBackground);
+  --forgejo-button-secondary-fg: var(--vscode-button-secondaryForeground);
+}

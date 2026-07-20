@@ -3,6 +3,7 @@ import { ForgejoClient } from '../api/forgejoClient';
 import { IssueListItem } from '../models/issue';
 import { getForgejoConfig } from '../utils/config';
 import { getCached, setCache } from '../utils/cacheStore';
+import { sortTreeItems, TreeSortOrder } from '../utils/treeSort';
 
 const CACHE_KEY = 'issue-list';
 
@@ -73,15 +74,41 @@ class IssueSyncingItem extends vscode.TreeItem {
 
 type IssueTreeElement = IssueTreeItem | IssueGroupItem | IssueMessageItem | IssueSyncingItem;
 
-export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeElement> {
-  private _onDidChangeTreeData: vscode.EventEmitter<IssueTreeElement | undefined | null | void> = new vscode.EventEmitter<IssueTreeElement | undefined | null | void>();
-  readonly onDidChangeTreeData: vscode.Event<IssueTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
+export type IssueStateFilter = 'all' | 'open' | 'closed';
 
-  private issues: IssueListItem[] = [];
-  private error: string | null = null;
-  private owner = '';
-  private repo = '';
-  private isSyncing = false;
+export const ISSUE_STATE_FILTER_LABELS: Record<IssueStateFilter, string> = {
+	all: 'All Issues',
+	open: 'Open only',
+	closed: 'Closed only',
+};
+
+export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeElement> {
+	private _onDidChangeTreeData: vscode.EventEmitter<IssueTreeElement | undefined | null | void> = new vscode.EventEmitter<IssueTreeElement | undefined | null | void>();
+	readonly onDidChangeTreeData: vscode.Event<IssueTreeElement | undefined | null | void> = this._onDidChangeTreeData.event;
+
+	private issues: IssueListItem[] = [];
+	private error: string | null = null;
+	private owner = '';
+	private repo = '';
+	private isSyncing = false;
+	private sortOrder: TreeSortOrder = 'newest';
+	private stateFilter: IssueStateFilter = 'all';
+
+	setSortOrder(order: TreeSortOrder): void {
+		if (order === this.sortOrder) return;
+		this.sortOrder = order;
+		this._onDidChangeTreeData.fire();
+	}
+
+	setStateFilter(filter: IssueStateFilter): void {
+		if (filter === this.stateFilter) return;
+		this.stateFilter = filter;
+		this._onDidChangeTreeData.fire();
+	}
+
+	getStateFilter(): IssueStateFilter {
+		return this.stateFilter;
+	}
 
   constructor() {
     const cached = getCached<IssueListItem[]>(CACHE_KEY);
@@ -141,14 +168,21 @@ export class IssueTreeProvider implements vscode.TreeDataProvider<IssueTreeEleme
         return result;
       }
 
-      const openIssues = this.issues.filter(issue => issue.state === 'open');
-      const closedIssues = this.issues.filter(issue => issue.state === 'closed');
+      const openIssues = sortTreeItems(this.issues.filter(issue => issue.state === 'open'), this.sortOrder);
+      const closedIssues = sortTreeItems(this.issues.filter(issue => issue.state === 'closed'), this.sortOrder);
 
-      if (openIssues.length > 0) {
+      const filter = this.stateFilter;
+      const isVisible = (group: 'open' | 'closed'): boolean => filter === 'all' || filter === group;
+
+      if (openIssues.length > 0 && isVisible('open')) {
         result.push(new IssueGroupItem('Open', openIssues));
       }
-      if (closedIssues.length > 0) {
+      if (closedIssues.length > 0 && isVisible('closed')) {
         result.push(new IssueGroupItem('Closed', closedIssues));
+      }
+
+      if (filter !== 'all' && result.length === 0 && !this.isSyncing) {
+        return [new IssueMessageItem(`No ${ISSUE_STATE_FILTER_LABELS[filter].toLowerCase()}`, false)];
       }
 
       return result;

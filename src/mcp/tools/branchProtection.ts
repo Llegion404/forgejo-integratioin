@@ -11,10 +11,16 @@
  * A protection rule typically includes: rule_name, enable_push, enable_push_whitelist,
  * enable_merge_whitelist, enable_status_check, required_approvals, enable_approvals_whitelist,
  * required_status_checks, etc.
+ *
+ * `get_branch_protection` translates a 404 response into a structured
+ * `{ protected: false }` envelope so agents can distinguish "branch has no
+ * protection rule" from "branch doesn't exist" / "permission denied" —
+ * previously a 404 surfaced as `isError: true` with an opaque message.
  */
 
 import { Tool, resolveOwner, resolveRepo } from './framework';
 import { objectSchema, ownerSchema, repoSchema, branchSchema } from './schema';
+import { ForgejoApiError } from 'forgejo-ts';
 
 export const listBranchProtectionsTool: Tool = {
 	name: 'list_branch_protections',
@@ -44,10 +50,12 @@ export const getBranchProtectionTool: Tool = {
 	name: 'get_branch_protection',
 	description:
 		'Get the protection rule for a specific branch (e.g. main, master, ' +
-		'release/1.0). Returns the full rule object including ' +
-		'required_approvals, enable_status_check, required_status_checks, ' +
-		'enable_push_whitelist, etc. Throws a 404 error when the branch ' +
-		'has no protection rule.',
+		'release/1.0). Returns `{ protected: true, rule: {...} }` when the ' +
+		'branch has a protection rule, or `{ protected: false }` when it ' +
+		'does not (no isError). The rule object includes required_approvals, ' +
+		'enable_status_check, required_status_checks, enable_push_whitelist, ' +
+		'etc. Other errors (404 branch missing, 403 permission) still ' +
+		'surface as isError.',
 	inputSchema: objectSchema(
 		{
 			owner: ownerSchema,
@@ -60,10 +68,21 @@ export const getBranchProtectionTool: Tool = {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
 		const branch = String(args['branch']);
-		return client.rawRequest(
-			'GET',
-			`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branch_protections/${encodeURIComponent(branch)}`,
-		);
+		try {
+			const rule = await client.rawRequest(
+				'GET',
+				`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branch_protections/${encodeURIComponent(branch)}`,
+			);
+			return { protected: true, branch, rule };
+		} catch (err) {
+			// Forgejo returns 404 when no protection rule exists for the
+			// branch. Translate that specific case into a structured
+			// "protected: false" envelope so agents don't see isError.
+			if (err instanceof ForgejoApiError && err.statusCode === 404) {
+				return { protected: false, branch, rule: null };
+			}
+			throw err;
+		}
 	},
 };
 

@@ -200,12 +200,14 @@ export class ForgejoClient extends BaseClient {
     index: number,
     method: 'merge' | 'squash' | 'rebase' | 'rebase-merge' | 'fast-forward-only',
     mergeTitle: string,
-    mergeMessage: string
+    mergeMessage: string,
+    deleteBranchAfterMerge: boolean = false
   ): Promise<void> {
     await this.rawRequest('POST', `/repos/${owner}/${repo}/pulls/${index}/merge`, {
       Do: method,
       MergeTitleField: mergeTitle,
       MergeMessageField: mergeMessage,
+      delete_branch_after_merge: deleteBranchAfterMerge,
     });
   }
 
@@ -213,4 +215,134 @@ export class ForgejoClient extends BaseClient {
   async deleteRelease(owner: string, repo: string, releaseId: number): Promise<void> {
     await this.rawRequest('DELETE', `/repos/${owner}/${repo}/releases/${releaseId}`);
   }
+
+  async updateRelease(
+    owner: string,
+    repo: string,
+    releaseId: number,
+    fields: { name?: string; body?: string; prerelease?: boolean; is_latest?: boolean; tag_name?: string; target_commitish?: string }
+  ): Promise<unknown> {
+    return this.rawRequest('PATCH', `/repos/${owner}/${repo}/releases/${releaseId}`, fields);
+  }
+
+  // ===== B4 features: repo metadata, notifications, branches, commits =====
+
+  async getRepo(owner: string, repo: string): Promise<{
+    name: string; full_name: string; description: string; html_url: string;
+    stars: number; forks_count: number; watchers_count: number; open_issues_count: number;
+    language: string; license?: { name: string }; default_branch: string;
+    created_at: string; updated_at: string; owner: { login: string; avatar_url?: string };
+  }> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}`);
+  }
+
+  async listRepoLanguages(owner: string, repo: string): Promise<Record<string, number>> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/languages`);
+  }
+
+  async listRepoContributors(owner: string, repo: string): Promise<{ login: string; contributions: number; avatar_url?: string }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/contributors`);
+  }
+
+  async getReadme(owner: string, repo: string): Promise<{ name: string; content: string; encoding: string; html_url: string } | null> {
+    try {
+      return await this.rawRequest('GET', `/repos/${owner}/${repo}/readme`);
+    } catch {
+      return null;
+    }
+  }
+
+  async listRepoTopFiles(owner: string, repo: string, ref?: string): Promise<{ name: string; path: string; type: string; size: number }[]> {
+    const query = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/contents${query}`);
+  }
+
+  async listNotifications(opts?: { all?: boolean; status?: 'read' | 'unread'; subject_type?: string; page?: number; limit?: number }): Promise<NotificationThread[]> {
+    const params = new URLSearchParams();
+    if (opts?.all) params.set('all', 'true');
+    if (opts?.status) params.set('status', opts.status);
+    if (opts?.subject_type) params.set('subject-type', opts.subject_type);
+    if (opts?.page) params.set('page', String(opts.page));
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    const q = params.toString();
+    return this.rawRequest('GET', `/notifications${q ? `?${q}` : ''}`);
+  }
+
+  async markNotificationRead(threadId: string): Promise<void> {
+    await this.rawRequest('PATCH', `/notifications/threads/${threadId}`);
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    await this.rawRequest('PUT', `/notifications`);
+  }
+
+  async listRepoBranches(owner: string, repo: string, page = 1, limit = 30): Promise<{ name: string; commit: { id: string; message?: string }; protected: boolean }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/branches?page=${page}&limit=${limit}`);
+  }
+
+  async getBranch(owner: string, repo: string, branch: string): Promise<{ name: string; commit: { id: string; message?: string }; protected: boolean }> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}`);
+  }
+
+  async listRepoCommits(owner: string, repo: string, opts?: { sha?: string; path?: string; page?: number; limit?: number }): Promise<{ sha: string; commit: { message: string; author?: { name?: string; date?: string } }; author?: { login?: string; avatar_url?: string } }[]> {
+    const params = new URLSearchParams();
+    if (opts?.sha) params.set('sha', opts.sha);
+    if (opts?.path) params.set('path', opts.path);
+    params.set('page', String(opts?.page ?? 1));
+    params.set('limit', String(opts?.limit ?? 30));
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/commits?${params.toString()}`);
+  }
+
+  async compareCommits(owner: string, repo: string, base: string, head: string): Promise<{
+    commits: { sha: string; commit: { message: string } }[];
+    files: { filename: string; status: string; additions: number; deletions: number; changes: number }[];
+    total_commits: number;
+  }> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`);
+  }
+
+  async listRepoCollaborators(owner: string, repo: string): Promise<{ login: string; avatar_url?: string; permissions?: { admin: boolean; push: boolean; pull: boolean } }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/collaborators`);
+  }
+
+  async listRepoWebhooks(owner: string, repo: string): Promise<{ id: number; url: string; events: string[]; active: boolean; config?: { url: string; content_type: string } }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/hooks`);
+  }
+
+  async listRepoDeployKeys(owner: string, repo: string): Promise<{ id: number; title: string; key: string; read_only: boolean }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/keys`);
+  }
+
+  async listBranchProtections(owner: string, repo: string): Promise<{ rule_name: string; approvals_whitelist_teams?: string[]; enable_push?: boolean }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/branch_protections`);
+  }
+
+  async listWorkflowArtifacts(owner: string, repo: string, runId: number): Promise<{ id: number; name: string; size_in_bytes: number; url: string; archive_download_url: string; expired: boolean }[]> {
+    return this.rawRequest('GET', `/repos/${owner}/${repo}/actions/runs/${runId}/artifacts`);
+  }
+
+  async rerunFailedJobs(owner: string, repo: string, runId: number): Promise<void> {
+    await this.rawRequest('POST', `/repos/${owner}/${repo}/actions/runs/${runId}/rerun-failed-jobs`);
+  }
+}
+
+export interface NotificationThread {
+  id: string;
+  unread: boolean;
+  pinned: boolean;
+  subject: {
+    title: string;
+    type: string;
+    state?: string;
+    url?: string;
+    latest_comment_url?: string;
+  };
+  repository: {
+    name: string;
+    full_name: string;
+    owner: { login: string; avatar_url?: string };
+    html_url: string;
+  };
+  updated_at: string;
+  url: string;
 }

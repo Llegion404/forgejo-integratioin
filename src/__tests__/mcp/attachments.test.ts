@@ -139,7 +139,7 @@ describe('MCP attachment tools', () => {
 
 			expect(global.fetch).toHaveBeenCalledWith(
 				'https://git.example.com/attachments/abc-123-def',
-				expect.objectContaining({ redirect: 'follow' }),
+				expect.objectContaining({ redirect: 'follow', signal: expect.any(Object) }),
 			);
 			const result = resp.result as {
 				content: { type: string; data?: string; mimeType?: string; text?: string }[];
@@ -147,7 +147,6 @@ describe('MCP attachment tools', () => {
 			expect(result.content[0].type).toBe('image');
 			expect(result.content[0].data).toBe(Buffer.from(pngBytes).toString('base64'));
 			expect(result.content[0].mimeType).toBe('image/png');
-			// Critically: NOT JSON.stringify'd into text content
 			expect(result.content[0].text).toBeUndefined();
 		});
 
@@ -156,10 +155,12 @@ describe('MCP attachment tools', () => {
 				mockImageResponse([0x00], 'application/octet-stream', 200),
 			) as unknown as typeof global.fetch;
 			await callTool('get_attachment', { uuid: 'token-test' });
-			expect((global.fetch as jest.Mock).mock.calls[0][1]).toEqual({
-				headers: { Authorization: 'token test-tok' },
-				redirect: 'follow',
-			});
+			expect((global.fetch as jest.Mock).mock.calls[0][1]).toEqual(
+				expect.objectContaining({
+					headers: { Authorization: 'token test-tok' },
+					redirect: 'follow',
+				}),
+			);
 		});
 
 		it('omits auth header when token is empty', async () => {
@@ -176,10 +177,12 @@ describe('MCP attachment tools', () => {
 				jsonrpc: '2.0', id: 1, method: 'tools/call',
 				params: { name: 'get_attachment', arguments: { uuid: 'x' } },
 			} as JsonRpcRequest);
-			expect((global.fetch as jest.Mock).mock.calls[0][1]).toEqual({
-				headers: {},
-				redirect: 'follow',
-			});
+			expect((global.fetch as jest.Mock).mock.calls[0][1]).toEqual(
+				expect.objectContaining({
+					headers: {},
+					redirect: 'follow',
+				}),
+			);
 		});
 
 		it('URL-encodes the uuid (handles slashes and special chars)', async () => {

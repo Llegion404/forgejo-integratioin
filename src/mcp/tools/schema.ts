@@ -56,6 +56,32 @@ export const limitSchema: JsonSchema = {
 	description: 'Maximum number of items to return (capped at 100 by the API).',
 };
 
+/**
+ * Page number for paginated list tools. Always 1-based.
+ * Default 1 (first page). Combined with `page_size` to bound the fetch —
+ * every list tool now performs a SINGLE-PAGE fetch rather than the SDK's
+ * unbounded `requestAllPages` loop (which would happily issue 200+
+ * sequential page requests on a 10 000-issue repo).
+ */
+export const pageSchema: JsonSchema = {
+	type: 'integer',
+	minimum: 1,
+	default: 1,
+	description: 'Page number to fetch (1-based). Default 1.',
+};
+
+/**
+ * Page size for paginated list tools. Forgejo's default page size is 50;
+ * we cap at 50 to match the server limit and avoid abusive requests.
+ */
+export const pageSizeSchema: JsonSchema = {
+	type: 'integer',
+	minimum: 1,
+	maximum: 50,
+	default: 30,
+	description: 'Page size. Default 30, max 50 (Forgejo server limit). Use `page` to fetch subsequent pages.',
+};
+
 export const shaSchema: JsonSchema = {
 	type: 'string',
 	description: '40 or 64 character hex commit SHA (not a branch name or ref).',

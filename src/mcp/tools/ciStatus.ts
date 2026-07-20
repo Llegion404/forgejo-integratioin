@@ -18,8 +18,8 @@
  */
 
 import type { CommitStatus } from 'forgejo-ts';
-import { Tool, resolveOwner, resolveRepo, resolveNumber } from './framework';
-import { objectSchema, ownerSchema, repoSchema, numberSchema, shaSchema } from './schema';
+import { Tool, resolveOwner, resolveRepo, resolveNumber, resolvePagination, pagedRequest, buildPaginationMeta } from './framework';
+import { objectSchema, ownerSchema, repoSchema, numberSchema, shaSchema, pageSchema, pageSizeSchema } from './schema';
 import { deduplicateStatuses, summarizeStatuses, StatusSummary } from '../utils/statusDedup';
 
 export const getPrCiStatusTool: Tool = {
@@ -43,15 +43,22 @@ export const getPrCiStatusTool: Tool = {
 		const repo = resolveRepo(args, config);
 		const prNumber = resolveNumber(args, 'number');
 		const pr = await client.getPullRequest(owner, repo, prNumber);
-		const sha = pr.head.sha;
-		const raw: CommitStatus[] = sha
-			? await client.getCommitStatuses(owner, repo, sha)
+		// PRs with a deleted source repo have `head: null` — guard against
+		// the resulting TypeError so the tool degrades to a clear "no SHA"
+		// payload instead of crashing the whole call.
+		const sha = pr.head?.sha ?? '';
+		const headBranch = pr.head?.ref ?? '';
+		// Cap to 50 statuses (single page) — enough for any realistic PR's
+		// CI footprint; agents needing history can call get_commit_statuses
+		// with explicit pagination.
+		const raw = sha
+			? await pagedRequest<CommitStatus>(client, `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/statuses/${encodeURIComponent(sha)}`, 1, 50)
 			: [];
 		const statuses = deduplicateStatuses(raw);
 		const summary: StatusSummary = summarizeStatuses(statuses);
 		return {
 			head_sha: sha,
-			head_branch: pr.head.ref,
+			head_branch: headBranch,
 			statuses,
 			summary,
 		};
@@ -64,12 +71,15 @@ export const getCommitStatusesTool: Tool = {
 		'Fetch CI check runs for a specific commit SHA. Returns ' +
 		'deduplicated statuses (latest per context) plus a summary verdict. ' +
 		'Pass the 40-char commit SHA, not a branch name or ref. Call ' +
-		'get_pr_ci_status instead if you only know the PR number.',
+		'get_pr_ci_status instead if you only know the PR number. ' +
+		'Paginated: pass page (default 1) and page_size (default 30, max 50).',
 	inputSchema: objectSchema(
 		{
 			owner: ownerSchema,
 			repo: repoSchema,
 			sha: shaSchema,
+			page: pageSchema,
+			page_size: pageSizeSchema,
 		},
 		['sha'],
 	),
@@ -77,10 +87,16 @@ export const getCommitStatusesTool: Tool = {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
 		const sha = String(args['sha']);
-		const raw: CommitStatus[] = await client.getCommitStatuses(owner, repo, sha);
+		const { page, pageSize } = resolvePagination(args);
+		const raw = await pagedRequest<CommitStatus>(
+			client,
+			`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/statuses/${encodeURIComponent(sha)}`,
+			page, pageSize,
+		);
+		const pagination = buildPaginationMeta(page, pageSize, raw.length);
 		const statuses = deduplicateStatuses(raw);
 		const summary: StatusSummary = summarizeStatuses(statuses);
-		return { sha, statuses, summary };
+		return { sha, statuses, summary, _meta: { pagination } };
 	},
 };
 

@@ -12,10 +12,10 @@ const config: McpInstanceConfig = {
 };
 
 /** Mock client exposing only the methods ciStatus tools call. */
-const mockClient: jest.Mocked<Pick<McpForgejoClient, 'getPullRequest' | 'getCommitStatuses'>> = {
+const mockClient: jest.Mocked<Pick<McpForgejoClient, 'getPullRequest' | 'rawRequest'>> = {
 	getPullRequest: jest.fn(),
-	getCommitStatuses: jest.fn(),
-} as unknown as jest.Mocked<Pick<McpForgejoClient, 'getPullRequest' | 'getCommitStatuses'>>;
+	rawRequest: jest.fn(),
+} as unknown as jest.Mocked<Pick<McpForgejoClient, 'getPullRequest' | 'rawRequest'>>;
 
 async function callTool(name: string, args: unknown): Promise<JsonRpcResponse> {
 	const fakeTransport: { onMessage?: (m: JsonRpcMessage) => Promise<JsonRpcResponse | undefined> } = {};
@@ -45,13 +45,14 @@ describe('MCP ciStatus tools', () => {
 				head: { sha: 'abc1234567890123456789012345678901234567', ref: 'feature-branch' },
 				base: { ref: 'main' },
 			});
-			(mockClient.getCommitStatuses as jest.Mock).mockResolvedValue(mockDuplicateStatuses);
+			(mockClient.rawRequest as jest.Mock).mockResolvedValue(mockDuplicateStatuses);
 
 			const resp = await callTool('get_pr_ci_status', { owner: 'foo', repo: 'bar', number: 1 });
 
 			expect(mockClient.getPullRequest).toHaveBeenCalledWith('foo', 'bar', 1);
-			expect(mockClient.getCommitStatuses).toHaveBeenCalledWith(
-				'foo', 'bar', 'abc1234567890123456789012345678901234567',
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/statuses\/abc1234567890123456789012345678901234567\?page=1&limit=50/),
 			);
 			const payload = extractContent(resp) as {
 				head_sha: string; head_branch: string; statuses: unknown[]; summary: string;
@@ -66,9 +67,9 @@ describe('MCP ciStatus tools', () => {
 			(mockClient.getPullRequest as jest.Mock).mockResolvedValue({
 				number: 2, head: { sha: '', ref: 'empty' }, base: { ref: 'main' },
 			});
-			// getCommitStatuses should NOT be called when sha is empty
+			// rawRequest should NOT be called when sha is empty
 			const resp = await callTool('get_pr_ci_status', { owner: 'foo', repo: 'bar', number: 2 });
-			expect(mockClient.getCommitStatuses).not.toHaveBeenCalled();
+			expect(mockClient.rawRequest).not.toHaveBeenCalled();
 			const payload = extractContent(resp) as { summary: string; statuses: unknown[] };
 			expect(payload.summary).toBe('none');
 			expect(payload.statuses).toHaveLength(0);
@@ -78,7 +79,7 @@ describe('MCP ciStatus tools', () => {
 			(mockClient.getPullRequest as jest.Mock).mockResolvedValue({
 				number: 3, head: { sha: 'a'.repeat(40), ref: 'good' }, base: { ref: 'main' },
 			});
-			(mockClient.getCommitStatuses as jest.Mock).mockResolvedValue(
+			(mockClient.rawRequest as jest.Mock).mockResolvedValue(
 				mockDuplicateStatuses.filter((s) => s.status === 'success'),
 			);
 			const resp = await callTool('get_pr_ci_status', { owner: 'foo', repo: 'bar', number: 3 });
@@ -98,7 +99,7 @@ describe('MCP ciStatus tools', () => {
 			(mockClient.getPullRequest as jest.Mock).mockResolvedValue({
 				number: 1, head: { sha: 'x'.repeat(40), ref: 'f' }, base: { ref: 'm' },
 			});
-			(mockClient.getCommitStatuses as jest.Mock).mockResolvedValue([]);
+			(mockClient.rawRequest as jest.Mock).mockResolvedValue([]);
 			await callTool('get_pr_ci_status', { number: 1 });
 			expect(mockClient.getPullRequest).toHaveBeenCalledWith('default-owner', 'default-repo', 1);
 		});
@@ -113,10 +114,13 @@ describe('MCP ciStatus tools', () => {
 
 	describe('get_commit_statuses', () => {
 		it('fetches statuses by raw SHA and deduplicates', async () => {
-			(mockClient.getCommitStatuses as jest.Mock).mockResolvedValue(mockDuplicateStatuses);
+			(mockClient.rawRequest as jest.Mock).mockResolvedValue(mockDuplicateStatuses);
 			const sha = '0'.repeat(40);
 			const resp = await callTool('get_commit_statuses', { owner: 'foo', repo: 'bar', sha });
-			expect(mockClient.getCommitStatuses).toHaveBeenCalledWith('foo', 'bar', sha);
+			expect(mockClient.rawRequest).toHaveBeenCalledWith(
+				'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/statuses\/0{40}\?page=1&limit=30/),
+			);
 			const payload = extractContent(resp) as { sha: string; statuses: unknown[]; summary: string };
 			expect(payload.sha).toBe(sha);
 			expect(payload.statuses).toHaveLength(6);
@@ -124,7 +128,7 @@ describe('MCP ciStatus tools', () => {
 		});
 
 		it('returns "none" for empty status list', async () => {
-			(mockClient.getCommitStatuses as jest.Mock).mockResolvedValue([]);
+			(mockClient.rawRequest as jest.Mock).mockResolvedValue([]);
 			const resp = await callTool('get_commit_statuses', { owner: 'foo', repo: 'bar', sha: '0'.repeat(40) });
 			const payload = extractContent(resp) as { summary: string; statuses: unknown[] };
 			expect(payload.summary).toBe('none');
@@ -132,7 +136,7 @@ describe('MCP ciStatus tools', () => {
 		});
 
 		it('returns "fail" when mixed statuses include a failure', async () => {
-			(mockClient.getCommitStatuses as jest.Mock).mockResolvedValue(mockMixedStatuses);
+			(mockClient.rawRequest as jest.Mock).mockResolvedValue(mockMixedStatuses);
 			const resp = await callTool('get_commit_statuses', { owner: 'foo', repo: 'bar', sha: '0'.repeat(40) });
 			const payload = extractContent(resp) as { summary: string };
 			expect(payload.summary).toBe('fail');
@@ -145,8 +149,8 @@ describe('MCP ciStatus tools', () => {
 			expect(result.content[0].text).toContain("'sha'");
 		});
 
-		it('wraps getCommitStatuses errors as isError: true', async () => {
-			(mockClient.getCommitStatuses as jest.Mock).mockRejectedValue(new Error('HTTP 404: commit not found'));
+		it('wraps rawRequest errors as isError: true', async () => {
+			(mockClient.rawRequest as jest.Mock).mockRejectedValue(new Error('HTTP 404: commit not found'));
 			const resp = await callTool('get_commit_statuses', { owner: 'foo', repo: 'bar', sha: '0'.repeat(40) });
 			const result = resp.result as { isError: boolean; content: { text: string }[] };
 			expect(result.isError).toBe(true);

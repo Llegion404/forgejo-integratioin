@@ -3,6 +3,8 @@ import { PRTreeProvider, PRTreeItem, PROverviewItem } from './providers/prTreePr
 import { IssueTreeProvider, IssueTreeItem } from './providers/issueTreeProvider';
 import { ActionsTreeProvider, WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from './providers/actionsTreeProvider';
 import { ReleaseTreeProvider } from './providers/releaseTreeProvider';
+import { MilestoneTreeProvider, MilestoneTreeItem } from './providers/milestoneTreeProvider';
+import { NotificationTreeProvider, NotificationTreeItem } from './providers/notificationTreeProvider';
 import { WorkflowRunListItem, WorkflowJob } from './models/action';
 import { PRDiffContentProvider, PR_DIFF_SCHEME, createPRFileUri, createEmptyPRFileUri } from './providers/prDiffContentProvider';
 import { PRDetailsContentProvider, PR_DETAILS_SCHEME } from './providers/prDetailsContentProvider';
@@ -11,6 +13,9 @@ import { IssueDetailWebviewProvider } from './webview/issueDetail/provider';
 import { ActionDetailWebviewProvider } from './webview/actionDetail/provider';
 import { ReleaseDetailWebviewProvider } from './webview/releaseDetail/provider';
 import { ReviewProvider } from './webview/review/provider';
+import { RepoOverviewWebviewProvider } from './webview/repoOverview/provider';
+import { SettingsWebviewProvider } from './webview/settings/provider';
+import { CompareWebviewProvider } from './webview/compare/provider';
 import { ForgejoCommentController } from './providers/prCommentController';
 import { pendingReviewManager } from './providers/pendingReviewManager';
 import { PullRequestFile, PullRequestListItem } from './models/pullRequest';
@@ -35,6 +40,11 @@ import { initializeSecretStorage } from './utils/secretStorage';
 import { migrateTokensToSecretStorage } from './utils/migration';
 import { getCurrentBranch } from './utils/gitUtils';
 import { initCacheStore } from './utils/cacheStore';
+import { TREE_SORT_OPTIONS, TreeSortOrder } from './utils/treeSort';
+import { PRStateFilter, PR_STATE_FILTER_LABELS } from './providers/prTreeProvider';
+import { IssueStateFilter, ISSUE_STATE_FILTER_LABELS } from './providers/issueTreeProvider';
+import { setDefaultInstance } from './utils/instanceHelpers';
+import { createInstanceStatusBar, type InstanceStatusBar } from './providers/instanceStatusBar';
 
 export async function activate(context: vscode.ExtensionContext) {
   logInfo('Extension is now active');
@@ -57,6 +67,8 @@ export async function activate(context: vscode.ExtensionContext) {
   const issueTreeProvider = new IssueTreeProvider();
   const actionsTreeProvider = new ActionsTreeProvider();
   const releaseTreeProvider = new ReleaseTreeProvider();
+  const milestoneTreeProvider = new MilestoneTreeProvider();
+  const notificationTreeProvider = new NotificationTreeProvider();
 
   // Helper to update the context key for viewsWelcome
   async function updateNoInstanceContext() {
@@ -98,6 +110,17 @@ export async function activate(context: vscode.ExtensionContext) {
     treeDataProvider: releaseTreeProvider,
     showCollapseAll: true
   });
+
+  const milestoneTreeView = vscode.window.createTreeView('forgejoMilestones', {
+    treeDataProvider: milestoneTreeProvider,
+    showCollapseAll: true
+  });
+
+  const notificationTreeView = vscode.window.createTreeView('forgejoNotifications', {
+    treeDataProvider: notificationTreeProvider,
+    showCollapseAll: false
+  });
+  context.subscriptions.push(notificationTreeProvider);
 
   // Create virtual document provider for PR diffs
   const prDiffProvider = new PRDiffContentProvider();
@@ -171,6 +194,7 @@ export async function activate(context: vscode.ExtensionContext) {
         issueTreeProvider.refresh();
         actionsTreeProvider.refresh();
         releaseTreeProvider.refresh();
+        milestoneTreeProvider.refresh();
       }
     })
   );
@@ -183,6 +207,7 @@ export async function activate(context: vscode.ExtensionContext) {
       issueTreeProvider.refresh();
       actionsTreeProvider.refresh();
       releaseTreeProvider.refresh();
+      milestoneTreeProvider.refresh();
     })
   );
 
@@ -930,6 +955,27 @@ export async function activate(context: vscode.ExtensionContext) {
   // Create Review provider
   const reviewProvider = new ReviewProvider(context.extensionUri);
 
+  // B4.1 / B4.3 / B4.6 — repo overview / settings / compare webviews
+  const repoOverviewProvider = new RepoOverviewWebviewProvider(context.extensionUri);
+  const repoSettingsProvider = new SettingsWebviewProvider(context.extensionUri);
+  const compareWebviewProvider = new CompareWebviewProvider(context.extensionUri);
+
+  // Register a single root-level theme-change listener that re-broadcasts
+  // the new theme to every webview provider's open panels. Each provider also
+  // keeps its own listener (so they still work if used standalone), but this
+  // central subscription guarantees all surfaces (PR / Issue / Action / Release
+  // / Review) repaint together when the user switches themes.
+  context.subscriptions.push(
+    prDetailWebviewProvider.registerThemeListener(),
+    issueDetailWebviewProvider.registerThemeListener(),
+    actionDetailWebviewProvider.registerThemeListener(),
+    releaseDetailWebviewProvider.registerThemeListener(),
+    reviewProvider.registerThemeListener(),
+    repoOverviewProvider.registerThemeListener(),
+    repoSettingsProvider.registerThemeListener(),
+    compareWebviewProvider.registerThemeListener()
+  );
+
   // Register Issue details viewer command
   // Handles both direct tree item click (args: issue, owner, repo) and
   // context menu invocation (args: IssueTreeItem)
@@ -1006,6 +1052,194 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     registerCommand('forgejo.createRelease', () => createReleaseCommand(releaseTreeProvider))
+  );
+
+  // Sort commands for tree views (B3.1.5)
+  context.subscriptions.push(
+    registerCommand('forgejo.sortPullRequests', async () => {
+      const picked = await vscode.window.showQuickPick(
+        TREE_SORT_OPTIONS.map(o => ({ label: o.label, description: o.description, value: o.value })),
+        { placeHolder: 'Sort pull requests by…', title: 'Sort Pull Requests' }
+      );
+      if (picked) prTreeProvider.setSortOrder((picked as { value: TreeSortOrder }).value);
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.sortIssues', async () => {
+      const picked = await vscode.window.showQuickPick(
+        TREE_SORT_OPTIONS.map(o => ({ label: o.label, description: o.description, value: o.value })),
+        { placeHolder: 'Sort issues by…', title: 'Sort Issues' }
+      );
+      if (picked) issueTreeProvider.setSortOrder((picked as { value: TreeSortOrder }).value);
+    })
+  );
+
+  // Filter-by-state commands for tree views (B3.1.1)
+  context.subscriptions.push(
+    registerCommand('forgejo.filterPullRequests', async () => {
+      const current = prTreeProvider.getStateFilter();
+      const picked = await vscode.window.showQuickPick(
+        (Object.keys(PR_STATE_FILTER_LABELS) as PRStateFilter[]).map(k => ({
+          label: PR_STATE_FILTER_LABELS[k],
+          description: k === current ? 'current' : undefined,
+          value: k,
+        })),
+        { placeHolder: 'Show which pull requests?', title: 'Filter Pull Requests' },
+      );
+      if (picked) prTreeProvider.setStateFilter((picked as { value: PRStateFilter }).value);
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.filterIssues', async () => {
+      const current = issueTreeProvider.getStateFilter();
+      const picked = await vscode.window.showQuickPick(
+        (Object.keys(ISSUE_STATE_FILTER_LABELS) as IssueStateFilter[]).map(k => ({
+          label: ISSUE_STATE_FILTER_LABELS[k],
+          description: k === current ? 'current' : undefined,
+          value: k,
+        })),
+        { placeHolder: 'Show which issues?', title: 'Filter Issues' },
+      );
+      if (picked) issueTreeProvider.setStateFilter((picked as { value: IssueStateFilter }).value);
+    })
+  );
+
+  // Multi-instance switcher (B3.1.4 / B4.4)
+  context.subscriptions.push(
+    registerCommand('forgejo.switchInstance', async () => {
+      const instances = await getAllInstances();
+      if (instances.length === 0) {
+        void vscode.window.showWarningMessage('No Forgejo instances configured. Use "Forgejo: Add Instance" first.');
+        return;
+      }
+      const config = await getForgejoConfig();
+      const current = config?.instanceUrl;
+      const picked = await vscode.window.showQuickPick(
+        instances.map(i => ({
+          label: i.name,
+          description: i.instanceUrl,
+          picked: i.instanceUrl === current,
+          id: i.id,
+        })),
+        { placeHolder: 'Select active instance', title: 'Switch Forgejo Instance' }
+      );
+      if (!picked) return;
+      await setDefaultInstance((picked as { id: string }).id);
+      await instanceStatusBar.refresh();
+      prTreeProvider.refresh();
+      issueTreeProvider.refresh();
+      actionsTreeProvider.refresh();
+      releaseTreeProvider.refresh();
+      milestoneTreeProvider.refresh();
+      notificationTreeProvider.refresh();
+    })
+  );
+
+  // Multi-instance indicator (B4.4) — status-bar item
+  const instanceStatusBar = createInstanceStatusBar();
+  context.subscriptions.push(instanceStatusBar);
+
+  // === B4 surface stubs — wired progressively below ===
+  // Notifications tree (B4.2)
+  context.subscriptions.push(
+    registerCommand('forgejo.refreshNotifications', () => {
+      notificationTreeProvider.refresh();
+    }),
+    registerCommand('forgejo.markNotificationRead', async (item: NotificationTreeItem) => {
+      if (!item?.thread?.id) return;
+      await notificationTreeProvider.markRead(String(item.thread.id));
+    }),
+    registerCommand('forgejo.markAllNotificationsRead', async () => {
+      await notificationTreeProvider.markAllRead();
+    }),
+    registerCommand('forgejo.openNotificationSubject', async (item: NotificationTreeItem) => {
+      const repo = item?.thread?.repository?.full_name;
+      if (!repo) return;
+      try {
+        const config = await getForgejoConfig();
+        if (!config) return;
+        void vscode.env.openExternal(vscode.Uri.parse(`${config.instanceUrl}/${repo}`));
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Failed to open notification: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }),
+    registerCommand('forgejo.showMilestoneIssues', async (item: MilestoneTreeItem) => {
+      if (!item?.milestone?.title) return;
+      try {
+        const config = await getForgejoConfig();
+        if (!config) return;
+        const url = `${config.instanceUrl}/${item.owner}/${item.repo}/issues?type=issues&state=open&milestones=${encodeURIComponent(item.milestone.title)}`;
+        void vscode.env.openExternal(vscode.Uri.parse(url));
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Failed to open milestone: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }),
+    registerCommand('forgejo.refreshMilestones', () => {
+      milestoneTreeProvider.refresh();
+    })
+  );
+
+  // Tree views to subscriptions
+  context.subscriptions.push(milestoneTreeView, notificationTreeView);
+
+  // === B4.6 Compare refs builder ============================================
+  context.subscriptions.push(
+    registerCommand('forgejo.compareRefs', async () => {
+      try {
+        const config = await getForgejoConfig();
+        if (!config) {
+          void vscode.window.showErrorMessage('Forgejo configuration not found');
+          return;
+        }
+        const client = new ForgejoClient(config.instanceUrl, config.token);
+        const branchesResp = await client.listRepoBranches(config.owner, config.repo, 1, 100);
+        const branchNames: string[] = (branchesResp || []).map((b) => b.name).filter(Boolean);
+        if (branchNames.length === 0) {
+          void vscode.window.showInformationMessage('No branches found in this repository.');
+          return;
+        }
+        const basePick = await vscode.window.showQuickPick(branchNames, { placeHolder: 'Select base branch (HEAD of compare target)' });
+        if (!basePick) return;
+        const headPick = await vscode.window.showQuickPick(branchNames, { placeHolder: 'Select head branch (changes to compare)' });
+        if (!headPick || headPick === basePick) return;
+        await compareWebviewProvider.showCompare(config.owner, config.repo, basePick, headPick);
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Compare failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    })
+  );
+
+  // === B4.1 Repo Overview + B4.3 Repo Settings ==============================
+  context.subscriptions.push(
+    registerCommand('forgejo.showRepoOverview', async () => {
+      try {
+        const config = await getForgejoConfig();
+        if (!config) {
+          void vscode.window.showErrorMessage('Forgejo configuration not found');
+          return;
+        }
+        await repoOverviewProvider.showOverview(config.owner, config.repo);
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Failed to load repo overview: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    registerCommand('forgejo.showRepoSettings', async () => {
+      try {
+        const config = await getForgejoConfig();
+        if (!config) {
+          void vscode.window.showErrorMessage('Forgejo configuration not found');
+          return;
+        }
+        await repoSettingsProvider.showSettings(config.owner, config.repo);
+      } catch (error) {
+        void vscode.window.showErrorMessage(`Failed to load repo settings: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    })
   );
 
   // Add releases tree view to subscriptions

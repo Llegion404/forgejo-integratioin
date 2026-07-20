@@ -289,25 +289,30 @@ body {
 }
 
 .job-header.success {
-  border-left: 4px solid #2da042;
+  border-left: 4px solid var(--forgejo-success, #2da042);
 }
 
 .job-header.failure {
-  border-left: 4px solid #f14c4c;
+  border-left: 4px solid var(--forgejo-danger, #f14c4c);
 }
 
-.job-header.running {
-  border-left: 4px solid #ccac00;
+.job-header.running,
+.job-header.in_progress {
+  border-left: 4px solid var(--forgejo-warning, #ccac00);
 }
 
 .job-header.cancelled,
 .job-header.skipped {
-  border-left: 4px solid #616161;
+  border-left: 4px solid var(--forgejo-muted, #616161);
 }
 
 .job-header.queued,
 .job-header.waiting {
-  border-left: 4px solid #3794ff;
+  border-left: 4px solid var(--forgejo-info, #3794ff);
+}
+
+.job-header.blocked {
+  border-left: 4px solid var(--forgejo-purple, #8957e5);
 }
 
 .job-status-icon {
@@ -361,7 +366,7 @@ body {
 
 .step-item.failing {
   background-color: rgba(241, 76, 76, 0.15);
-  border-left: 3px solid #f14c4c;
+  border-left: 3px solid var(--forgejo-danger, #f14c4c);
 }
 
 .step-number {

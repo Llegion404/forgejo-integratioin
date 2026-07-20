@@ -2,6 +2,7 @@ import { buildMcpServer } from '../../mcp/server';
 import { JsonRpcResponse, JsonRpcRequest, JsonRpcMessage } from '../../mcp/transport';
 import { McpInstanceConfig } from '../../mcp/config';
 import { McpForgejoClient } from '../../mcp/client';
+import { ForgejoApiError } from 'forgejo-ts';
 
 const config: McpInstanceConfig = {
 	instanceUrl: 'https://git.example.com',
@@ -91,7 +92,7 @@ describe('MCP branch protection tools', () => {
 	});
 
 	describe('get_branch_protection', () => {
-		it('calls GET /repos/{o}/{r}/branch_protections/{branch}', async () => {
+		it('calls GET /repos/{o}/{r}/branch_protections/{branch} and wraps rule in {protected:true} envelope', async () => {
 			const mockRule = { rule_name: 'main', enable_push: false, required_approvals: 2 };
 			(mockClient.rawRequest as jest.Mock).mockResolvedValue(mockRule);
 
@@ -104,7 +105,8 @@ describe('MCP branch protection tools', () => {
 				'/repos/foo/bar/branch_protections/main',
 			);
 			const result = resp.result as { content: { text: string }[] };
-			expect(JSON.parse(result.content[0].text)).toEqual(mockRule);
+			const payload = JSON.parse(result.content[0].text);
+			expect(payload).toEqual({ protected: true, branch: 'main', rule: mockRule });
 		});
 
 		it('URL-encodes branch names containing slashes', async () => {
@@ -136,16 +138,32 @@ describe('MCP branch protection tools', () => {
 			expect(result.content[0].text).toMatch(/branch/i);
 		});
 
-		it('wraps 404 errors as isError: true', async () => {
+		it('translates 404 into {protected:false} envelope (NOT isError)', async () => {
+			// Forgejo returns 404 when no protection rule exists for the branch.
+			// Our tool now catches ForgejoApiError(404) and returns a structured
+			// envelope so agents can distinguish "no rule" from real errors.
 			(mockClient.rawRequest as jest.Mock).mockRejectedValue(
-				new Error('HTTP 404: branch protection rule not found'),
+				new ForgejoApiError(404, 'Not Found', 'rule not found'),
 			);
 			const resp = await callTool('get_branch_protection', {
-				owner: 'foo', repo: 'bar', branch: 'nonexistent',
+				owner: 'foo', repo: 'bar', branch: 'unprotected',
+			});
+			const result = resp.result as { isError?: boolean; content: { text: string }[] };
+			expect(result.isError ?? false).toBe(false);
+			const payload = JSON.parse(result.content[0].text);
+			expect(payload).toEqual({ protected: false, branch: 'unprotected', rule: null });
+		});
+
+		it('still surfaces 403 as isError', async () => {
+			(mockClient.rawRequest as jest.Mock).mockRejectedValue(
+				new ForgejoApiError(403, 'Forbidden', 'no access'),
+			);
+			const resp = await callTool('get_branch_protection', {
+				owner: 'foo', repo: 'bar', branch: 'main',
 			});
 			const result = resp.result as { isError: boolean; content: { text: string }[] };
 			expect(result.isError).toBe(true);
-			expect(result.content[0].text).toContain('HTTP 404');
+			expect(result.content[0].text).toContain('HTTP 403');
 		});
 	});
 });

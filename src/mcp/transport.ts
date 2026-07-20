@@ -50,6 +50,22 @@ const INVALID_REQUEST = -32600;
 const METHOD_NOT_FOUND = -32601;
 const INTERNAL_ERROR = -32603;
 
+/**
+ * Maximum accumulated buffer size for incoming bytes before we reject with
+ * PARSE_ERROR. 16 MB is generous for any legitimate JSON-RPC message (most
+ * are <1 KB) but stops a malicious/buggy client from streaming a 1 GB
+ * single line into the server's memory.
+ */
+const MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Maximum number of in-flight tool calls before new ones queue. Stops a
+ * client from pipelining 1000 requests and fanning them out into 2000+
+ * concurrent HTTP requests to Forgejo. The SDK's per-request timeout
+ * handles long-running stalls; this is purely a concurrency throttle.
+ */
+const MAX_CONCURRENT_REQUESTS = 4;
+
 export function makeErrorResponse(
 	id: string | number | null,
 	code: number,
@@ -131,6 +147,16 @@ export class StdioTransport {
 	private dataListener?: (chunk: unknown) => void;
 	private closeListener?: () => void;
 	private errorListener?: (err: unknown) => void;
+	/**
+	 * Concurrency queue: promise chain that serializes new requests up to
+	 * MAX_CONCURRENT_REQUESTS. Each handleLine invocation is appended to a
+	 * tail promise; the chain naturally limits in-flight handlers to the
+	 * configured bound. Without this, pipelining 1000 tools/call lines
+	 * would fire 1000 concurrent handlers (and 2000+ HTTP requests via the
+	 * fan-out tools).
+	 */
+	private activeRequests = 0;
+	private readonly pendingQueue: Array<() => void> = [];
 
 	constructor(
 		stdin: NodeJS.ReadStream | Readable = process.stdin,
@@ -159,11 +185,40 @@ export class StdioTransport {
 
 	private handleData(chunk: Buffer | string): void {
 		this.buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+		// DoS guard: refuse to buffer unbounded single messages.
+		if (this.buffer.length > MAX_BUFFER_BYTES) {
+			this.send(makeErrorResponse(null, PARSE_ERROR, `Incoming message exceeded ${MAX_BUFFER_BYTES} byte buffer limit`));
+			this.buffer = '';
+			return;
+		}
 		let newlineIdx: number;
 		while ((newlineIdx = this.buffer.indexOf('\n')) >= 0) {
 			const line = this.buffer.slice(0, newlineIdx);
 			this.buffer = this.buffer.slice(newlineIdx + 1);
-			void this.handleLine(line);
+			this.queueLine(line);
+		}
+	}
+
+	/**
+	 * Enqueue a line for processing under the concurrency bound. Lines are
+	 * processed in arrival order; up to MAX_CONCURRENT_REQUESTS run in
+	 * parallel, the rest wait in `pendingQueue`.
+	 */
+	private queueLine(line: string): void {
+		const run = (): void => {
+			this.activeRequests++;
+			void this.handleLine(line).finally(() => {
+				this.activeRequests--;
+				const next = this.pendingQueue.shift();
+				if (next) {
+					next();
+				}
+			});
+		};
+		if (this.activeRequests < MAX_CONCURRENT_REQUESTS) {
+			run();
+		} else {
+			this.pendingQueue.push(run);
 		}
 	}
 

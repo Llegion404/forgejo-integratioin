@@ -21,6 +21,8 @@ import type { IssueTreeItem } from '../providers/issueTreeProvider';
 import type { PRTreeItem, PROverviewItem, PRFileItem } from '../providers/prTreeProvider';
 import type { WorkflowRunTreeItem, JobTreeItem, StepTreeItem, StepLogArgs } from '../providers/actionsTreeProvider';
 import type { ReleaseTreeItem } from '../providers/releaseTreeProvider';
+import type { NotificationTreeItem } from '../providers/notificationTreeProvider';
+import type { MilestoneTreeItem } from '../providers/milestoneTreeProvider';
 
 // ---------------------------------------------------------------------------
 // Command argument map
@@ -142,6 +144,24 @@ export interface CommandMap {
   'forgejo.managePendingReview': [];
   'forgejo.submitPendingReview': [];
   'forgejo.cancelPendingReview': [];
+
+  // -- Tree sort + filter + multi-instance switcher (B3.1.1 / B3.1.4 / B3.1.5 / B4.4) --------
+  'forgejo.sortPullRequests': [];
+  'forgejo.sortIssues': [];
+  'forgejo.filterPullRequests': [];
+  'forgejo.filterIssues': [];
+  'forgejo.switchInstance': [];
+
+  // -- B4 surfaces (wired progressively) -----------------------------------
+  'forgejo.showRepoOverview': [];
+  'forgejo.compareRefs': [];
+  'forgejo.showRepoSettings': [];
+  'forgejo.refreshNotifications': [];
+  'forgejo.markNotificationRead': [item: NotificationTreeItem];
+  'forgejo.markAllNotificationsRead': [];
+  'forgejo.openNotificationSubject': [item: NotificationTreeItem];
+  'forgejo.refreshMilestones': [];
+  'forgejo.showMilestoneIssues': [item: MilestoneTreeItem];
 }
 
 // ---------------------------------------------------------------------------

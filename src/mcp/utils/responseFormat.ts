@@ -190,12 +190,21 @@ export interface PrDescriptionSummary {
 /**
  * Summarise the top-level PR object: bounded body, short keys, no avatar URLs.
  * Always returns metadata even when the body is enormous.
+ *
+ * Defensive against missing/undefined fields: Forgejo occasionally returns
+ * PRs without labels (older instances), and PRs from deleted-head repos
+ * have `head: null`. Both would previously throw `TypeError: Cannot read
+ * properties of null/undefined` and break the entire `get_pull_request`
+ * envelope; now they degrade to empty/`null` values.
  */
 export function summarizePrDescription(
 	pr: PullRequest,
 	opts: DescriptionOptions = {},
 ): PrDescriptionSummary {
 	const maxBodyLength = opts.maxBodyLength ?? DEFAULT_MAX_BODY_LENGTH;
+	const headRef = pr.head?.ref ?? '';
+	const headSha = pr.head?.sha ?? '';
+	const baseRef = pr.base?.ref ?? '';
 	return {
 		number: pr.number,
 		title: pr.title,
@@ -203,13 +212,15 @@ export function summarizePrDescription(
 		draft: pr.draft,
 		merged: pr.merged,
 		mergeable: pr.mergeable,
-		base_ref: pr.base.ref,
-		head_ref: pr.head.ref,
-		head_sha: pr.head.sha,
+		base_ref: baseRef,
+		head_ref: headRef,
+		head_sha: headSha,
 		author: compactUser(pr.user),
 		created_at: pr.created_at,
 		updated_at: pr.updated_at,
-		labels: pr.labels.map((l) => ({ name: l.name })),
+		labels: (pr.labels ?? [])
+			.map((l) => compactLabel(l as unknown as Record<string, unknown>))
+			.filter((x): x is CompactLabel => x !== null),
 		body: truncateText(pr.body, maxBodyLength),
 	};
 }
@@ -243,6 +254,9 @@ export interface CommitsSummary {
  * message only, capped to `maxItems`. The agent can call
  * `list_pull_request_commits` for full messages or `get_file_contents`
  * with a SHA to inspect a single commit's tree.
+ *
+ * Defensive against commits with null/missing commit metadata (ghost
+ * authors, detached commits, GitHub-imported commits with no author).
  */
 export function summarizeCommits(
 	commits: PullRequestCommit[],
@@ -258,10 +272,10 @@ export function summarizeCommits(
 		items: sliced.map((c) => ({
 			sha: c.sha,
 			short_sha: shortSha(c.sha),
-			subject: commitSubject(c.commit.message),
+			subject: commitSubject(c.commit?.message),
 			author: compactUser(c.author),
-			commit_author: c.commit.author.name,
-			date: c.commit.author.date,
+			commit_author: c.commit?.author?.name ?? '',
+			date: c.commit?.author?.date ?? '',
 		})),
 	};
 }
@@ -661,6 +675,8 @@ export interface PrListItemSummary {
  * Summarise a single PR from `list_pull_requests`. The SDK returns the
  * full PullRequest shape (not PullRequestListItem), so we keep the merge
  * state + refs + bounded body and drop everything else.
+ *
+ * Defensive against `base`/`head` being null (deleted source repo).
  */
 export function summarizePrListItem(pr: PullRequest, opts: ListItemOptions = {}): PrListItemSummary {
 	const maxBodyLength = opts.maxBodyLength ?? DEFAULT_MAX_BODY_LENGTH;
@@ -671,8 +687,8 @@ export function summarizePrListItem(pr: PullRequest, opts: ListItemOptions = {})
 		draft: pr.draft,
 		merged: pr.merged,
 		mergeable: pr.mergeable,
-		base_ref: pr.base.ref,
-		head_ref: pr.head.ref,
+		base_ref: pr.base?.ref ?? '',
+		head_ref: pr.head?.ref ?? '',
 		body: truncateText(pr.body, maxBodyLength),
 		html_url: pr.html_url,
 		author: compactUser(pr.user),

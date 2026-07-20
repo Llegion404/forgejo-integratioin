@@ -31,7 +31,16 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "workspaceContains:.git",
+    "onCommand:forgejo.addInstance",
+    "onCommand:forgejo.manageInstances",
+    "onCommand:forgejo.createIssue",
+    "onCommand:forgejo.createPullRequest",
+    "onCommand:forgejo.createRelease",
+    "onCommand:forgejo.showRepoOverview",
+    "onCommand:forgejo.showRepoSettings",
+    "onCommand:forgejo.compareRefs",
+    "onCommand:forgejo.switchInstance"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -40,7 +49,7 @@
         {
           "id": "forgejoExplorer",
           "title": "Forgejo",
-          "icon": "$(git-pull-request)"
+          "icon": "media/forgejo-icon.svg"
         }
       ]
     },
@@ -61,6 +70,14 @@
         {
           "id": "forgejoReleases",
           "name": "Releases"
+        },
+        {
+          "id": "forgejoMilestones",
+          "name": "Milestones"
+        },
+        {
+          "id": "forgejoNotifications",
+          "name": "Notifications"
         }
       ]
     },
@@ -229,6 +246,71 @@
         "command": "forgejo.reviewPrChanges",
         "title": "Review All PR Changes",
         "icon": "$(book)"
+      },
+      {
+        "command": "forgejo.showReleaseDetails",
+        "title": "View Release Details",
+        "icon": "$(info)"
+      },
+      {
+        "command": "forgejo.sortPullRequests",
+        "title": "Sort Pull Requests...",
+        "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "forgejo.sortIssues",
+        "title": "Sort Issues...",
+        "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "forgejo.filterPullRequests",
+        "title": "Filter Pull Requests...",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "forgejo.filterIssues",
+        "title": "Filter Issues...",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "forgejo.switchInstance",
+        "title": "Forgejo: Switch Active Instance",
+        "icon": "$(server)"
+      },
+      {
+        "command": "forgejo.showRepoOverview",
+        "title": "Forgejo: Show Repository Overview",
+        "icon": "$(repo)"
+      },
+      {
+        "command": "forgejo.compareRefs",
+        "title": "Forgejo: Compare References...",
+        "icon": "$(compare-changes)"
+      },
+      {
+        "command": "forgejo.refreshNotifications",
+        "title": "Forgejo: Refresh Notifications",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "forgejo.markNotificationRead",
+        "title": "Mark Notification as Read",
+        "icon": "$(check)"
+      },
+      {
+        "command": "forgejo.markAllNotificationsRead",
+        "title": "Mark All Notifications as Read",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "forgejo.showRepoSettings",
+        "title": "Forgejo: Show Repository Settings",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "forgejo.refreshMilestones",
+        "title": "Forgejo: Refresh Milestones",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -249,6 +331,21 @@
           "group": "navigation@2"
         },
         {
+          "command": "forgejo.sortPullRequests",
+          "when": "view == forgejoPullRequests",
+          "group": "navigation@3"
+        },
+        {
+          "command": "forgejo.filterPullRequests",
+          "when": "view == forgejoPullRequests",
+          "group": "navigation@4"
+        },
+        {
+          "command": "forgejo.switchInstance",
+          "when": "view == forgejoPullRequests",
+          "group": "navigation@4"
+        },
+        {
           "command": "forgejo.createIssue",
           "when": "view == forgejoIssues",
           "group": "navigation@0"
@@ -262,6 +359,21 @@
           "command": "forgejo.manageInstances",
           "when": "view == forgejoIssues",
           "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.sortIssues",
+          "when": "view == forgejoIssues",
+          "group": "navigation@3"
+        },
+        {
+          "command": "forgejo.filterIssues",
+          "when": "view == forgejoIssues",
+          "group": "navigation@4"
+        },
+        {
+          "command": "forgejo.switchInstance",
+          "when": "view == forgejoIssues",
+          "group": "navigation@4"
         },
         {
           "command": "forgejo.refreshActions",
@@ -286,6 +398,26 @@
         {
           "command": "forgejo.manageInstances",
           "when": "view == forgejoReleases",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.refreshMilestones",
+          "when": "view == forgejoMilestones",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.switchInstance",
+          "when": "view == forgejoMilestones",
+          "group": "navigation@2"
+        },
+        {
+          "command": "forgejo.refreshNotifications",
+          "when": "view == forgejoNotifications",
+          "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.markAllNotificationsRead",
+          "when": "view == forgejoNotifications",
           "group": "navigation@2"
         }
       ],
@@ -359,6 +491,16 @@
           "command": "forgejo.openReleaseInBrowser",
           "when": "viewItem == release || viewItem == releaseDraft || viewItem == releasePrerelease",
           "group": "navigation@1"
+        },
+        {
+          "command": "forgejo.showReleaseDetails",
+          "when": "viewItem == release || viewItem == releaseDraft || viewItem == releasePrerelease",
+          "group": "navigation@0"
+        },
+        {
+          "command": "forgejo.markNotificationRead",
+          "when": "viewItem == notification",
+          "group": "navigation@0"
         }
       ],
       "comments/commentThread/context": [
@@ -381,6 +523,21 @@
       },
       {
         "view": "forgejoActions",
+        "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
+        "when": "forgejo.noInstanceConfigured"
+      },
+      {
+        "view": "forgejoReleases",
+        "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
+        "when": "forgejo.noInstanceConfigured"
+      },
+      {
+        "view": "forgejoMilestones",
+        "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
+        "when": "forgejo.noInstanceConfigured"
+      },
+      {
+        "view": "forgejoNotifications",
         "contents": "No Forgejo instance configured.\n[Add Forgejo Instance](command:forgejo.addInstance)\nAuto-detection from git remotes is also supported.",
         "when": "forgejo.noInstanceConfigured"
       }
@@ -468,11 +625,12 @@
   "scripts": {
     "postinstall": "patch-package",
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/ && mkdir -p out/webview/releaseDetail && cp src/webview/releaseDetail/index.js src/webview/releaseDetail/styles.css out/webview/releaseDetail/ && mkdir -p out/webview/review && cp src/webview/review/index.js src/webview/review/styles.css out/webview/review/",
+    "compile": "tsc -p ./ && tsc -p ./tsconfig.test.json && mkdir -p out/webview/shared && cp src/webview/shared/*.js src/webview/shared/*.css out/webview/shared/ && cp src/webview/prDetail/index.js src/webview/prDetail/styles.css out/webview/prDetail/ && mkdir -p out/webview/issueDetail && cp src/webview/issueDetail/index.js src/webview/issueDetail/styles.css out/webview/issueDetail/ && mkdir -p out/webview/actionDetail && cp src/webview/actionDetail/index.js src/webview/actionDetail/styles.css out/webview/actionDetail/ && mkdir -p out/webview/releaseDetail && cp src/webview/releaseDetail/index.js src/webview/releaseDetail/styles.css out/webview/releaseDetail/ && mkdir -p out/webview/review && cp src/webview/review/index.js src/webview/review/styles.css out/webview/review/ && mkdir -p out/webview/repoOverview && cp src/webview/repoOverview/index.js src/webview/repoOverview/styles.css out/webview/repoOverview/ && mkdir -p out/webview/compare && cp src/webview/compare/index.js src/webview/compare/styles.css out/webview/compare/ && mkdir -p out/webview/settings && cp src/webview/settings/index.js src/webview/settings/styles.css out/webview/settings/",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
     "publish-vscode": "echo 'Use: vsce publish -p <PAT>'",
     "lint": "eslint src --ext ts",
+    "lint:webview": "eslint --no-eslintrc --config .eslintrc.webview.json src/webview --ext js",
     "test:unit": "jest",
     "test:unit:watch": "jest --watch",
     "test:unit:coverage": "jest --coverage",

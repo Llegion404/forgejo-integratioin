@@ -1,0 +1,37 @@
+.repo-header { margin-bottom: 24px; }
+.repo-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.repo-title-row h1 { margin: 0; font-size: 22px; }
+.repo-description { color: var(--forgejo-fg-muted); margin: 8px 0; font-size: 14px; }
+.repo-stats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.stat-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--forgejo-fg-muted); }
+.stat-icon { font-size: 14px; }
+.stat-value { font-weight: 600; color: var(--forgejo-fg); }
+.stat-label { color: var(--forgejo-fg-muted); }
+
+section { margin-bottom: 32px; }
+section h2 { font-size: 16px; border-bottom: 1px solid var(--forgejo-border); padding-bottom: 6px; margin-bottom: 12px; }
+
+.languages-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 12px; background: var(--forgejo-bg-hover); }
+.lang-segment { height: 100%; }
+.languages-list { display: flex; gap: 12px; flex-wrap: wrap; }
+.lang-item { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.lang-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.lang-pct { color: var(--forgejo-fg-muted); }
+
+.files-list { list-style: none; padding: 0; margin: 0; }
+.file-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.file-item:hover { background: var(--forgejo-bg-hover); }
+.file-icon { font-size: 14px; }
+.file-name { color: var(--forgejo-link); }
+
+.contributors-list { display: flex; gap: 12px; flex-wrap: wrap; }
+.contributor-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 12px; background: var(--forgejo-bg-hover); font-size: 12px; cursor: pointer; }
+.contributor-item:hover { background: var(--vscode-list-hoverBackground); }
+.contributor-avatar { width: 18px; height: 18px; border-radius: 50%; }
+.contributor-avatar-placeholder { font-size: 14px; }
+.contributor-name { color: var(--forgejo-link); font-weight: 500; }
+.contributor-count { color: var(--forgejo-fg-muted); }
+
+.release-teaser { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--forgejo-border); border-radius: 4px; }
+.release-tag-pill { background: var(--forgejo-purple-bg); color: var(--forgejo-purple); padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.release-date { color: var(--forgejo-fg-muted); font-size: 12px; margin-left: auto; }

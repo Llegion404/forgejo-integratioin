@@ -1,0 +1,28 @@
+.settings-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; }
+.settings-header h1 { font-size: 18px; margin: 0; }
+
+.tab-bar { display: flex; border-bottom: 1px solid var(--forgejo-border); margin-bottom: 16px; flex-wrap: wrap; }
+.tab-btn { background: transparent; color: var(--forgejo-fg-muted); border: none; padding: 8px 14px; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; font-size: 13px; }
+.tab-btn:hover { color: var(--forgejo-fg); }
+.tab-btn.active { color: var(--forgejo-link); border-bottom-color: var(--forgejo-link); }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th, .data-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--forgejo-border); }
+.data-table th { color: var(--forgejo-fg-muted); font-weight: 500; font-size: 12px; }
+.data-table code { font-family: var(--vscode-editor-font-family); background: var(--forgejo-bg-hover); padding: 1px 4px; border-radius: 2px; }
+
+.simple-list { list-style: none; padding: 0; margin: 0; }
+.simple-list li { padding: 8px 4px; border-bottom: 1px solid var(--forgejo-border); font-size: 13px; }
+.simple-list .muted { color: var(--forgejo-fg-muted); font-size: 12px; }
+
+.row-avatar { width: 16px; height: 16px; border-radius: 50%; vertical-align: middle; }
+
+.badge-success { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--forgejo-success-bg); color: var(--forgejo-success); font-size: 11px; }
+.badge-warning { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--forgejo-warning-bg); color: var(--forgejo-warning); font-size: 11px; }
+.badge-muted { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--forgejo-bg-hover); color: var(--forgejo-fg-muted); font-size: 11px; }
+
+.key-fingerprint { font-family: var(--vscode-editor-font-family); font-size: 11px; word-break: break-all; color: var(--forgejo-fg-muted); }
+.empty { color: var(--forgejo-fg-muted); padding: 12px 0; }

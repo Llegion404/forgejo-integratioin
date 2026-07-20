@@ -214,6 +214,28 @@ describe('summarizePrDescription', () => {
 		expect(r.body.truncated).toBe(false);
 		expect(r.body.text).toBe('');
 	});
+
+	it('does not crash when labels is undefined', () => {
+		// Older Forgejo instances and certain PR shapes return no labels field.
+		// Previously `.labels.map()` threw TypeError. Now we degrade to [].
+		const prNoLabels = { ...mockPr } as Partial<typeof mockPr>;
+		delete (prNoLabels as { labels?: unknown }).labels;
+		const r = summarizePrDescription(prNoLabels as typeof mockPr);
+		expect(r.labels).toEqual([]);
+	});
+
+	it('does not crash when head/base are null (deleted source repo)', () => {
+		const r = summarizePrDescription({ ...mockPr, head: null as unknown as typeof mockPr.head, base: null as unknown as typeof mockPr.base });
+		expect(r.head_ref).toBe('');
+		expect(r.head_sha).toBe('');
+		expect(r.base_ref).toBe('');
+	});
+
+	it('filters out invalid label entries (null/empty name)', () => {
+		const pr = { ...mockPr, labels: [{ name: 'bug' }, null, { name: '' }, { name: 'enhancement' }] } as unknown as typeof mockPr;
+		const r = summarizePrDescription(pr);
+		expect(r.labels).toEqual([{ name: 'bug' }, { name: 'enhancement' }]);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -256,6 +278,32 @@ describe('summarizeCommits', () => {
 		const r = summarizeCommits([]);
 		expect(r.total).toBe(0);
 		expect(r.items).toEqual([]);
+	});
+
+	it('does not crash when commit.commit or commit.author is missing (ghost author)', () => {
+		// GitHub-imported commits, detached commits, or commits from deleted
+		// accounts can have null commit.author. Previously the access to
+		// `c.commit.author.name` threw TypeError.
+		const ghost = {
+			sha: 'b'.repeat(40),
+			commit: undefined,
+			author: { login: 'ghost' },
+			html_url: '',
+		} as unknown as PullRequestCommit;
+		const r = summarizeCommits([ghost]);
+		expect(r.items[0].commit_author).toBe('');
+		expect(r.items[0].date).toBe('');
+		expect(r.items[0].subject).toBe('');
+	});
+
+	it('does not crash when commit.commit.author is null', () => {
+		const ghost = {
+			sha: 'c'.repeat(40),
+			commit: { message: 'msg', author: null },
+			author: null,
+		} as unknown as PullRequestCommit;
+		const r = summarizeCommits([ghost]);
+		expect(r.items[0].commit_author).toBe('');
 	});
 });
 

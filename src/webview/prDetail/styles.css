@@ -203,6 +203,29 @@ body {
 }
 .label-pill .label-remove:hover { opacity: 1; }
 
+/* Inline × removal buttons for any chip-style element */
+.chip-remove-btn {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 0 0 4px;
+  opacity: 0.6;
+}
+.chip-remove-btn:hover { opacity: 1; }
+
+.milestone-name { font-size: 12px; }
+.milestone-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--forgejo-info-bg);
+  color: var(--forgejo-info);
+  font-weight: 500;
+}
+
 .assignees-list, .reviewers-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .assignee-chip, .reviewer-chip {
   display: inline-flex;
