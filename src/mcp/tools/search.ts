@@ -53,6 +53,43 @@ const searchFilterSchemas = {
 	},
 };
 
+/**
+ * Run a global search GET and translate an indexer-disabled 404 into a
+ * helpful empty result instead of a bare HTTP error.
+ *
+ * Forgejo's `/issues/search` and `/code/search` endpoints return 404 when the
+ * instance's search indexer is disabled (the default for many self-hosted
+ * installs — `[indexer] ENABLED=false`) or when the index has not been
+ * populated yet. A raw 404 is confusing (the agent can't tell "no results"
+ * from "search is broken"). This helper adopts the same convention as
+ * `get_branch_protection` (404 is treated as a data point, not a failure):
+ * issues/code search → empty envelope with a `_meta.warning`; non-404 errors
+ * propagate normally.
+ */
+async function runGlobalSearch(
+	client: { rawRequest: <R = unknown>(method: string, endpoint: string) => Promise<R> },
+	path: string,
+	page: number,
+	pageSize: number,
+): Promise<{ items: unknown[]; warning?: string }> {
+	try {
+		const items = await pagedRequest(client, path, page, pageSize);
+		return { items };
+	} catch (err) {
+		if ((err as { statusCode?: unknown }).statusCode === 404) {
+			return {
+				items: [],
+				warning:
+					'Search index is unavailable (Forgejo returned 404, typically because the ' +
+					'search indexer is disabled or not yet populated). No results returned. ' +
+					'Enable [indexer] in the Forgejo app.ini and re-run, or use scoped tools ' +
+					'(list_issues / list_pull_requests / get_file_contents) instead.',
+			};
+		}
+		throw err;
+	}
+}
+
 export const searchIssuesTool: Tool = {
 	name: 'search_issues',
 	description:
@@ -62,7 +99,9 @@ export const searchIssuesTool: Tool = {
 		'id, number, title, state, body, repository {id, owner, name, full_name}, ' +
 		'user, labels, assignees, created_at, updated_at, etc. Useful for ' +
 		'"find every issue assigned to me across my repos" or "find issues ' +
-		'blocking release v2". Paginated.',
+		'blocking release v2". Paginated. Note: returns an empty result with a ' +
+		'_meta.warnings hint (not an error) when the Forgejo search indexer is ' +
+		'disabled or unpopulated.',
 	inputSchema: objectSchema(
 		{
 			query: searchFilterSchemas.query,
@@ -134,8 +173,14 @@ export const searchIssuesTool: Tool = {
 		}
 
 		const path = `/issues/search?${params.join('&')}`;
-		const items = await pagedRequest(client, path, page, pageSize);
-		return { items, _meta: { pagination: buildPaginationMeta(page, pageSize, items.length) } };
+		const { items, warning } = await runGlobalSearch(client, path, page, pageSize);
+		const _meta: { pagination: ReturnType<typeof buildPaginationMeta>; warnings?: string[] } = {
+			pagination: buildPaginationMeta(page, pageSize, items.length),
+		};
+		if (warning) {
+			_meta.warnings = [warning];
+		}
+		return { items, _meta };
 	},
 };
 
@@ -149,7 +194,8 @@ export const searchCodeTool: Tool = {
 		'defined. Searches every repo the token has access to unless ' +
 		'constrained by `repo` (within one owner). Paginated. Note: requires ' +
 		'a search indexer enabled on the Forgejo instance — if the response ' +
-		'is always empty, ask the admin to enable code indexing.',
+		'is empty with a _meta.warnings hint, ask the admin to enable code ' +
+		'indexing.',
 	inputSchema: objectSchema(
 		{
 			query: searchFilterSchemas.query,
@@ -190,15 +236,34 @@ export const searchCodeTool: Tool = {
 			params.push(`org=${encodeURIComponent(args.org.trim())}`);
 		}
 		const path = `/code/search?${params.join('&')}`;
-		const response = await client.rawRequest<{ data?: unknown[] }>('GET', path);
-		const allItems = Array.isArray(response?.data) ? response.data : [];
+		let allItems: unknown[] = [];
+		let warning: string | undefined;
+		try {
+			const response = await client.rawRequest<{ data?: unknown[] }>('GET', path);
+			allItems = Array.isArray(response.data) ? response.data : [];
+		} catch (err) {
+			if ((err as { statusCode?: unknown }).statusCode === 404) {
+				warning =
+					'Code search index is unavailable (Forgejo returned 404, typically because the ' +
+					'search indexer is disabled or not yet populated). No results returned. Enable ' +
+					'[indexer] with ENABLED=true in the Forgejo app.ini and re-run.';
+			} else {
+				throw err;
+			}
+		}
 		// Code search responses are already small; apply pagination via slice.
 		const start = (page - 1) * pageSize;
 		const items = allItems.slice(start, start + pageSize);
+		const _meta: { pagination: ReturnType<typeof buildPaginationMeta>; warnings?: string[] } = {
+			pagination: buildPaginationMeta(page, pageSize, items.length),
+		};
+		if (warning) {
+			_meta.warnings = [warning];
+		}
 		return {
 			items,
 			total_count: allItems.length,
-			_meta: { pagination: buildPaginationMeta(page, pageSize, items.length) },
+			_meta,
 		};
 	},
 };

@@ -44,31 +44,63 @@ describe('MCP workflow tools', () => {
 	beforeEach(() => jest.clearAllMocks());
 
 	describe('list_workflows', () => {
-		it('calls GET /repos/{o}/{r}/actions/workflows with page params', async () => {
-			mockClient.rawRequest.mockResolvedValueOnce([
-				{ id: 1, name: 'CI', path: '.forgejo/workflows/ci.yml', state: 'active' },
-			]);
+		it('fetches repo default branch, then lists .forgejo/workflows and .gitea/workflows', async () => {
+			mockClient.rawRequest
+				.mockResolvedValueOnce({ default_branch: 'main' })
+				.mockResolvedValueOnce([{ name: 'ci.yml', path: '.forgejo/workflows/ci.yml', type: 'file' }])
+				.mockResolvedValueOnce([]); // .gitea/workflows absent → empty array
 			await callTool('list_workflows', { owner: 'foo', repo: 'bar' });
-			expect(mockClient.rawRequest).toHaveBeenCalledWith(
-				'GET',
-				expect.stringMatching(/\/repos\/foo\/bar\/actions\/workflows\?page=1&limit=30/),
+			// repo for default branch
+			expect(mockClient.rawRequest).toHaveBeenNthCalledWith(1, 'GET', '/repos/foo/bar');
+			// .forgejo dir
+			expect(mockClient.rawRequest).toHaveBeenNthCalledWith(
+				2, 'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/contents\/\.forgejo%2Fworkflows\?ref=main/),
+			);
+			// .gitea dir
+			expect(mockClient.rawRequest).toHaveBeenNthCalledWith(
+				3, 'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/contents\/\.gitea%2Fworkflows\?ref=main/),
 			);
 		});
 
-		it('wraps response in items + pagination envelope', async () => {
-			mockClient.rawRequest.mockResolvedValueOnce([{ id: 1 }, { id: 2 }]);
+		it('returns items from the merged workflow dirs with pagination envelope', async () => {
+			mockClient.rawRequest
+				.mockResolvedValueOnce({ default_branch: 'main' })
+				.mockResolvedValueOnce([{ name: 'ci.yml', path: '.forgejo/workflows/ci.yml', type: 'file' }])
+				.mockResolvedValueOnce([{ name: 'release.yml', path: '.gitea/workflows/release.yml', type: 'file' }]);
 			const resp = await callTool('list_workflows', { owner: 'foo', repo: 'bar' });
-			const payload = extractContent(resp) as { items: unknown[]; _meta: { pagination: { returned: number } } };
+			const payload = extractContent(resp) as { items: { name: string }[]; _meta: { pagination: { returned: number } } };
 			expect(payload.items).toHaveLength(2);
+			expect(payload.items.map(i => i.name)).toEqual(['ci.yml', 'release.yml']);
 			expect(payload._meta.pagination.returned).toBe(2);
 		});
 
 		it('uses default owner/repo from config', async () => {
-			mockClient.rawRequest.mockResolvedValueOnce([]);
+			mockClient.rawRequest
+				.mockResolvedValueOnce({ default_branch: 'main' })
+				.mockResolvedValueOnce([])
+				.mockResolvedValueOnce([]);
 			await callTool('list_workflows', {});
-			expect(mockClient.rawRequest).toHaveBeenCalledWith(
-				'GET',
-				expect.stringMatching(/\/repos\/default-owner\/default-repo\/actions\/workflows/),
+			expect(mockClient.rawRequest).toHaveBeenNthCalledWith(1, 'GET', '/repos/default-owner/default-repo');
+		});
+
+		it('treats a missing workflow directory as an empty result, not an error', async () => {
+			mockClient.rawRequest
+				.mockResolvedValueOnce({ default_branch: 'main' })
+				.mockRejectedValueOnce(Object.assign(new Error('not found'), { statusCode: 404 }))
+				.mockRejectedValueOnce(Object.assign(new Error('not found'), { statusCode: 404 }));
+			const resp = await callTool('list_workflows', { owner: 'foo', repo: 'bar' });
+			const payload = extractContent(resp) as { items: unknown[] };
+			expect(payload.items).toEqual([]);
+		});
+
+		it('honours an explicit ref instead of fetching the default branch', async () => {
+			mockClient.rawRequest.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+			await callTool('list_workflows', { owner: 'foo', repo: 'bar', ref: 'dev' });
+			expect(mockClient.rawRequest).toHaveBeenNthCalledWith(
+				1, 'GET',
+				expect.stringMatching(/\/repos\/foo\/bar\/contents\/\.forgejo%2Fworkflows\?ref=dev/),
 			);
 		});
 	});

@@ -20,7 +20,7 @@
  * VS Code extension's action tree, or via direct REST call.
  */
 
-import { Tool, resolveOwner, resolveRepo, resolveNumber, resolvePagination, buildPaginationMeta, pagedRequest } from './framework';
+import { Tool, resolveOwner, resolveRepo, resolveNumber, resolvePagination, buildPaginationMeta } from './framework';
 import {
 	objectSchema,
 	ownerSchema,
@@ -35,17 +35,55 @@ function repoBase(owner: string, repo: string): string {
 	return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 }
 
+/**
+ * Standard directories where Forgejo/Gitea expect workflow files to live.
+ * Both are checked (in order) — the returned list is the union.
+ */
+const WORKFLOW_DIRS = ['.forgejo/workflows', '.gitea/workflows'];
+
+/**
+ * Fetch the entries of a repo directory via the contents API. Returns null
+ * when the directory does not exist (404), so callers can treat "no workflow
+ * dir" as an empty result rather than an error.
+ */
+async function listRepoDirectory(
+	client: { rawRequest: <R = unknown>(method: string, endpoint: string) => Promise<R> },
+	owner: string,
+	repo: string,
+	path: string,
+	ref: string,
+): Promise<Record<string, unknown>[] | null> {
+	try {
+		const result = await client.rawRequest(
+			'GET',
+			`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(ref)}`,
+		);
+		return Array.isArray(result) ? (result as Record<string, unknown>[]) : [];
+	} catch (err) {
+		if ((err as { statusCode?: unknown }).statusCode === 404) {
+			return null;
+		}
+		throw err;
+	}
+}
+
 export const listWorkflowsTool: Tool = {
 	name: 'list_workflows',
 	description:
 		'List the workflow files defined in a repository (.forgejo/workflows/*.yml ' +
-		'or .gitea/workflows/*.yml). For each workflow returns id, name, path, ' +
-		'state (active/disabled), and html_url. Use this to discover what CI ' +
-		'pipelines exist before listing runs. Paginated.',
+		'or .gitea/workflows/*.yml). Enumerates the workflow directories on the ' +
+		'repository default branch and returns each file with name, path, type, ' +
+		'size, sha, and html_url. Repos with no workflow directory return an empty ' +
+		'list (not an error). Use this to discover what CI pipelines exist before ' +
+		'listing runs. Paginated.',
 	inputSchema: objectSchema(
 		{
 			owner: ownerSchema,
 			repo: repoSchema,
+			ref: {
+				type: 'string',
+				description: 'Branch/tag/commit to list workflows at. Defaults to the repository default branch.',
+			},
 			page: pageSchema,
 			page_size: pageSizeSchema,
 		},
@@ -55,11 +93,33 @@ export const listWorkflowsTool: Tool = {
 		const owner = resolveOwner(args, config);
 		const repo = resolveRepo(args, config);
 		const { page, pageSize } = resolvePagination(args);
-		const items = await pagedRequest(
-			client,
-			`${repoBase(owner, repo)}/actions/workflows`,
-			page, pageSize,
-		);
+
+		// Resolve the ref: an explicit one from args, else the repo's default
+		// branch (fetched via the repo endpoint).
+		let ref = typeof args.ref === 'string' && args.ref.trim() !== '' ? args.ref.trim() : '';
+		if (ref === '') {
+			const repoInfo = await client.rawRequest<{ default_branch?: string }>(
+				'GET',
+				`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+			);
+			ref = (repoInfo as { default_branch?: string }).default_branch ?? '';
+		}
+		if (ref === '') {
+			return { items: [], _meta: { pagination: buildPaginationMeta(page, pageSize, 0) } };
+		}
+
+		// Union of .forgejo/workflows and .gitea/workflows. A missing dir just
+		// contributes nothing.
+		const all: Record<string, unknown>[] = [];
+		for (const dir of WORKFLOW_DIRS) {
+			const entries = await listRepoDirectory(client, owner, repo, dir, ref);
+			if (entries) {
+				all.push(...entries);
+			}
+		}
+
+		const start = (page - 1) * pageSize;
+		const items = all.slice(start, start + pageSize);
 		return { items, _meta: { pagination: buildPaginationMeta(page, pageSize, items.length) } };
 	},
 };

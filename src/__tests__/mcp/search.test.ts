@@ -90,6 +90,23 @@ describe('MCP search tools', () => {
 			expect(payload.items).toHaveLength(1);
 			expect(payload._meta.pagination.returned).toBe(1);
 		});
+
+		it('treats indexer-disabled 404 as empty result with a warning, not an error', async () => {
+			mockClient.rawRequest.mockRejectedValueOnce(Object.assign(new Error('not found'), { statusCode: 404 }));
+			const resp = await callTool('search_issues', { query: 'x' });
+			const result = resp.result as { isError?: boolean };
+			expect(result.isError).toBeFalsy();
+			const payload = extractContent(resp) as { items: unknown[]; _meta: { warnings?: string[] } };
+			expect(payload.items).toEqual([]);
+			expect(payload._meta.warnings?.[0]).toMatch(/indexer/i);
+		});
+
+		it('propagates non-404 search errors as isError', async () => {
+			mockClient.rawRequest.mockRejectedValueOnce(Object.assign(new Error('boom'), { statusCode: 500 }));
+			const resp = await callTool('search_issues', { query: 'x' });
+			const result = resp.result as { isError: boolean };
+			expect(result.isError).toBe(true);
+		});
 	});
 
 	describe('search_code', () => {
@@ -129,6 +146,16 @@ describe('MCP search tools', () => {
 			const resp = await callTool('search_code', { query: 'x' });
 			const payload = extractContent(resp) as { items: unknown[] };
 			expect(payload.items).toEqual([]);
+		});
+
+		it('treats indexer-disabled 404 as empty result with a warning, not an error', async () => {
+			mockClient.rawRequest.mockRejectedValueOnce(Object.assign(new Error('not found'), { statusCode: 404 }));
+			const resp = await callTool('search_code', { query: 'x' });
+			const result = resp.result as { isError?: boolean };
+			expect(result.isError).toBeFalsy();
+			const payload = extractContent(resp) as { items: unknown[]; _meta: { warnings?: string[] } };
+			expect(payload.items).toEqual([]);
+			expect(payload._meta.warnings?.[0]).toMatch(/indexer/i);
 		});
 	});
 
