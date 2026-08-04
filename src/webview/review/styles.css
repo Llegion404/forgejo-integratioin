@@ -1,160 +1,100 @@
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  font-family: var(--vscode-font-family);
-  font-size: var(--vscode-font-size);
-  color: var(--vscode-foreground);
-  background: var(--vscode-editor-background);
-  padding: 16px 20px;
-  line-height: 1.5;
-}
-
-.loading { padding: 20px 0; }
-.skeleton { background: var(--vscode-input-background); border-radius: 4px; margin-bottom: 10px; animation: pulse 1.5s ease-in-out infinite; }
-.skeleton-title { height: 24px; width: 60%; }
-.skeleton-line { height: 14px; width: 100%; }
-.skeleton-line.short { width: 40%; }
-@keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
-
-.error { text-align: center; padding: 40px 0; color: var(--vscode-errorForeground); }
-.error h3 { margin-bottom: 8px; }
-.error p { margin-bottom: 16px; }
-
-.btn {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 12px; border: none; border-radius: 2px;
-  cursor: pointer; font-size: 12px; font-family: inherit;
-  color: var(--vscode-button-foreground); background: var(--vscode-button-background);
-}
-.btn:hover { background: var(--vscode-button-hoverBackground); }
-.btn-secondary { color: var(--vscode-foreground); background: var(--vscode-button-secondaryBackground); }
-.btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+/*
+ * Review (PR files-changed) view-specific styles. Inherits reset/buttons/
+ * badges/skeleton/error/diff-line/file-status from shared/base.css — only
+ * review-specific layout lives here.
+ */
 
 .review-header { margin-bottom: 16px; }
-.review-header h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+.review-header h1 { font-size: 1.25em; font-weight: 600; margin-bottom: 6px; }
 
-.review-summary { color: var(--vscode-descriptionForeground); font-size: 13px; margin-bottom: 12px; }
-.review-summary .stat-added { color: var(--vscode-gitDecoration-addedResourceForeground, #388a34); font-weight: 600; }
-.review-summary .stat-deleted { color: var(--vscode-gitDecoration-deletedResourceForeground, #a1260d); font-weight: 600; }
+.review-summary { color: var(--forgejo-fg-muted); font-size: 13px; margin-bottom: 12px; }
+.review-summary .stat-added { color: var(--forgejo-success); font-weight: 600; }
+.review-summary .stat-deleted { color: var(--forgejo-danger); font-weight: 600; }
 
 .review-actions { margin-bottom: 16px; display: flex; gap: 8px; }
 
-.comment-input-container {
-  margin-bottom: 16px; padding: 12px;
-  border: 1px solid var(--vscode-panel-border); border-radius: 6px;
-  background: var(--vscode-editor-background);
-}
-.comment-input-container textarea {
-  width: 100%; min-height: 80px; padding: 8px;
-  font-family: inherit; font-size: 13px; resize: vertical;
-  color: var(--vscode-input-foreground); background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border); border-radius: 3px;
-  margin-bottom: 8px;
-}
-.comment-input-container textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
-.comment-actions { display: flex; gap: 8px; justify-content: flex-end; }
-
+.comment-input-container,
 .review-dialog {
-  margin-bottom: 16px; padding: 16px;
-  border: 1px solid var(--vscode-panel-border); border-radius: 6px;
-  background: var(--vscode-editor-background);
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--forgejo-border);
+  border-radius: 6px;
+  background: var(--forgejo-bg);
 }
 .review-dialog h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+.comment-input-container textarea,
+.review-dialog textarea,
 .review-dialog select {
-  width: 100%; padding: 4px 8px; margin-bottom: 12px;
-  font-family: inherit; font-size: 13px;
-  color: var(--vscode-input-foreground); background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border); border-radius: 3px;
-}
-.review-dialog textarea {
   width: 100%; min-height: 80px; padding: 8px;
   font-family: inherit; font-size: 13px; resize: vertical;
   color: var(--vscode-input-foreground); background: var(--vscode-input-background);
-  border: 1px solid var(--vscode-input-border); border-radius: 3px;
+  border: 1px solid var(--vscode-input-border, var(--forgejo-border)); border-radius: 3px;
   margin-bottom: 8px;
 }
-.review-dialog textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
-.review-actions-bar { display: flex; gap: 8px; justify-content: flex-end; }
+.review-dialog select { min-height: 0; }
+.comment-input-container textarea:focus,
+.review-dialog textarea:focus,
+.review-dialog select:focus { outline: 1px solid var(--forgejo-focus-border); }
+.comment-actions, .review-actions-bar { display: flex; gap: 8px; justify-content: flex-end; }
 
-.file-list { border: 1px solid var(--vscode-panel-border); border-radius: 6px; overflow: hidden; }
-
-.file-item { border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); }
+.file-list { border: 1px solid var(--forgejo-border); border-radius: 6px; overflow: hidden; }
+.file-item { border-bottom: 1px solid var(--forgejo-border); background: var(--forgejo-bg); }
 .file-item:last-child { border-bottom: none; }
 
 .file-header {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; cursor: pointer; user-select: none;
-  transition: background 0.1s;
+  transition: background-color 0.1s;
 }
-.file-header:hover { background: var(--vscode-list-hoverBackground); }
+.file-header:hover { background-color: var(--forgejo-bg-hover); }
 
-.file-header .chevron { width: 16px; text-align: center; font-size: 12px; color: var(--vscode-descriptionForeground); transition: transform 0.15s; }
+.file-header .chevron {
+  width: 16px; text-align: center; font-size: 12px;
+  color: var(--forgejo-fg-muted);
+  transition: transform 0.15s;
+}
 .file-header.expanded .chevron { transform: rotate(90deg); }
 
-.file-header .status-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 18px; height: 18px; border-radius: 3px;
-  font-size: 10px; font-weight: 700; font-family: monospace;
-  flex-shrink: 0;
+.file-header .filename {
+  font-size: 13px; font-weight: 500; flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.status-badge.status-added { background: rgba(56, 138, 52, 0.15); color: var(--vscode-gitDecoration-addedResourceForeground, #388a34); }
-.status-badge.status-modified,
-.status-badge.status-changed { background: rgba(137, 85, 3, 0.15); color: var(--vscode-gitDecoration-modifiedResourceForeground, #895503); }
-.status-badge.status-removed { background: rgba(161, 38, 13, 0.15); color: var(--vscode-gitDecoration-deletedResourceForeground, #a1260d); }
-.status-badge.status-renamed { background: rgba(0, 112, 192, 0.15); color: var(--vscode-gitDecoration-renamedResourceForeground, #0070c0); }
 
-.file-header .filename { font-size: 13px; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.file-header .file-stats { font-size: 12px; color: var(--vscode-descriptionForeground); white-space: nowrap; }
-.file-header .file-stats .added { color: var(--vscode-gitDecoration-addedResourceForeground, #388a34); }
-.file-header .file-stats .deleted { color: var(--vscode-gitDecoration-deletedResourceForeground, #a1260d); }
+.file-header .file-stats { font-size: 12px; color: var(--forgejo-fg-muted); white-space: nowrap; }
+.file-header .file-stats .added { color: var(--forgejo-success); }
+.file-header .file-stats .deleted { color: var(--forgejo-danger); }
 
 .file-header .view-toggle {
   display: inline-flex; align-items: center; gap: 2px;
-  font-size: 11px; color: var(--vscode-textLink-foreground);
+  font-size: 11px; color: var(--forgejo-link);
   padding: 2px 6px; border-radius: 3px; flex-shrink: 0;
 }
-.file-header .view-toggle:hover { background: var(--vscode-toolbar-hoverBackground); }
+.file-header .view-toggle:hover { background-color: var(--forgejo-bg-hover); }
 
 .file-diff { display: none; }
 .file-item.expanded .file-diff { display: block; }
 
-.diff-empty { padding: 16px; text-align: center; color: var(--vscode-descriptionForeground); font-size: 13px; font-style: italic; }
+.diff-empty { padding: 16px; text-align: center; color: var(--forgejo-fg-muted); font-size: 13px; font-style: italic; }
 
 .diff-view {
   font-family: var(--vscode-editor-font-family, monospace);
   font-size: var(--vscode-editor-font-size, 12px);
-  line-height: 1.5; border-top: 1px solid var(--vscode-panel-border);
+  line-height: 1.5;
+  border-top: 1px solid var(--forgejo-border);
   overflow-x: auto;
 }
 
-.diff-hunk { }
-
 .diff-hunk-header {
-  background: var(--vscode-diffEditor-unchangedRegionBackground, var(--vscode-editor-background));
-  color: var(--vscode-descriptionForeground);
-  padding: 2px 8px; font-size: 11px; border-bottom: 1px solid var(--vscode-panel-border);
+  background-color: var(--vscode-diffEditor-unchangedRegionBackground, var(--forgejo-bg-hover));
+  color: var(--forgejo-fg-muted);
+  padding: 2px 8px; font-size: 11px;
+  border-bottom: 1px solid var(--forgejo-border);
 }
 
-.diff-line {
-  display: flex; min-height: 18px; white-space: pre;
-}
-.diff-line-num {
-  min-width: 0; width: 20px; flex-shrink: 0; text-align: right; padding: 0 3px;
-  color: var(--vscode-editorLineNumber-foreground); user-select: none;
-  font-size: 9px; opacity: 0.5;
-}
+/* diff-line / diff-line-num / .add / .del / .ctx come from shared/base.css;
+   review only adds the content cell layout and line-number tinting. */
 .diff-line .content { flex: 1; padding: 0 4px; white-space: pre-wrap; word-break: break-word; }
+.diff-line.add .diff-line-num { border-right: 2px solid var(--forgejo-success); }
+.diff-line.del .diff-line-num { border-right: 2px solid var(--forgejo-danger); }
 
-.diff-line.context { background: var(--vscode-editor-background); }
-.diff-line.context .diff-line-num { background: var(--vscode-editor-background); }
-
-.diff-line.add { background: var(--vscode-diffEditor-insertedTextBackground, rgba(56, 139, 52, 0.15)); }
-.diff-line.add .diff-line-num { background: var(--vscode-diffEditor-insertedLineBackground, rgba(56, 139, 52, 0.15)); border-right-color: var(--vscode-gitDecoration-addedResourceForeground, #388a34); }
-.diff-line.add .content { color: var(--vscode-diffEditor-insertedTextColor, var(--vscode-foreground)); }
-
-.diff-line.del { background: var(--vscode-diffEditor-removedTextBackground, rgba(161, 38, 13, 0.15)); }
-.diff-line.del .diff-line-num { background: var(--vscode-diffEditor-removedLineBackground, rgba(161, 38, 13, 0.15)); border-right-color: var(--vscode-gitDecoration-deletedResourceForeground, #a1260d); }
-.diff-line.del .content { color: var(--vscode-diffEditor-removedTextColor, var(--vscode-foreground)); }
-
-.diff-no-patch { padding: 16px; text-align: center; color: var(--vscode-descriptionForeground); font-size: 12px; }
+.diff-no-patch { padding: 16px; text-align: center; color: var(--forgejo-fg-muted); font-size: 12px; }

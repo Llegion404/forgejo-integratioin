@@ -2,11 +2,15 @@
  * Reactions rendering helper for all Forgejo webviews.
  *
  * Usage from inline script:
- *   window.ForgejoReactions.render(reactionsArray);
+ *   window.ForgejoReactions.render(reactionsArray, { currentUser: 'alice' });
  *   window.ForgejoReactions.emojiMap['+1'];  // → '\u{1F44D}'
  *
- * Returns an HTML string of reaction pills with data-reaction attributes.
- * The webview's click handler is responsible for toggling.
+ * Returns an HTML string of reaction pills with data-reaction attributes. A
+ * pill whose reaction list contains the current user gets `reacted-by-me` so
+ * the click handler can toggle add/remove. The webview wires the toggle.
+ *
+ * Back-compat: `render(reactions, fn)` where fn is a Function is treated as
+ * the escapeHtml override.
  */
 (function (global) {
   var emojiMap = {
@@ -20,20 +24,27 @@
     'eyes': '\u{1F440}'
   };
 
-  function render(reactions, escapeHtml) {
+  function render(reactions, options) {
     if (!reactions || reactions.length === 0) return '';
-    var esc = escapeHtml || (global.ForgejoUtil && global.ForgejoUtil.escapeHtml) || function (t) { return t; };
+    var opts = typeof options === 'function' ? { escapeHtml: options } : (options || {});
+    var esc = opts.escapeHtml || (global.ForgejoUtil && global.ForgejoUtil.escapeHtml) || function (t) { return t; };
+    var currentUser = opts.currentUser || '';
     var counts = {};
     var users = {};
+    var mine = {};
     reactions.forEach(function (r) {
       counts[r.reaction] = (counts[r.reaction] || 0) + 1;
       if (!users[r.reaction]) users[r.reaction] = [];
-      if (r.user && r.user.login) users[r.reaction].push(r.user.login);
+      if (r.user && r.user.login) {
+        users[r.reaction].push(r.user.login);
+        if (currentUser && r.user.login === currentUser) mine[r.reaction] = true;
+      }
     });
     var html = '<div class="reactions-bar">';
     Object.keys(counts).sort().forEach(function (r) {
       var emoji = emojiMap[r] || r;
-      html += '<span class="reaction-pill" data-reaction="' + esc(r) + '" title="' + esc(users[r].join(', ')) + '">' + emoji + ' ' + counts[r] + '</span>';
+      var cls = 'reaction-pill' + (mine[r] ? ' reacted-by-me' : '');
+      html += '<span class="' + cls + '" data-reaction="' + esc(r) + '" title="' + esc(users[r].join(', ')) + '">' + emoji + ' ' + counts[r] + '</span>';
     });
     html += '<span class="add-reaction-btn" title="Add reaction">+</span></div>';
     return html;

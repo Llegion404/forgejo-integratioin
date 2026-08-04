@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { logDebug } from '../../utils/logger';
+import { logDebug, logError } from '../../utils/logger';
+import { getForgejoConfig } from '../../utils/config';
 import type { ThemeKind } from './messages';
 
 /**
@@ -62,6 +63,7 @@ export abstract class BaseDetailWebviewProvider<TPanelState extends BasePanelSta
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `script-src 'nonce-${nonce}' ${webview.cspSource}`,
       `img-src ${webview.cspSource} https: data:`,
+      `font-src ${webview.cspSource}`,
     ].join('; ');
   }
 
@@ -85,13 +87,22 @@ export abstract class BaseDetailWebviewProvider<TPanelState extends BasePanelSta
   }
 
   /**
-   * HTML snippet that links every shared asset (tokens.css, base.css, util.js,
-   * markdown.js, theme.js, reactions.js, log.js). Each provider's
+   * URI for a vendored static asset under media/ (e.g. codicon font/css, brand mark).
+   * These live at the extension root and are referenced directly (not compiled to out/).
+   */
+  protected _mediaUri(webview: vscode.Webview, file: string): vscode.Uri {
+    return webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', file));
+  }
+
+  /**
+   * HTML snippet that links every shared asset (tokens.css, base.css, codicon.css,
+   * util.js, markdown.js, theme.js, reactions.js, log.js). Each provider's
    * getHtmlForWebview includes this in <head> / before its inline script.
    */
   protected _sharedAssetsHtml(webview: vscode.Webview): string {
     const tokens = this._sharedCssUri(webview, 'tokens.css').toString();
     const base = this._sharedCssUri(webview, 'base.css').toString();
+    const codicons = this._mediaUri(webview, 'codicon.css').toString();
     const util = this._sharedJsUri(webview, 'util.js').toString();
     const md = this._sharedJsUri(webview, 'markdown.js').toString();
     const theme = this._sharedJsUri(webview, 'theme.js').toString();
@@ -100,6 +111,7 @@ export abstract class BaseDetailWebviewProvider<TPanelState extends BasePanelSta
     return [
       `<link rel="stylesheet" href="${tokens}">`,
       `<link rel="stylesheet" href="${base}">`,
+      `<link rel="stylesheet" href="${codicons}">`,
       `<script src="${util}"></script>`,
       `<script src="${md}"></script>`,
       `<script src="${theme}"></script>`,
@@ -124,6 +136,68 @@ export abstract class BaseDetailWebviewProvider<TPanelState extends BasePanelSta
     if (!panel) return;
     const value = await vscode.window.showInputBox({ prompt, value: defaultValue });
     void panel.postMessage({ type: 'modalResult', id, value });
+  }
+
+  /* ----- Generic URL opening (single impl; replaces per-provider copies) ----- */
+  protected _openExternal(url: string): void {
+    try {
+      if (url) void vscode.env.openExternal(vscode.Uri.parse(url));
+    } catch (error) {
+      logError('Failed to open URL:', error);
+    }
+  }
+
+  protected async _openUserProfile(username: string): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No Forgejo config');
+      this._openExternal(`${config.instanceUrl}/${encodeURIComponent(username)}`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to open profile: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  /**
+   * Router for the generic message types every webview understands. Subclasses
+   * call this at the top of their message switch and bail when it returns true,
+   * eliminating the duplicated `log` / `showConfirm` / `showInputBox` /
+   * `openUserProfile` / `openInBrowserFromUrl` case blocks (and the dead-handler
+   * pattern they invite). Entity-specific types stay in the subclass.
+   */
+  protected async _handleBaseMessage(message: unknown, panel: vscode.Webview | undefined): Promise<boolean> {
+    const m = message as { type?: string; [k: string]: unknown };
+    switch (m.type) {
+      case 'log':
+        this._handleLogMessage(m as Parameters<BaseDetailWebviewProvider<TPanelState>['_handleLogMessage']>[0]);
+        return true;
+      case 'showConfirm':
+        await this._handleShowConfirm(panel, Number(m.id), String(m.message ?? ''));
+        return true;
+      case 'showInputBox':
+        await this._handleShowInputBox(panel, Number(m.id), String(m.prompt ?? ''), m.defaultValue as string | undefined);
+        return true;
+      case 'openUserProfile':
+        await this._openUserProfile(String(m.username ?? ''));
+        return true;
+      case 'openInBrowserFromUrl':
+        this._openExternal(String(m.url ?? ''));
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Race-guarded fetch. Increments the panel's request id, runs `fn`, and
+   * returns its result only if this request is still the latest; returns null
+   * when a newer refresh superseded it. Subclasses should also check
+   * `state.lastRequestId === id` at their inner await points for long fan-outs.
+   */
+  protected async _runGuarded<R>(state: BasePanelState, fn: (id: number) => Promise<R>): Promise<R | null> {
+    const id = ++state.lastRequestId;
+    const result = await fn(id);
+    if (state.lastRequestId !== id) return null;
+    return result;
   }
 }
 

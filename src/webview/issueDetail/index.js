@@ -744,221 +744,11 @@
     });
   }
 
-  /**
-   * Converts Markdown text to sanitized HTML.
-   */
+  // Markdown rendering is delegated to the shared renderer (shared/markdown.js),
+  // which is XSS-safe and additionally supports @mentions, #issue refs, autolinks,
+  // nested lists, and relative-URL resolution against the instance base.
   function renderMarkdown(text) {
-    if (!text) return '';
-
-    var html = escapeHtml(text);
-
-    var codeBlocks = [];
-    html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(_match, lang, code) {
-      var langAttr = lang ? ' class="language-' + lang + '"' : '';
-      var idx = codeBlocks.length;
-      codeBlocks.push('<pre><code' + langAttr + '>' + code + '</code></pre>');
-      return '\n%%CODEBLOCK_' + idx + '%%\n';
-    });
-
-    var inlineCodes = [];
-    html = html.replace(/`([^`\n]+)`/g, function(_match, code) {
-      var idx = inlineCodes.length;
-      inlineCodes.push('<code>' + code + '</code>');
-      return '%%INLINECODE_' + idx + '%%';
-    });
-
-    var lines = html.split('\n');
-    var result = [];
-    var inList = false;
-    var listType = '';
-    var inBlockquote = false;
-    var blockquoteLines = [];
-    var inTable = false;
-    var tableLines = [];
-
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-
-      if (line.trim().match(/^%%CODEBLOCK_\d+%%$/)) {
-        if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
-        if (inBlockquote) { result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>'); blockquoteLines = []; inBlockquote = false; }
-        if (inTable) { result.push(buildTable(tableLines)); tableLines = []; inTable = false; }
-        result.push(line.trim());
-        continue;
-      }
-
-      if (inBlockquote && !line.match(/^&gt;\s?/)) {
-        result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>');
-        blockquoteLines = [];
-        inBlockquote = false;
-      }
-
-      if (inTable && !line.match(/^\|/)) {
-        result.push(buildTable(tableLines));
-        tableLines = [];
-        inTable = false;
-      }
-
-      if (inList && line.trim() !== '' && !line.match(/^(\s*[-*+]\s|\s*\d+\.\s)/)) {
-        result.push('</' + listType + '>');
-        inList = false;
-        listType = '';
-      }
-
-      if (line.match(/^\s*([-*_]\s*){3,}$/)) {
-        if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
-        result.push('<hr>');
-        continue;
-      }
-
-      var headingMatch = line.match(/^(#{1,6})\s+(.*?)$/);
-      if (headingMatch) {
-        var level = headingMatch[1].length;
-        var headingText = processInline(headingMatch[2]);
-        result.push('<h' + level + '>' + headingText + '</h' + level + '>');
-        continue;
-      }
-
-      if (line.match(/^&gt;\s?/)) {
-        inBlockquote = true;
-        blockquoteLines.push(line.replace(/^&gt;\s?/, ''));
-        continue;
-      }
-
-      if (line.match(/^\|/)) {
-        if (!inTable) { inTable = true; tableLines = []; }
-        tableLines.push(line);
-        continue;
-      }
-
-      var ulMatch = line.match(/^(\s*)[-*+]\s+(.*)/);
-      if (ulMatch) {
-        if (!inList || listType !== 'ul') {
-          if (inList) { result.push('</' + listType + '>'); }
-          result.push('<ul>');
-          inList = true;
-          listType = 'ul';
-        }
-        var liContent = ulMatch[2];
-        var taskMatch = liContent.match(/^\[([ xX])\]\s+(.*)/);
-        if (taskMatch) {
-          var checked = taskMatch[1] !== ' ' ? ' checked' : '';
-          result.push('<li class="task-list-item"><input type="checkbox" class="task-checkbox" data-line="' + i + '"' + checked + '> ' + processInline(taskMatch[2]) + '</li>');
-        } else {
-          result.push('<li>' + processInline(liContent) + '</li>');
-        }
-        continue;
-      }
-
-      var olMatch = line.match(/^(\s*)\d+\.\s+(.*)/);
-      if (olMatch) {
-        if (!inList || listType !== 'ol') {
-          if (inList) { result.push('</' + listType + '>'); }
-          result.push('<ol>');
-          inList = true;
-          listType = 'ol';
-        }
-        result.push('<li>' + processInline(olMatch[2]) + '</li>');
-        continue;
-      }
-
-      if (line.trim() === '') { continue; }
-      result.push('<p>' + processInline(line) + '</p>');
-    }
-
-    if (inBlockquote) { result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>'); }
-    if (inTable) { result.push(buildTable(tableLines)); }
-    if (inList) { result.push('</' + listType + '>'); }
-
-    var output = result.join('\n');
-
-    for (var cb = 0; cb < codeBlocks.length; cb++) {
-      output = output.replace('%%CODEBLOCK_' + cb + '%%', codeBlocks[cb]);
-    }
-    for (var ic = 0; ic < inlineCodes.length; ic++) {
-      output = output.replace(new RegExp('%%INLINECODE_' + ic + '%%', 'g'), inlineCodes[ic]);
-    }
-
-    return output;
-  }
-
-  function processBlockquoteContent(lines) {
-    return lines.map(function(line) {
-      if (line.trim() === '') return '';
-      return '<p>' + processInline(line) + '</p>';
-    }).join('\n');
-  }
-
-  function sanitizeUrl(url) {
-    var trimmed = url.trim().toLowerCase();
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('mailto:')) {
-      return url.trim();
-    }
-    return '';
-  }
-
-  function processInline(text) {
-    if (!text) return '';
-    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(_match, alt, url) {
-      var safe = sanitizeUrl(url);
-      if (!safe) return alt;
-      return '<img src="' + safe + '" alt="' + alt + '" style="max-width:100%;">';
-    });
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_match, linkText, url) {
-      var safe = sanitizeUrl(url);
-      if (!safe) return linkText;
-      return '<a href="' + safe + '">' + linkText + '</a>';
-    });
-    text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
-    text = text.replace(/___([^_]+)___/g, '<strong><em>$1</em></strong>');
-    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-    text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    text = text.replace(/\b_([^_]+)_\b/g, '<em>$1</em>');
-    text = text.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-    return text;
-  }
-
-  function buildTable(lines) {
-    if (lines.length < 2) {
-      return lines.map(function(l) { return '<p>' + processInline(l) + '</p>'; }).join('\n');
-    }
-    var headerCells = parseTableRow(lines[0]);
-    var alignments = [];
-    var isSeparator = lines[1].replace(/\s/g, '').match(/^\|?(:?-+:?\|)*:?-+:?\|?$/);
-    var bodyStartIndex = 1;
-    if (isSeparator) {
-      bodyStartIndex = 2;
-      var sepCells = parseTableRow(lines[1]);
-      for (var a = 0; a < sepCells.length; a++) {
-        var cell = sepCells[a].trim();
-        if (cell.match(/^:-+:$/)) { alignments.push('center'); }
-        else if (cell.match(/^-+:$/)) { alignments.push('right'); }
-        else { alignments.push('left'); }
-      }
-    }
-    var tableHtml = '<table>\n<thead>\n<tr>';
-    for (var h = 0; h < headerCells.length; h++) {
-      var alignAttr = alignments[h] ? ' style="text-align:' + alignments[h] + '"' : '';
-      tableHtml += '<th' + alignAttr + '>' + processInline(headerCells[h].trim()) + '</th>';
-    }
-    tableHtml += '</tr>\n</thead>\n<tbody>';
-    for (var r = bodyStartIndex; r < lines.length; r++) {
-      var cells = parseTableRow(lines[r]);
-      tableHtml += '\n<tr>';
-      for (var c = 0; c < cells.length; c++) {
-        var cellAlignAttr = alignments[c] ? ' style="text-align:' + alignments[c] + '"' : '';
-        tableHtml += '<td' + cellAlignAttr + '>' + processInline(cells[c].trim()) + '</td>';
-      }
-      tableHtml += '</tr>';
-    }
-    tableHtml += '\n</tbody>\n</table>';
-    return tableHtml;
-  }
-
-  function parseTableRow(row) {
-    var trimmed = row.replace(/^\|/, '').replace(/\|$/, '');
-    return trimmed.split('|');
+    return ForgejoMarkdown.render(text);
   }
 
   function makeUserLink(login) {
@@ -967,7 +757,7 @@
 
   function makeAvatarLink(avatarUrl, login) {
     if (!avatarUrl) return '';
-    return `<a class="user-link" href="#" data-username="${escapeHtml(login)}"><img class="activity-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'"></a>`;
+    return `<a class="user-link" href="#" data-username="${escapeHtml(login)}"><img class="activity-avatar" src="${avatarUrl}" alt=""></a>`;
   }
 
   function renderReactions(reactions) {
@@ -1122,54 +912,13 @@
     return eventText;
   }
 
-  function formatTimeAgo(dateString) {
-    if (!dateString) return '';
-
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffSecs = Math.floor(diffMs / 1000);
-    const diffMins = Math.floor(diffSecs / 60);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffSecs < 60) return 'just now';
-    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 30) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-    if (diffDays < 365) return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-  }
-
-  function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  function getContrastColor(hexColor) {
-    let hex = (hexColor || '000000').replace('#', '');
-    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#000000' : '#ffffff';
-  }
-
-  function applyTheme(theme) {
-    console.log('[Forgejo Issue Webview] Applying theme:', theme);
-    document.body.className = '';
-    if (theme === 'light') {
-      document.body.classList.add('vscode-light');
-    } else if (theme === 'dark') {
-      document.body.classList.add('vscode-dark');
-    } else if (theme === 'high-contrast') {
-      document.body.classList.add('vscode-high-contrast');
-    }
-  }
+  // Thin wrappers over the shared runtime modules so all webviews use one
+  // implementation (see shared/util.js, shared/markdown.js, shared/theme.js).
+  function formatTimeAgo(dateString) { return ForgejoUtil.formatTimeAgo(dateString); }
+  function escapeHtml(text) { return ForgejoUtil.escapeHtml(text); }
+  function getContrastColor(hexColor) { return ForgejoUtil.getContrastColor(hexColor); }
+  function applyTheme(theme) { ForgejoTheme.apply(theme); }
 
   // Start
-  console.log('[Forgejo Issue Webview] Starting initialization');
   init();
 })();

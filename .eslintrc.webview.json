@@ -20,7 +20,15 @@
     "setTimeout": "readonly",
     "clearTimeout": "readonly",
     "setInterval": "readonly",
-    "clearInterval": "readonly"
+    "clearInterval": "readonly",
+    "Promise": "readonly",
+    "Map": "readonly",
+    "Set": "readonly",
+    "ForgejoUtil": "readonly",
+    "ForgejoMarkdown": "readonly",
+    "ForgejoTheme": "readonly",
+    "ForgejoReactions": "readonly",
+    "ForgejoLog": "readonly"
   },
   "ignorePatterns": ["out/**", "node_modules/**"]
 }

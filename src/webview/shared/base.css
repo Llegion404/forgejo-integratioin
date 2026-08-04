@@ -44,10 +44,10 @@ a:hover { text-decoration: underline; }
 
 .btn-secondary { background-color: var(--forgejo-button-secondary-bg); color: var(--forgejo-button-secondary-fg); }
 
-.btn-success { background-color: var(--forgejo-success); color: #fff; }
+.btn-success { background-color: var(--forgejo-button-success-bg); color: var(--forgejo-button-success-fg); }
 .btn-success:hover { filter: brightness(1.1); }
 
-.btn-danger { background-color: var(--forgejo-danger); color: #fff; }
+.btn-danger { background-color: var(--forgejo-button-danger-bg); color: var(--forgejo-button-danger-fg); }
 .btn-danger:hover { filter: brightness(1.1); }
 
 .btn-sm { padding: 3px 8px; font-size: 12px; }
@@ -148,6 +148,19 @@ a:hover { text-decoration: underline; }
 .markdown-body hr { border: none; border-top: 1px solid var(--forgejo-border); margin: 1em 0; }
 .markdown-body .task-list-item { list-style: none; }
 .markdown-body .task-list-item input[type=checkbox] { margin-right: 6px; }
+.markdown-body ul ul, .markdown-body ol ol, .markdown-body ul ol, .markdown-body ol ul { margin: 0.2em 0; }
+/* Inline linkify tokens produced by shared/markdown.js */
+.markdown-body .mention,
+.markdown-body .issue-ref {
+  color: var(--forgejo-link);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.markdown-body .mention:hover,
+.markdown-body .issue-ref:hover { text-decoration: underline; }
+.markdown-body .mention { cursor: pointer; }
+.markdown-body .issue-ref { cursor: pointer; }
 
 /* ===== Modal overlay (shared shell — specific webviews override width) ===== */
 .modal-overlay {
@@ -287,3 +300,161 @@ a:hover { text-decoration: underline; }
 }
 .meta-manage-btn:hover { text-decoration: underline; }
 .meta-empty { color: var(--forgejo-fg-muted); font-style: italic; font-size: 12px; }
+
+/* ===== Avatar (broken-image fallback via the img's .avatar-fallback sibling) ===== */
+.avatar {
+  display: inline-block;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  overflow: hidden;
+  vertical-align: middle;
+  background-color: var(--forgejo-bg-hover);
+}
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar.fallback { display: inline-flex; align-items: center; justify-content: center; color: var(--forgejo-fg-muted); }
+.avatar.fallback .codicon { font-size: 16px; }
+
+/* ===== Empty / info state ===== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  color: var(--forgejo-fg-muted);
+  text-align: center;
+}
+.empty-state .empty-icon { font-size: 28px; opacity: 0.7; }
+.empty-state .empty-title { font-weight: 600; color: var(--forgejo-fg); }
+
+/* ===== Tabs (Write/Preview, Conversation/Files, etc.) ===== */
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--forgejo-border); margin-bottom: 12px; }
+.tab {
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--forgejo-fg-muted);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.tab:hover { color: var(--forgejo-fg); }
+.tab.active { color: var(--forgejo-fg); border-bottom-color: var(--forgejo-button-bg); font-weight: 600; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ===== Timeline (shared by PR/Issue/Release activity feeds) ===== */
+.timeline { position: relative; margin: 8px 0; padding-left: 24px; }
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 8px; top: 4px; bottom: 4px;
+  width: 2px;
+  background-color: var(--forgejo-border);
+}
+.timeline-item { position: relative; margin-bottom: 12px; }
+.timeline-marker {
+  position: absolute;
+  left: -22px; top: 4px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background-color: var(--forgejo-bg);
+  border: 2px solid var(--forgejo-fg-muted);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: var(--forgejo-fg-muted);
+}
+.timeline-marker.approved { border-color: var(--forgejo-success); color: var(--forgejo-success); }
+.timeline-marker.changes-requested { border-color: var(--forgejo-danger); color: var(--forgejo-danger); }
+.timeline-marker.commented { border-color: var(--forgejo-info); color: var(--forgejo-info); }
+.timeline-marker.merged { border-color: var(--forgejo-purple); color: var(--forgejo-purple); }
+.timeline-marker.closed { border-color: var(--forgejo-danger); color: var(--forgejo-danger); }
+
+/* ===== Comment card ===== */
+.comment-card {
+  background-color: var(--vscode-sideBar-background, var(--forgejo-bg));
+  border: 1px solid var(--forgejo-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.comment-card .comment-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.comment-card .comment-head .comment-author { font-weight: 600; color: var(--forgejo-fg); }
+.comment-card .comment-head .comment-time { color: var(--forgejo-fg-muted); font-size: 12px; }
+.comment-card .comment-actions { margin-left: auto; display: flex; gap: 4px; opacity: 0.7; }
+.comment-card:hover .comment-actions { opacity: 1; }
+
+/* ===== File row + status badges (compare/review/PR files) ===== */
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.file-row:hover { background-color: var(--forgejo-bg-hover); }
+.file-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--vscode-editor-font-family);
+}
+.file-status.added { background-color: var(--forgejo-success-bg); color: var(--forgejo-success); }
+.file-status.modified { background-color: var(--forgejo-warning-bg); color: var(--forgejo-warning); }
+.file-status.removed { background-color: var(--forgejo-danger-bg); color: var(--forgejo-danger); }
+.file-status.renamed { background-color: var(--forgejo-info-bg); color: var(--forgejo-info); }
+.file-status.copied { background-color: var(--forgejo-info-bg); color: var(--forgejo-info); }
+
+/* ===== Diff lines (review/PR files-changed) ===== */
+.diff-line { display: flex; font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 1.5; white-space: pre; }
+.diff-line-num {
+  flex-shrink: 0;
+  min-width: 52px;
+  padding: 0 8px;
+  color: var(--forgejo-fg-muted);
+  text-align: right;
+  user-select: none;
+  background-color: var(--forgejo-bg-hover);
+}
+.diff-line.add { background-color: var(--vscode-diffEditor-insertedTextBackground, var(--forgejo-success-bg)); }
+.diff-line.del { background-color: var(--vscode-diffEditor-removedTextBackground, var(--forgejo-danger-bg)); }
+.diff-line.ctx { background-color: transparent; }
+
+/* ===== Reactions (single vocabulary; issue/PR migrate to this in Track 2) ===== */
+.reactions-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.reaction-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--forgejo-border);
+  border-radius: 12px;
+  background-color: var(--forgejo-bg-hover);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.reaction-pill:hover { background-color: var(--vscode-list-hoverBackground); }
+.reaction-pill.reacted-by-me {
+  border-color: var(--forgejo-button-bg);
+  background-color: var(--forgejo-info-bg);
+  color: var(--forgejo-fg);
+}
+.add-reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px dashed var(--forgejo-border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--forgejo-fg-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.add-reaction-btn:hover { color: var(--forgejo-fg); border-color: var(--forgejo-fg-muted); }

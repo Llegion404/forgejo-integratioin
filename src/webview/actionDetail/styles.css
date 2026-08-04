@@ -7,7 +7,7 @@
 body {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
-  color: var(--vscode-foreground);
+  color: var(--forgejo-fg);
   background-color: var(--vscode-editor-background);
   line-height: 1.6;
   padding: 0;
@@ -89,51 +89,63 @@ body {
 }
 
 .health-badge.success {
-  background-color: #2da042;
-  color: #ffffff;
+  background-color: var(--forgejo-success);
+  color: var(--forgejo-button-success-fg);
 }
 
 .health-badge.failure {
-  background-color: #f14c4c;
-  color: #ffffff;
+  background-color: var(--forgejo-danger);
+  color: var(--forgejo-button-danger-fg);
 }
 
 .health-badge.running {
-  background-color: #ccac00;
-  color: #000000;
-  animation: pulse 1.5s ease-in-out infinite;
+  background-color: var(--forgejo-warning);
+  color: var(--forgejo-button-success-fg);
+  animation: forgejo-health-pulse 1.5s ease-in-out infinite;
 }
 
 .health-badge.cancelled {
-  background-color: #616161;
-  color: #ffffff;
+  background-color: var(--forgejo-fg-muted);
+  color: var(--forgejo-bg);
 }
 
 .health-badge.queued,
 .health-badge.waiting {
-  background-color: #3794ff;
-  color: #ffffff;
+  background-color: var(--forgejo-info);
+  color: var(--forgejo-button-success-fg);
 }
 
-.health-badge.skipped {
-  background-color: #616161;
-  color: #ffffff;
+.health-badge.skipped,
+.health-badge.neutral {
+  background-color: var(--forgejo-fg-muted);
+  color: var(--forgejo-bg);
 }
 
-@keyframes pulse {
+@keyframes forgejo-health-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
 
 .health-stats {
-  color: var(--vscode-descriptionForeground);
+  color: var(--forgejo-fg-muted);
   font-size: 0.95em;
 }
+
+.jobs-warning {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--forgejo-warning);
+  border-radius: 4px;
+  background-color: var(--forgejo-warning-bg);
+  color: var(--forgejo-fg);
+  font-size: 0.9em;
+}
+.jobs-empty { color: var(--forgejo-fg-muted); padding: 16px; }
 
 /* Action Header */
 .action-header {
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--forgejo-border);
   margin-bottom: 16px;
 }
 
@@ -152,7 +164,7 @@ body {
 }
 
 #run-number {
-  color: var(--vscode-descriptionForeground);
+  color: var(--forgejo-fg-muted);
   font-weight: normal;
   font-size: 1.1em;
 }
@@ -171,7 +183,7 @@ body {
 }
 
 .run-meta-item .label {
-  color: var(--vscode-descriptionForeground);
+  color: var(--forgejo-fg-muted);
   font-weight: 500;
 }
 
@@ -198,7 +210,7 @@ body {
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--forgejo-border);
   margin-bottom: 16px;
 }
 
@@ -250,14 +262,14 @@ body {
   font-size: 1.2em;
   font-weight: 600;
   margin-bottom: 12px;
-  color: var(--vscode-foreground);
+  color: var(--forgejo-fg);
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--forgejo-border);
 }
 
 #jobs-count {
   font-weight: normal;
-  color: var(--vscode-descriptionForeground);
+  color: var(--forgejo-fg-muted);
   font-size: 0.9em;
 }
 
@@ -269,7 +281,7 @@ body {
 
 /* Job Item */
 .job-item {
-  border: 1px solid var(--vscode-panel-border);
+  border: 1px solid var(--forgejo-border);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -311,10 +323,6 @@ body {
   border-left: 4px solid var(--forgejo-info, #3794ff);
 }
 
-.job-header.blocked {
-  border-left: 4px solid var(--forgejo-purple, #8957e5);
-}
-
 .job-status-icon {
   font-size: 1.2em;
   flex-shrink: 0;
@@ -323,16 +331,16 @@ body {
 .job-name {
   flex: 1;
   font-weight: 600;
-  color: var(--vscode-foreground);
+  color: var(--forgejo-fg);
 }
 
 .job-duration {
-  color: var(--vscode-descriptionForeground);
+  color: var(--forgejo-fg-muted);
   font-size: 0.9em;
 }
 
 .job-expand-icon {
-  color: var(--vscode-descriptionForeground);
+  color: var(--forgejo-fg-muted);
   font-size: 0.8em;
   transition: transform 0.2s;
 }
@@ -345,7 +353,7 @@ body {
 .steps-list {
   display: none;
   background-color: var(--vscode-editor-inactiveSelectionBackground);
-  border-top: 1px solid var(--vscode-panel-border);
+  border-top: 1px solid var(--forgejo-border);
 }
 
 .job-item.expanded .steps-list {
@@ -357,7 +365,7 @@ body {
   align-items: center;
   gap: 10px;
   padding: 10px 16px 10px 32px;
-  border-bottom: 1px solid var(--vscode-panel-border);
+  border-bottom: 1px solid var(--forgejo-border);
 }
 
 .step-item:last-child {
@@ -365,12 +373,12 @@ body {
 }
 
 .step-item.failing {
-  background-color: rgba(241, 76, 76, 0.15);
-  border-left: 3px solid var(--forgejo-danger, #f14c4c);
+  background-color: var(--forgejo-danger-bg);
+  border-left: 3px solid var(--forgejo-danger);
 }
 
 .step-number {
-  color: var(--vscode-descriptionForeground);
+  color: var(--forgejo-fg-muted);
   font-size: 0.85em;
   min-width: 24px;
 }
@@ -382,11 +390,11 @@ body {
 
 .step-name {
   flex: 1;
-  color: var(--vscode-foreground);
+  color: var(--forgejo-fg);
 }
 
 .step-duration {
-  color: var(--vscode-descriptionForeground);
+  color: var(--forgejo-fg-muted);
   font-size: 0.85em;
 }
 
@@ -395,15 +403,15 @@ body {
   margin-bottom: 24px;
   padding: 16px;
   border-radius: 6px;
-  background-color: rgba(241, 76, 76, 0.1);
-  border: 1px solid rgba(241, 76, 76, 0.3);
+  background-color: var(--forgejo-danger-bg);
+  border: 1px solid var(--forgejo-danger);
 }
 
 .failures-section h2 {
   font-size: 1.1em;
   font-weight: 600;
   margin-bottom: 12px;
-  color: #f14c4c;
+  color: var(--forgejo-danger);
   border-bottom: none;
   padding-bottom: 0;
 }
@@ -419,22 +427,22 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background-color: var(--vscode-editor-background);
+  background-color: var(--forgejo-bg);
   border-radius: 4px;
-  border-left: 3px solid #f14c4c;
+  border-left: 3px solid var(--forgejo-danger);
 }
 
 .failure-job-name {
   font-weight: 600;
-  color: var(--vscode-foreground);
+  color: var(--forgejo-fg);
 }
 
 .failure-step-name {
-  color: #f14c4c;
+  color: var(--forgejo-danger);
 }
 
 .failure-separator {
-  color: var(--vscode-descriptionForeground);
+  color: var(--forgejo-fg-muted);
 }
 
 /* View Logs Button */
@@ -453,25 +461,18 @@ body {
   background-color: var(--vscode-button-secondaryHoverBackground);
 }
 
-/* High Contrast Theme Adjustments */
-body.vscode-high-contrast {
-  --vscode-editor-background: #000000;
-  --vscode-foreground: #ffffff;
-  --vscode-button-background: #ffffff;
-  --vscode-button-foreground: #000000;
-  --vscode-button-hoverBackground: #f0f0f0;
-}
-
+/* High Contrast adjustments — only additive borders, never override the
+   real --vscode-* theme variables (that fights the user's chosen HC theme). */
 body.vscode-high-contrast .health-badge {
   border: 2px solid currentColor;
 }
 
 body.vscode-high-contrast .job-item {
-  border: 2px solid var(--vscode-foreground);
+  border: 2px solid var(--forgejo-fg);
 }
 
 body.vscode-high-contrast .step-item.failing {
-  border: 2px solid #f14c4c;
+  border: 2px solid var(--forgejo-danger);
 }
 
 /* Responsive Design */

@@ -8,7 +8,7 @@ import { BaseDetailWebviewProvider } from '../shared/baseWebviewProvider';
 export type ReviewWebviewMessage =
   | { type: 'ready' }
   | { type: 'refresh' }
-  | { type: 'openFile'; filename: string; owner: string; repo: string; baseRef: string; headRef: string }
+  | { type: 'openFile'; filename: string; status: string; additions: number; deletions: number; changes: number; owner: string; repo: string; baseRef: string; headRef: string }
   | { type: 'addComment'; body: string }
   | { type: 'addReview'; state: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT'; body: string };
 
@@ -104,38 +104,43 @@ export class ReviewProvider extends BaseDetailWebviewProvider<PanelState> {
 
     const { panel, owner, repo, number } = state;
 
-    try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('Forgejo configuration not found');
+    const data = await this._runGuarded(state, async () => {
+      try {
+        const config = await getForgejoConfig();
+        if (!config) throw new Error('Forgejo configuration not found');
 
-      const client = new ForgejoClient(config.instanceUrl, config.token);
+        const client = new ForgejoClient(config.instanceUrl, config.token);
 
-      const [files, refs, prDetails] = await Promise.all([
-        client.getPullRequestFiles(owner, repo, number),
-        client.getPullRequestRefs(owner, repo, number),
-        client.getPullRequestDetails(owner, repo, number)
-      ]);
+        const [files, refs, prDetails] = await Promise.all([
+          client.getPullRequestFiles(owner, repo, number),
+          client.getPullRequestRefs(owner, repo, number),
+          client.getPullRequestDetails(owner, repo, number)
+        ]);
 
-      state.pendingData = {
-        pr: { number, title: prDetails.title || '' },
-        files,
-        owner,
-        repo,
-        baseRef: refs.base,
-        headRef: refs.head
-      };
-
-      if (state.isReady) {
-        this._sendDataToPanel(panelKey);
+        return {
+          pr: { number, title: prDetails.title || '' },
+          files,
+          owner,
+          repo,
+          baseRef: refs.base,
+          headRef: refs.head
+        } as ReviewViewData;
+      } catch (error) {
+        logError('Failed to fetch PR review data:', error);
+        if (state.isReady) {
+          void panel.webview.postMessage({
+            type: 'error',
+            message: error instanceof Error ? error.message : 'Failed to load PR files'
+          });
+        }
+        return null;
       }
-    } catch (error) {
-      logError('Failed to fetch PR review data:', error);
-      if (state.isReady) {
-        void panel.webview.postMessage({
-          type: 'error',
-          message: error instanceof Error ? error.message : 'Failed to load PR files'
-        });
-      }
+    });
+
+    if (!data) return; // fetch failed (error already posted) or superseded
+    state.pendingData = data;
+    if (state.isReady) {
+      this._sendDataToPanel(panelKey);
     }
   }
 
@@ -158,6 +163,9 @@ export class ReviewProvider extends BaseDetailWebviewProvider<PanelState> {
     const state = this._panels.get(panelKey);
     if (!state) return;
 
+    // Generic message types (openUserProfile / openInBrowserFromUrl / log / …)
+    if (await this._handleBaseMessage(message, state.panel.webview)) return;
+
     switch (message.type) {
       case 'ready':
         state.isReady = true;
@@ -175,10 +183,10 @@ export class ReviewProvider extends BaseDetailWebviewProvider<PanelState> {
           'forgejo.showPrFileDiff',
           {
             filename: message.filename,
-            status: 'modified',
-            additions: 0,
-            deletions: 0,
-            changes: 0,
+            status: message.status,
+            additions: message.additions,
+            deletions: message.deletions,
+            changes: message.changes,
             blob_url: '',
             raw_url: '',
             contents_url: ''
@@ -268,9 +276,10 @@ export class ReviewProvider extends BaseDetailWebviewProvider<PanelState> {
   </div>
 
   <div id="error" class="error" style="display: none;">
+    <span class="error-icon codicon codicon-error" aria-hidden="true"></span>
     <h3>Error</h3>
     <p id="error-message"></p>
-    <button id="retry-btn" class="btn">Retry</button>
+    <button id="retry-btn" class="btn btn-primary">Retry</button>
   </div>
 
   <div id="content" style="display: none;">
@@ -279,9 +288,9 @@ export class ReviewProvider extends BaseDetailWebviewProvider<PanelState> {
       <div class="review-summary" id="review-summary"></div>
     </header>
     <div class="review-actions">
-      <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
-      <button id="add-comment-btn" class="btn btn-secondary">+ Comment</button>
-      <button id="add-review-btn" class="btn btn-secondary">Review</button>
+      <button id="refresh-btn" class="btn btn-secondary"><span class="codicon codicon-refresh" aria-hidden="true"></span> Refresh</button>
+      <button id="add-comment-btn" class="btn btn-secondary"><span class="codicon codicon-comment" aria-hidden="true"></span> Comment</button>
+      <button id="add-review-btn" class="btn btn-secondary"><span class="codicon codicon-git-pull-request" aria-hidden="true"></span> Review</button>
     </div>
 
     <div id="comment-input-container" class="comment-input-container" style="display: none;">

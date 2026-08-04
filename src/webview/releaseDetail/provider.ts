@@ -9,6 +9,7 @@ export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'refresh' }
   | { type: 'openInBrowser' }
+  | { type: 'openUserProfile'; username: string }
   | { type: 'openAsset'; url: string }
   | { type: 'copyTag' }
   | { type: 'editRelease'; name: string; body: string }
@@ -122,12 +123,18 @@ export class ReleaseDetailWebviewProvider extends BaseDetailWebviewProvider<Pane
 
     const { panel, owner, repo } = state;
 
+    // Generic message types (openUserProfile / openInBrowserFromUrl / log / …)
+    if (await this._handleBaseMessage(message, panel.webview)) return;
+
     switch (message.type) {
       case 'ready':
         state.isReady = true;
         if (state.pendingData) {
           this._sendDataToPanel(panelKey);
         }
+        break;
+      case 'refresh':
+        await this._refreshRelease(owner, repo, state);
         break;
       case 'openInBrowser': {
         const config = await getForgejoConfig();
@@ -137,9 +144,7 @@ export class ReleaseDetailWebviewProvider extends BaseDetailWebviewProvider<Pane
         break;
       }
       case 'openAsset':
-        if (message.url) {
-          void vscode.env.openExternal(vscode.Uri.parse(message.url));
-        }
+        this._openExternal(message.url);
         break;
       case 'copyTag':
         await vscode.env.clipboard.writeText(state.tagName);
@@ -152,11 +157,26 @@ export class ReleaseDetailWebviewProvider extends BaseDetailWebviewProvider<Pane
         await this._deleteRelease(owner, repo, state);
         break;
       case 'markLatest':
+        // Forgejo computes `is_latest` server-side; this clears the prerelease
+        // flag so the release becomes a stable release candidate for "latest".
         await this._updateRelease(owner, repo, state, { is_prerelease: false });
         break;
       case 'togglePrerelease':
         await this._updateRelease(owner, repo, state, { is_prerelease: message.isPrerelease });
         break;
+    }
+  }
+
+  private async _refreshRelease(owner: string, repo: string, state: PanelState): Promise<void> {
+    try {
+      const config = await getForgejoConfig();
+      if (!config) throw new Error('No config');
+      const client = new ForgejoClient(config.instanceUrl, config.token);
+      const release = await client.getReleaseByTag(owner, repo, state.tagName);
+      state.pendingData = { release, owner, repo, instanceUrl: config.instanceUrl };
+      this._sendDataToPanel(this._panelKey(state));
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to refresh release: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
@@ -247,7 +267,7 @@ export class ReleaseDetailWebviewProvider extends BaseDetailWebviewProvider<Pane
   </div>
 
   <div id="error" class="error" style="display: none;">
-    <div class="error-icon">&#x26A0;&#xFE0F;</div>
+    <span class="error-icon codicon codicon-error" aria-hidden="true"></span>
     <h3>Error</h3>
     <p id="error-message"></p>
     <button id="retry-btn" class="btn btn-primary">Retry</button>
@@ -257,7 +277,7 @@ export class ReleaseDetailWebviewProvider extends BaseDetailWebviewProvider<Pane
     <header class="release-header">
       <div class="release-title-row">
         <h1 id="release-title"></h1>
-        <button id="copy-url-btn" class="icon-btn" title="Copy URL">&#x1F4CB;</button>
+        <button id="copy-url-btn" class="icon-btn" title="Copy URL"><span class="codicon codicon-link" aria-hidden="true"></span></button>
       </div>
       <div class="release-meta">
         <span id="release-status-badge" class="status-badge"></span>
@@ -266,17 +286,17 @@ export class ReleaseDetailWebviewProvider extends BaseDetailWebviewProvider<Pane
       </div>
       <div class="release-tag-row">
         <span id="release-tag" class="release-tag"></span>
-        <button id="copy-tag-btn" class="btn btn-secondary btn-small">Copy Tag</button>
+        <button id="copy-tag-btn" class="btn btn-secondary btn-sm">Copy Tag</button>
       </div>
     </header>
 
     <nav class="action-bar">
-      <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
-      <button id="open-web-btn" class="btn btn-secondary">Open in Web</button>
-      <button id="edit-btn" class="btn btn-secondary">Edit</button>
-      <button id="mark-latest-btn" class="btn btn-secondary">Mark as Latest</button>
+      <button id="refresh-btn" class="btn btn-secondary"><span class="codicon codicon-refresh" aria-hidden="true"></span> Refresh</button>
+      <button id="open-web-btn" class="btn btn-secondary"><span class="codicon codicon-globe" aria-hidden="true"></span> Open in Web</button>
+      <button id="edit-btn" class="btn btn-secondary"><span class="codicon codicon-edit" aria-hidden="true"></span> Edit</button>
+      <button id="mark-latest-btn" class="btn btn-secondary" title="Clear the prerelease flag so this release becomes a stable release">Mark Stable</button>
       <button id="toggle-prerelease-btn" class="btn btn-secondary">Toggle Prerelease</button>
-      <button id="delete-btn" class="btn btn-danger">Delete</button>
+      <button id="delete-btn" class="btn btn-danger"><span class="codicon codicon-trash" aria-hidden="true"></span> Delete</button>
     </nav>
 
     <div id="edit-dialog" class="modal-overlay" style="display: none;">

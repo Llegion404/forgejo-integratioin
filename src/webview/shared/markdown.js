@@ -1,30 +1,119 @@
 /*
  * Shared markdown renderer for all Forgejo webviews.
  *
- * Hand-rolled GFM-ish renderer (preserves the implementation that previously
- * lived inside prDetail/index.js — single source of truth now).
+ * Hand-rolled GFM-ish renderer. XSS-safe by construction:
+ *   1. Input is HTML-escaped BEFORE any transformation.
+ *   2. All link/image URLs pass through `sanitizeUrl` (http/https/mailto only,
+ *      plus relative URLs resolved against the configured instance base).
+ *   3. The CSP backstop blocks any residual script injection.
  *
- * Exposed on `window.ForgejoMarkdown` so each webview's inline script can call
- * `ForgejoMarkdown.render(text)`. The webview must also include the matching
- * `escapeHtml` helper (see shared/util.js).
+ * Exposed on `window.ForgejoMarkdown`:
+ *   ForgejoMarkdown.render(text, escapeHtml?)
+ *   ForgejoMarkdown.processInline(text)
+ *   ForgejoMarkdown.configure({ instanceUrl })   resolve relative links + mark internal
+ *   ForgejoMarkdown.setHighlight(lang, fn)        plug in a syntax highlighter
+ *
+ * Inline linkifies (added for Forgejo richness): @mentions, owner/repo#N and
+ * bare #N issue refs, and bare/angle-bracket autolinks. These are produced
+ * AFTER markdown links/images so attribute URLs are placeholder-protected and
+ * never double-linkified.
  */
 (function (global) {
+  var config = { instanceUrl: '' };
+  var highlighters = {};
+
+  function configure(options) {
+    if (!options) return;
+    if (typeof options.instanceUrl === 'string') {
+      config.instanceUrl = options.instanceUrl.replace(/\/$/, '');
+    }
+  }
+
+  function setHighlight(lang, fn) {
+    if (lang && typeof fn === 'function') highlighters[String(lang).toLowerCase()] = fn;
+    else if (lang && fn === null) delete highlighters[String(lang).toLowerCase()];
+  }
+
   function sanitizeUrl(url) {
-    var t = (url || '').trim().toLowerCase();
-    if (t.startsWith('http://') || t.startsWith('https://') || t.startsWith('mailto:')) return url.trim();
+    var raw = (url || '').trim();
+    var t = raw.toLowerCase();
+    if (t.indexOf('http://') === 0 || t.indexOf('https://') === 0 || t.indexOf('mailto:') === 0) return raw;
+    // Relative path with a configured instance base → resolve to absolute so it
+    // is clickable (marked data-internal so webviews can route it in-extension).
+    if (config.instanceUrl && raw.charAt(0) === '/' && raw.charAt(1) !== '/') {
+      return config.instanceUrl + raw;
+    }
     return '';
+  }
+
+  // Marks a resolved URL as internal (same Forgejo instance) for in-extension routing.
+  function linkAttrs(url) {
+    if (config.instanceUrl && typeof url === 'string' && url.indexOf(config.instanceUrl) === 0) {
+      return ' data-internal="true"';
+    }
+    return '';
+  }
+
+  function unescapeHtml(text) {
+    return String(text)
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
   }
 
   function processInline(text) {
     if (!text) return '';
+    // 1. images
     text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (_m, alt, url) {
       var s = sanitizeUrl(url);
-      return s ? '<img src="' + s + '" alt="' + alt + '" style="max-width:100%;">' : alt;
+      return s ? '<img src="' + s + '"' + linkAttrs(s) + ' alt="' + alt + '" style="max-width:100%;">' : alt;
     });
+    // 2. links
     text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_m, lt, url) {
       var s = sanitizeUrl(url);
-      return s ? '<a href="' + s + '">' + lt + '</a>' : lt;
+      return s ? '<a href="' + s + '"' + linkAttrs(s) + '>' + lt + '</a>' : lt;
     });
+    // 3. protect href/src attribute values so the linkify passes below cannot
+    //    corrupt URLs already inside tags or double-linkify link text.
+    var attrs = [];
+    text = text.replace(/\b(href|src)="([^"]*)"/g, function (_m, attr, val) {
+      var idx = attrs.length;
+      attrs.push(attr + '="' + val + '"');
+      return '\u0000ATTR' + idx + '\u0000';
+    });
+    // 4. full issue/PR refs: owner/repo#123
+    text = text.replace(/(^|[^\w\/])([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)#(\d+)\b/g, function (_m, pre, o, r, n) {
+      return pre + '<a class="issue-ref" data-owner="' + o + '" data-repo="' + r + '" data-number="' + n + '">' + o + '/' + r + '#' + n + '</a>';
+    });
+    // 5. angle-bracket autolinks: <https://...>
+    text = text.replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, function (_m, url) {
+      return '<a href="' + url + '"' + linkAttrs(url) + '>' + url + '</a>';
+    });
+    // 6. bare-URL autolinks (skip those already inside an attribute or anchor)
+    text = text.replace(/(^|[^\w"'=\/\]>])((?:https?:\/\/)[^\s<]+)(?=[\s<]|$)/g, function (_m, pre, url) {
+      var trail = '';
+      while (url && '.!,;:?)\u0027'.indexOf(url.charAt(url.length - 1)) !== -1) {
+        trail = url.charAt(url.length - 1) + trail;
+        url = url.slice(0, -1);
+      }
+      if (!/^https?:\/\//.test(url)) return _m;
+      return pre + '<a href="' + url + '"' + linkAttrs(url) + '>' + url + '</a>' + trail;
+    });
+    // 7. @mentions (the char before @ must be non-word and non-@, so emails are safe)
+    text = text.replace(/(^|[^\w@])@([A-Za-z0-9](?:[A-Za-z0-9._-]{0,38}[A-Za-z0-9])?)/g, function (_m, pre, user) {
+      return pre + '<a class="mention" data-username="' + user + '">@' + user + '</a>';
+    });
+    // 8. bare issue/PR refs: #123
+    text = text.replace(/(^|[^\w#])#(\d+)\b/g, function (_m, pre, n) {
+      return pre + '<a class="issue-ref" data-number="' + n + '">#' + n + '</a>';
+    });
+    // 9. restore protected attribute values
+    for (var i = 0; i < attrs.length; i++) {
+      text = text.replace('\u0000ATTR' + i + '\u0000', attrs[i]);
+    }
+    // 10. emphasis
     text = text.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
     text = text.replace(/___([^_]+)___/g, '<strong><em>$1</em></strong>');
     text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -82,13 +171,23 @@
 
   function renderMarkdown(text, escapeHtml) {
     if (!text) return '';
-    var esc = escapeHtml || global.ForgejoUtil.escapeHtml;
-    var html = esc(text);
+    var esc = escapeHtml || (global.ForgejoUtil && global.ForgejoUtil.escapeHtml);
+    var html = esc ? esc(text) : text;
     var codeBlocks = [];
     html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function (_match, lang, code) {
-      var langAttr = lang ? ' class="language-' + lang + '"' : '';
+      var langNorm = (lang || '').toLowerCase();
       var idx = codeBlocks.length;
-      codeBlocks.push('<pre><code' + langAttr + '>' + code + '</code></pre>');
+      var body;
+      var highlighter = highlighters[langNorm];
+      if (highlighter) {
+        try { body = highlighter(unescapeHtml(code), langNorm); }
+        catch (e) { body = null; }
+      }
+      if (!body) {
+        var langAttr = lang ? ' class="language-' + lang + '"' : '';
+        body = '<pre><code' + langAttr + '>' + code + '</code></pre>';
+      }
+      codeBlocks.push(body);
       return '\n%%CODEBLOCK_' + idx + '%%\n';
     });
     var inlineCodes = [];
@@ -99,13 +198,43 @@
     });
     var lines = html.split('\n');
     var result = [];
-    var inList = false, listType = '';
+    var listStack = []; // [{ type: 'ul'|'ol', indent: number }]
     var inBlockquote = false, blockquoteLines = [];
     var inTable = false, tableLines = [];
+
+    function closeAllLists() {
+      while (listStack.length) result.push('</' + listStack.pop().type + '>');
+    }
+    function closeListTo(indent) {
+      while (listStack.length && listStack[listStack.length - 1].indent > indent) {
+        result.push('</' + listStack.pop().type + '>');
+      }
+    }
+    function handleListItem(indent, type, content) {
+      closeListTo(indent);
+      var top = listStack[listStack.length - 1];
+      // Open a new list when going deeper, or when switching ul/ol at the same indent.
+      if (!top || top.indent < indent || (top.indent === indent && top.type !== type)) {
+        if (top && top.indent === indent && top.type !== type) {
+          result.push('</' + top.type + '>');
+          listStack.pop();
+        }
+        result.push('<' + type + '>');
+        listStack.push({ type: type, indent: indent });
+      }
+      var taskMatch = content.match(/^\[([ xX])\]\s+(.*)/);
+      if (taskMatch) {
+        var checked = taskMatch[1] !== ' ' ? ' checked' : '';
+        result.push('<li class="task-list-item"><input type="checkbox" class="task-checkbox"' + checked + '> ' + processInline(taskMatch[2]) + '</li>');
+      } else {
+        result.push('<li>' + processInline(content) + '</li>');
+      }
+    }
+
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       if (line.trim().match(/^%%CODEBLOCK_\d+%%$/)) {
-        if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
+        closeAllLists();
         if (inBlockquote) { result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>'); blockquoteLines = []; inBlockquote = false; }
         if (inTable) { result.push(buildTable(tableLines)); tableLines = []; inTable = false; }
         result.push(line.trim());
@@ -115,50 +244,46 @@
         result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>'); blockquoteLines = []; inBlockquote = false;
       }
       if (inTable && !line.match(/^\|/)) { result.push(buildTable(tableLines)); tableLines = []; inTable = false; }
-      if (inList && line.trim() !== '' && !line.match(/^(\s*[-*+]\s|\s*\d+\.\s)/)) {
-        result.push('</' + listType + '>'); inList = false; listType = '';
-      }
       if (line.match(/^\s*([-*_]\s*){3,}$/)) {
-        if (inList) { result.push('</' + listType + '>'); inList = false; listType = ''; }
+        closeAllLists();
         result.push('<hr>'); continue;
       }
       var headingMatch = line.match(/^(#{1,6})\s+(.*?)$/);
       if (headingMatch) {
+        closeAllLists();
         var level = headingMatch[1].length;
         result.push('<h' + level + '>' + processInline(headingMatch[2]) + '</h' + level + '>');
         continue;
       }
-      if (line.match(/^&gt;\s?/)) { inBlockquote = true; blockquoteLines.push(line.replace(/^&gt;\s?/, '')); continue; }
-      if (line.match(/^\|/)) { if (!inTable) { inTable = true; tableLines = []; } tableLines.push(line); continue; }
+      if (line.match(/^&gt;\s?/)) {
+        closeAllLists();
+        inBlockquote = true; blockquoteLines.push(line.replace(/^&gt;\s?/, '')); continue;
+      }
+      if (line.match(/^\|/)) {
+        closeAllLists();
+        if (!inTable) { inTable = true; tableLines = []; } tableLines.push(line); continue;
+      }
       var ulMatch = line.match(/^(\s*)[-*+]\s+(.*)/);
-      if (ulMatch) {
-        if (!inList || listType !== 'ul') { if (inList) result.push('</' + listType + '>'); result.push('<ul>'); inList = true; listType = 'ul'; }
-        var liContent = ulMatch[2];
-        var taskMatch = liContent.match(/^\[([ xX])\]\s+(.*)/);
-        if (taskMatch) {
-          var checked = taskMatch[1] !== ' ' ? ' checked' : '';
-          result.push('<li class="task-list-item"><input type="checkbox" class="task-checkbox"' + checked + '> ' + processInline(taskMatch[2]) + '</li>');
-        } else {
-          result.push('<li>' + processInline(liContent) + '</li>');
-        }
-        continue;
-      }
+      if (ulMatch) { handleListItem(ulMatch[1].length, 'ul', ulMatch[2]); continue; }
       var olMatch = line.match(/^(\s*)\d+\.\s+(.*)/);
-      if (olMatch) {
-        if (!inList || listType !== 'ol') { if (inList) result.push('</' + listType + '>'); result.push('<ol>'); inList = true; listType = 'ol'; }
-        result.push('<li>' + processInline(olMatch[2]) + '</li>'); continue;
-      }
-      if (line.trim() === '') continue;
+      if (olMatch) { handleListItem(olMatch[1].length, 'ol', olMatch[2]); continue; }
+      if (line.trim() === '') { continue; }
+      closeAllLists();
       result.push('<p>' + processInline(line) + '</p>');
     }
     if (inBlockquote) result.push('<blockquote>' + processBlockquoteContent(blockquoteLines) + '</blockquote>');
     if (inTable) result.push(buildTable(tableLines));
-    if (inList) result.push('</' + listType + '>');
+    closeAllLists();
     var output = result.join('\n');
     for (var cb = 0; cb < codeBlocks.length; cb++) output = output.replace('%%CODEBLOCK_' + cb + '%%', codeBlocks[cb]);
     for (var ic = 0; ic < inlineCodes.length; ic++) output = output.replace(new RegExp('%%INLINECODE_' + ic + '%%', 'g'), inlineCodes[ic]);
     return output;
   }
 
-  global.ForgejoMarkdown = { render: renderMarkdown, processInline: processInline };
+  global.ForgejoMarkdown = {
+    render: renderMarkdown,
+    processInline: processInline,
+    configure: configure,
+    setHighlight: setHighlight
+  };
 })(typeof window !== 'undefined' ? window : this);

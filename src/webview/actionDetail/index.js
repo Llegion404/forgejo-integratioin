@@ -1,78 +1,45 @@
-(function() {
+(function () {
   const vscode = acquireVsCodeApi();
   let currentData = null;
-  let isReady = false;
   let pollTimer = null;
 
-  console.log('[Forgejo Action Webview] Script loaded');
+  const $ = (id) => document.getElementById(id);
+  const loadingEl = $('loading');
+  const errorEl = $('error');
+  const errorMessageEl = $('error-message');
+  const retryBtn = $('retry-btn');
+  const contentEl = $('content');
 
-  // DOM Elements
-  const loadingEl = document.getElementById('loading');
-  const errorEl = document.getElementById('error');
-  const errorMessageEl = document.getElementById('error-message');
-  const retryBtn = document.getElementById('retry-btn');
-  const contentEl = document.getElementById('content');
+  const healthBadge = $('health-badge');
+  const healthStats = $('health-stats');
+  const actionName = $('action-name');
+  const runNumber = $('run-number');
+  const commitInfo = $('commit-info');
+  const branchName = $('branch-name');
+  const eventType = $('event-type');
+  const durationEl = $('duration');
 
-  const healthBadge = document.getElementById('health-badge');
-  const healthStats = document.getElementById('health-stats');
-  const actionName = document.getElementById('action-name');
-  const runNumber = document.getElementById('run-number');
-  const commitInfo = document.getElementById('commit-info');
-  const branchName = document.getElementById('branch-name');
-  const eventType = document.getElementById('event-type');
-  const durationEl = document.getElementById('duration');
+  const refreshBtn = $('refresh-btn');
+  const rerunBtn = $('rerun-btn');
+  const cancelBtn = $('cancel-btn');
+  const openWebBtn = $('open-web-btn');
 
-  const refreshBtn = document.getElementById('refresh-btn');
-  const rerunBtn = document.getElementById('rerun-btn');
-  const cancelBtn = document.getElementById('cancel-btn');
-  const openWebBtn = document.getElementById('open-web-btn');
+  const jobsCount = $('jobs-count');
+  const jobsList = $('jobs-list');
+  const failuresSection = $('failures-section');
+  const failuresList = $('failures-list');
 
-  const jobsCount = document.getElementById('jobs-count');
-  const jobsList = document.getElementById('jobs-list');
-  const failuresSection = document.getElementById('failures-section');
-  const failuresList = document.getElementById('failures-list');
+  // Statuses that mean the run is still in flight ( Forgejo WorkflowRunStatus
+  // has no 'blocked'; keep the set honest).
+  const ACTIVE_STATES = ['in_progress', 'queued', 'waiting'];
 
-  // Initialize
   function init() {
-    console.log('[Forgejo Action Webview] Initializing...');
-    setupEventListeners();
-    setupMessageHandler();
+    retryBtn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+    refreshBtn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
+    rerunBtn.addEventListener('click', () => vscode.postMessage({ type: 'rerun' }));
+    cancelBtn.addEventListener('click', () => vscode.postMessage({ type: 'cancel' }));
+    openWebBtn.addEventListener('click', () => vscode.postMessage({ type: 'openInBrowser' }));
 
-    // Notify extension that webview is ready
-    console.log('[Forgejo Action Webview] Posting ready message');
-    vscode.postMessage({ type: 'ready' });
-    isReady = true;
-  }
-
-  function setupEventListeners() {
-    console.log('[Forgejo Action Webview] Setting up event listeners');
-
-    retryBtn.addEventListener('click', () => {
-      console.log('[Forgejo Action Webview] Retry clicked');
-      vscode.postMessage({ type: 'refresh' });
-    });
-
-    refreshBtn.addEventListener('click', () => {
-      console.log('[Forgejo Action Webview] Refresh clicked');
-      vscode.postMessage({ type: 'refresh' });
-    });
-
-    rerunBtn.addEventListener('click', () => {
-      console.log('[Forgejo Action Webview] Re-run clicked');
-      vscode.postMessage({ type: 'rerun' });
-    });
-
-    cancelBtn.addEventListener('click', () => {
-      console.log('[Forgejo Action Webview] Cancel clicked');
-      vscode.postMessage({ type: 'cancel' });
-    });
-
-    openWebBtn.addEventListener('click', () => {
-      console.log('[Forgejo Action Webview] Open in Browser clicked');
-      vscode.postMessage({ type: 'openInBrowser' });
-    });
-
-    // Delegated handlers for job/step interactions (replaces inline onclick)
     jobsList.addEventListener('click', (e) => {
       const target = e.target;
       if (!(target instanceof Element)) return;
@@ -80,10 +47,8 @@
       const toggleEl = target.closest('[data-action="toggle-job"]');
       if (toggleEl) {
         const idx = Number(toggleEl.dataset.jobIndex);
-        const jobItem = jobsList.querySelector(`.job-item[data-job-index="${String(idx)}"]`);
-        if (jobItem) {
-          jobItem.classList.toggle('expanded');
-        }
+        const jobItem = jobsList.querySelector('.job-item[data-job-index="' + String(idx) + '"]');
+        if (jobItem) jobItem.classList.toggle('expanded');
         return;
       }
 
@@ -91,70 +56,38 @@
       if (viewLogsBtn) {
         const jobIndex = Number(viewLogsBtn.dataset.jobIndex);
         const job = currentData && currentData.jobs ? currentData.jobs[jobIndex] : null;
-        console.log('[Forgejo Action Webview] View logs clicked for job:', jobIndex, job && job.id);
-        if (!job) {
-          vscode.postMessage({ type: 'refresh' });
-          return;
-        }
+        if (!job) { vscode.postMessage({ type: 'refresh' }); return; }
         vscode.postMessage({
           type: 'viewLogs',
-          jobRef: {
-            jobId: job.id,
-            jobHtmlUrl: job.html_url,
-            jobIndex: jobIndex
-          }
+          jobRef: { jobId: job.id, jobHtmlUrl: job.html_url, jobIndex: jobIndex }
         });
-        return;
       }
     });
+
+    window.addEventListener('message', handleMessage);
+    vscode.postMessage({ type: 'ready' });
   }
 
-  function setupMessageHandler() {
-    console.log('[Forgejo Action Webview] Setting up message handler');
-
-    window.addEventListener('message', event => {
-      const message = event.data;
-      console.log('[Forgejo Action Webview] Received message:', message.type);
-
-      switch (message.type) {
-        case 'update':
-          console.log('[Forgejo Action Webview] Update received, run:', message.data?.run?.name);
-          currentData = message.data;
-          updateActionDetails(currentData);
-          break;
-        case 'loading':
-          console.log('[Forgejo Action Webview] Loading state:', message.show);
-          setLoading(message.show);
-          break;
-        case 'error':
-          console.log('[Forgejo Action Webview] Error received:', message.message);
-          showError(message.message);
-          break;
-        case 'theme':
-          console.log('[Forgejo Action Webview] Theme received:', message.theme);
-          applyTheme(message.theme);
-          break;
-        default:
-          console.log('[Forgejo Action Webview] Unknown message type:', message.type);
-      }
-    });
-  }
-
-  function setLoading(show) {
-    console.log('[Forgejo Action Webview] setLoading:', show);
-    if (show) {
-      loadingEl.style.display = 'flex';
-      contentEl.style.display = 'none';
-      errorEl.style.display = 'none';
-    } else {
-      loadingEl.style.display = 'none';
-      contentEl.style.display = 'block';
-      errorEl.style.display = 'none';
+  function handleMessage(event) {
+    const message = event.data;
+    switch (message.type) {
+      case 'update':
+        currentData = message.data;
+        updateActionDetails(currentData);
+        break;
+      case 'loading': setLoading(message.show); break;
+      case 'error': showError(message.message); break;
+      case 'theme': ForgejoTheme.apply(message.theme); break;
     }
   }
 
+  function setLoading(show) {
+    loadingEl.style.display = show ? 'flex' : 'none';
+    contentEl.style.display = show ? 'none' : 'block';
+    errorEl.style.display = 'none';
+  }
+
   function showError(message) {
-    console.log('[Forgejo Action Webview] showError:', message);
     loadingEl.style.display = 'none';
     contentEl.style.display = 'none';
     errorEl.style.display = 'block';
@@ -162,286 +95,214 @@
   }
 
   function updateActionDetails(data) {
-    console.log('[Forgejo Action Webview] Updating action details');
-    const { run, jobs, owner, repo } = data;
+    const run = data.run;
+    const jobs = data.jobs;
 
-    // Update health summary
-    const overallStatus = getOverallStatus(run, jobs);
+    const overallStatus = getOverallStatus(run);
     healthBadge.textContent = overallStatus.text;
     healthBadge.className = 'health-badge ' + overallStatus.status;
     healthStats.textContent = getHealthStats(jobs);
 
-    // Update header
     actionName.textContent = run.name || 'Unnamed Workflow';
-    runNumber.textContent = `#${run.run_number || '?'}`;
+    runNumber.textContent = '#' + (run.run_number || '?');
 
-    // Update commit info
     const shortSha = run.head_sha ? run.head_sha.substring(0, 7) : '?';
-    commitInfo.textContent = `${shortSha} - ${run.display_title || 'No commit message'}`;
-
-    // Update branch
+    commitInfo.textContent = shortSha + ' - ' + (run.display_title || 'No commit message');
     branchName.textContent = run.head_branch || 'unknown';
-
-    // Update event type
     eventType.textContent = formatEventType(run.event);
 
-    // Update duration
-    durationEl.textContent = formatDuration(run.started_at || run.run_started_at, run.stopped_at);
+    // Honest duration: stopped_at is filled by the provider for terminal runs
+    // (proxied from updated_at) and left null while in flight so the timer runs.
+    durationEl.textContent = ForgejoUtil.formatDuration(run.started_at || run.run_started_at, run.stopped_at);
 
-    // Show/hide cancel button based on status
-    if (run.status === 'in_progress' || run.status === 'queued' || run.status === 'waiting') {
-      cancelBtn.style.display = 'inline-flex';
-      rerunBtn.style.display = 'none';
-    } else {
-      cancelBtn.style.display = 'none';
-      rerunBtn.style.display = 'inline-flex';
-    }
+    const inFlight = ACTIVE_STATES.indexOf(run.status) !== -1;
+    cancelBtn.style.display = inFlight ? 'inline-flex' : 'none';
+    rerunBtn.style.display = inFlight ? 'none' : 'inline-flex';
 
-    // Render jobs list
     renderJobsList(jobs);
-
-    // Render failures summary
     renderFailures(jobs);
 
-    // Show content
-    setLoading(false);
-    console.log('[Forgejo Action Webview] Action details updated successfully');
+    // Surface per-section fetch failures (e.g. jobs 403) instead of silently
+    // showing "No jobs found".
+    const jobsWarningEl = $('jobs-warning');
+    if (jobsWarningEl) {
+      if (data.jobsWarning) {
+        jobsWarningEl.textContent = 'Could not load jobs: ' + data.jobsWarning;
+        jobsWarningEl.style.display = 'block';
+      } else {
+        jobsWarningEl.style.display = 'none';
+      }
+    }
 
-    // Re-evaluate poll-on-active-run (B3.4.1)
+    setLoading(false);
     scheduleRunPolling(run);
   }
 
-  // B3.4.1: poll the run while it is still in flight so log/status stay fresh.
   function scheduleRunPolling(run) {
     stopRunPolling();
     if (!run) return;
-    const activeStates = ['in_progress', 'queued', 'waiting', 'blocked'];
-    if (!activeStates.includes(run.status)) return;
-    pollTimer = setInterval(() => {
-      vscode.postMessage({ type: 'refresh' });
-    }, 2000);
-    console.log('[Forgejo Action Webview] Run still', run.status, '— polling every 2s');
+    if (ACTIVE_STATES.indexOf(run.status) === -1) return;
+    pollTimer = setInterval(() => { vscode.postMessage({ type: 'refresh' }); }, 2000);
   }
 
   function stopRunPolling() {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
 
-  function getOverallStatus(run, jobs) {
-    const status = run.status;
-
-    // Forgejo uses status directly (success, failure, cancelled)
-    switch (status) {
-      case 'success':
-        return { status: 'success', text: 'SUCCESS' };
-      case 'failure':
-        return { status: 'failure', text: 'FAILURE' };
-      case 'in_progress':
-        return { status: 'running', text: 'RUNNING' };
-      case 'queued':
-        return { status: 'queued', text: 'QUEUED' };
-      case 'waiting':
-        return { status: 'waiting', text: 'WAITING' };
-      case 'cancelled':
-        return { status: 'cancelled', text: 'CANCELLED' };
-      case 'skipped':
-        return { status: 'skipped', text: 'SKIPPED' };
-      default:
-        return { status: 'running', text: status ? status.toUpperCase() : 'UNKNOWN' };
+  // Prefer `conclusion` (the specific terminal outcome — includes timed_out,
+  // neutral, action_required which status alone never surfaces) and fall back
+  // to runtime status while the run is still in flight.
+  function getOverallStatus(run) {
+    switch (run.conclusion) {
+      case 'success': return { status: 'success', text: 'SUCCESS' };
+      case 'failure': return { status: 'failure', text: 'FAILURE' };
+      case 'timed_out': return { status: 'failure', text: 'TIMED OUT' };
+      case 'neutral': return { status: 'neutral', text: 'NEUTRAL' };
+      case 'action_required': return { status: 'neutral', text: 'ACTION REQUIRED' };
+      case 'cancelled': return { status: 'cancelled', text: 'CANCELLED' };
+      case 'skipped': return { status: 'skipped', text: 'SKIPPED' };
+    }
+    switch (run.status) {
+      case 'in_progress': return { status: 'running', text: 'RUNNING' };
+      case 'queued': return { status: 'queued', text: 'QUEUED' };
+      case 'waiting': return { status: 'waiting', text: 'WAITING' };
+      case 'success': return { status: 'success', text: 'SUCCESS' };
+      case 'failure': return { status: 'failure', text: 'FAILURE' };
+      case 'cancelled': return { status: 'cancelled', text: 'CANCELLED' };
+      case 'skipped': return { status: 'skipped', text: 'SKIPPED' };
+      default: return { status: 'neutral', text: run.status ? run.status.toUpperCase() : 'UNKNOWN' };
     }
   }
 
   function getHealthStats(jobs) {
-    if (!jobs || jobs.length === 0) {
-      return 'No jobs';
-    }
-
-    const passed = jobs.filter(j => j.status === 'success').length;
-    const failed = jobs.filter(j => j.status === 'failure').length;
-    const total = jobs.length;
-
-    let stats = `${passed} of ${total} jobs passed`;
-    if (failed > 0) {
-      stats += ` \u2022 ${failed} failed`;
-    }
+    if (!jobs || jobs.length === 0) return 'No jobs';
+    const passed = jobs.filter(isJobPassing).length;
+    const failed = jobs.filter(isJobFailing).length;
+    let stats = passed + ' of ' + jobs.length + ' jobs passed';
+    if (failed > 0) stats += ' \u2022 ' + failed + ' failed';
     return stats;
+  }
+
+  function isJobFailing(job) {
+    return job.conclusion === 'failure' || job.conclusion === 'timed_out' ||
+      job.status === 'failure' || job.status === 'timed_out';
+  }
+  function isJobPassing(job) {
+    return job.conclusion === 'success' || job.status === 'success';
   }
 
   function renderJobsList(jobs) {
     if (!jobs || jobs.length === 0) {
       jobsCount.textContent = '(0)';
-      jobsList.innerHTML = '<p style="color: var(--vscode-descriptionForeground); padding: 16px;">No jobs found.</p>';
+      jobsList.innerHTML = '<p class="jobs-empty">No jobs found.</p>';
       return;
     }
-
-    jobsCount.textContent = `(${jobs.length})`;
-
-    jobsList.innerHTML = jobs.map((job, index) => {
-      const statusIcon = getStatusIcon(job.status);
-      const duration = formatDuration(job.started_at, job.completed_at);
+    jobsCount.textContent = '(' + jobs.length + ')';
+    jobsList.innerHTML = jobs.map(function (job, index) {
+      const statusIcon = getStatusIcon(job.status, job.conclusion);
+      const duration = ForgejoUtil.formatDuration(job.started_at, job.completed_at);
       const hasSteps = job.steps && job.steps.length > 0;
-
-      return `
-        <div class="job-item" data-job-index="${index}">
-          <div class="job-header ${job.status}" data-action="toggle-job" data-job-index="${index}">
-            <span class="job-status-icon">${statusIcon}</span>
-            <span class="job-name">${escapeHtml(job.name)}</span>
-            <span class="job-duration">${duration}</span>
-            ${hasSteps ? '<span class="job-expand-icon">\u25BC</span>' : ''}
-          </div>
-          ${hasSteps ? renderStepsList(job.steps, index) : ''}
-        </div>
-      `;
+      return '<div class="job-item" data-job-index="' + index + '">' +
+        '<div class="job-header ' + escapeStatus(job.status, job.conclusion) + '" data-action="toggle-job" data-job-index="' + index + '">' +
+          '<span class="job-status-icon">' + statusIcon + '</span>' +
+          '<span class="job-name">' + ForgejoUtil.escapeHtml(job.name) + '</span>' +
+          '<span class="job-duration">' + duration + '</span>' +
+          (hasSteps ? '<span class="job-expand-icon codicon codicon-chevron-down" aria-hidden="true"></span>' : '') +
+        '</div>' +
+        renderStepsList(job.steps, index) +
+      '</div>';
     }).join('');
   }
 
+  // Always renders the steps container + View Logs button, even with no steps,
+  // so logs remain reachable for step-less jobs.
   function renderStepsList(steps, jobIndex) {
-    if (!steps || steps.length === 0) {
-      return '';
+    var stepsHtml = '';
+    if (steps && steps.length > 0) {
+      stepsHtml = steps.map(function (step) {
+        var statusIcon = getStatusIcon(step.status, step.conclusion);
+        var duration = ForgejoUtil.formatDuration(step.started_at, step.completed_at);
+        var failing = step.conclusion === 'failure' || step.conclusion === 'timed_out' || step.status === 'failure';
+        return '<div class="step-item ' + (failing ? 'failing' : '') + '">' +
+          '<span class="step-number">' + step.number + '</span>' +
+          '<span class="step-status-icon">' + statusIcon + '</span>' +
+          '<span class="step-name">' + ForgejoUtil.escapeHtml(step.name) + '</span>' +
+          '<span class="step-duration">' + duration + '</span>' +
+        '</div>';
+      }).join('');
     }
-
-    return `
-      <div class="steps-list" id="steps-${jobIndex}">
-        ${steps.map(step => {
-          const statusIcon = getStatusIcon(step.status);
-          const duration = formatDuration(step.started_at, step.completed_at);
-          const isFailing = step.status === 'failure';
-
-          return `
-            <div class="step-item ${isFailing ? 'failing' : ''}">
-              <span class="step-number">${step.number}</span>
-              <span class="step-status-icon">${statusIcon}</span>
-              <span class="step-name">${escapeHtml(step.name)}</span>
-              <span class="step-duration">${duration}</span>
-            </div>
-          `;
-        }).join('')}
-        <div class="step-item" style="justify-content: flex-end;">
-          <button class="view-logs-btn" data-action="view-logs" data-job-index="${jobIndex}">View Logs</button>
-        </div>
-      </div>
-    `;
+    return '<div class="steps-list" id="steps-' + jobIndex + '">' +
+      stepsHtml +
+      '<div class="step-item step-logs-row"><button class="view-logs-btn btn btn-sm" data-action="view-logs" data-job-index="' + jobIndex + '">View Logs</button></div>' +
+    '</div>';
   }
 
   function renderFailures(jobs) {
-    const failures = [];
-
+    var failures = [];
     if (jobs) {
-      jobs.forEach(job => {
+      jobs.forEach(function (job) {
         if (job.steps) {
-          job.steps.forEach(step => {
-            if (step.status === 'failure') {
+          job.steps.forEach(function (step) {
+            if (step.conclusion === 'failure' || step.conclusion === 'timed_out' || step.status === 'failure') {
               failures.push({ jobName: job.name, stepName: step.name });
             }
           });
         }
       });
     }
-
-    if (failures.length === 0) {
-      failuresSection.style.display = 'none';
-      return;
-    }
-
+    if (failures.length === 0) { failuresSection.style.display = 'none'; return; }
     failuresSection.style.display = 'block';
-    failuresList.innerHTML = failures.map(f => `
-      <div class="failure-item">
-        <span class="failure-job-name">${escapeHtml(f.jobName)}</span>
-        <span class="failure-separator">\u2192</span>
-        <span class="failure-step-name">${escapeHtml(f.stepName)}</span>
-      </div>
-    `).join('');
+    failuresList.innerHTML = failures.map(function (f) {
+      return '<div class="failure-item">' +
+        '<span class="failure-job-name">' + ForgejoUtil.escapeHtml(f.jobName) + '</span>' +
+        '<span class="failure-separator codicon codicon-arrow-right" aria-hidden="true"></span>' +
+        '<span class="failure-step-name">' + ForgejoUtil.escapeHtml(f.stepName) + '</span>' +
+      '</div>';
+    }).join('');
   }
 
-  function getStatusIcon(status) {
-    // Forgejo uses status directly (success, failure, cancelled)
-    switch (status) {
-      case 'success':
-        return '\u2705'; // Green check
+  function getStatusIcon(status, conclusion) {
+    var outcome = conclusion || status;
+    switch (outcome) {
+      case 'success': return '<span class="codicon codicon-pass" aria-hidden="true"></span>';
       case 'failure':
-        return '\u274C'; // Red X
+      case 'timed_out': return '<span class="codicon codicon-error" aria-hidden="true"></span>';
       case 'in_progress':
       case 'queued':
-      case 'waiting':
-        return '\u23F3'; // Hourglass
-      case 'cancelled':
-        return '\u26D4'; // No entry
-      case 'skipped':
-        return '\u23ED'; // Skip forward
-      default:
-        return '\u2B58'; // Circle outline
+      case 'waiting': return '<span class="codicon codicon-sync codicon-modifier-spin" aria-hidden="true"></span>';
+      case 'cancelled': return '<span class="codicon codicon-blocked" aria-hidden="true"></span>';
+      case 'skipped': return '<span class="codicon codicon-debug-step-over" aria-hidden="true"></span>';
+      case 'neutral':
+      case 'action_required': return '<span class="codicon codicon-warning" aria-hidden="true"></span>';
+      default: return '<span class="codicon codicon-circle-slash" aria-hidden="true"></span>';
     }
+  }
+
+  // Map a (status, conclusion) pair to a CSS class token used by both the
+  // health badge and the per-job header colour rules.
+  function escapeStatus(status, conclusion) {
+    var outcome = conclusion || status;
+    if (outcome === 'timed_out' || outcome === 'failure') return 'failure';
+    if (outcome === 'success') return 'success';
+    if (outcome === 'cancelled') return 'cancelled';
+    if (outcome === 'skipped') return 'skipped';
+    if (outcome === 'neutral' || outcome === 'action_required') return 'neutral';
+    if (outcome === 'in_progress') return 'running';
+    if (outcome === 'queued') return 'queued';
+    if (outcome === 'waiting') return 'waiting';
+    return 'neutral';
   }
 
   function formatEventType(event) {
     if (!event) return 'unknown';
-
-    const eventNames = {
-      'push': 'push',
-      'pull_request': 'pull request',
-      'pull_request_target': 'pull request',
-      'schedule': 'schedule',
-      'workflow_dispatch': 'manual',
-      'repository_dispatch': 'dispatch',
-      'release': 'release',
-      'create': 'create',
-      'delete': 'delete',
-      'fork': 'fork',
-      'issues': 'issue',
-      'issue_comment': 'comment',
-      'watch': 'star'
+    var names = {
+      'push': 'push', 'pull_request': 'pull request', 'pull_request_target': 'pull request',
+      'schedule': 'schedule', 'workflow_dispatch': 'manual', 'repository_dispatch': 'dispatch',
+      'release': 'release', 'create': 'create', 'delete': 'delete', 'fork': 'fork',
+      'issues': 'issue', 'issue_comment': 'comment', 'watch': 'star'
     };
-
-    return eventNames[event] || event;
+    return names[event] || event;
   }
 
-  function formatDuration(startDate, endDate) {
-    if (!startDate) return '-';
-
-    const start = new Date(startDate);
-    const end = endDate ? new Date(endDate) : new Date();
-
-    const diffMs = end - start;
-    if (diffMs < 0) return '-';
-
-    const diffSecs = Math.floor(diffMs / 1000);
-    const minutes = Math.floor(diffSecs / 60);
-    const seconds = diffSecs % 60;
-
-    if (minutes === 0) {
-      return `${seconds}s`;
-    } else if (minutes < 60) {
-      return `${minutes}m ${seconds}s`;
-    } else {
-      const hours = Math.floor(minutes / 60);
-      const remainingMins = minutes % 60;
-      return `${hours}h ${remainingMins}m`;
-    }
-  }
-
-  function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  function applyTheme(theme) {
-    console.log('[Forgejo Action Webview] Applying theme:', theme);
-    document.body.className = '';
-    if (theme === 'light') {
-      document.body.classList.add('vscode-light');
-    } else if (theme === 'dark') {
-      document.body.classList.add('vscode-dark');
-    } else if (theme === 'high-contrast') {
-      document.body.classList.add('vscode-high-contrast');
-    }
-  }
-
-  // Start
-  console.log('[Forgejo Action Webview] Starting initialization');
   init();
 })();

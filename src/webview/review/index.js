@@ -1,15 +1,10 @@
 (function() {
   var vscode = acquireVsCodeApi();
-  var currentTheme = 'dark';
-  var viewData = null;
-
-  var STATUS_LETTERS = { added: 'A', modified: 'M', changed: 'M', removed: 'D', renamed: 'R' };
 
   window.addEventListener('message', function(event) {
     var msg = event.data;
     switch (msg.type) {
       case 'update':
-        viewData = msg.data;
         render(msg.data);
         break;
       case 'loading':
@@ -19,8 +14,7 @@
         showError(msg.message);
         break;
       case 'theme':
-        currentTheme = msg.theme;
-        document.body.setAttribute('data-theme', msg.theme);
+        ForgejoTheme.apply(msg.theme);
         break;
       case 'actionComplete':
         handleActionComplete(msg.action, msg.success);
@@ -157,22 +151,22 @@
       return;
     }
 
-    data.files.forEach(function(file, idx) {
+    data.files.forEach(function(file) {
       var fileItem = document.createElement('div');
       fileItem.className = 'file-item';
 
-      var statusClass = 'status-' + (file.status === 'changed' ? 'modified' : file.status);
-      var statusLetter = STATUS_LETTERS[file.status] || '?';
+      var statusKey = file.status === 'changed' ? 'modified' : file.status;
+      var statusLetter = ForgejoUtil.fileStatusGlyph(file.status);
 
       var fileHeader = document.createElement('div');
       fileHeader.className = 'file-header';
 
       var chevron = document.createElement('span');
-      chevron.className = 'chevron';
-      chevron.textContent = '\u25B6';
+      chevron.className = 'chevron codicon codicon-chevron-right';
+      chevron.setAttribute('aria-hidden', 'true');
 
       var badge = document.createElement('span');
-      badge.className = 'status-badge ' + statusClass;
+      badge.className = 'file-status ' + statusKey;
       badge.textContent = statusLetter;
 
       var nameEl = document.createElement('span');
@@ -207,6 +201,10 @@
         vscode.postMessage({
           type: 'openFile',
           filename: file.filename,
+          status: file.status,
+          additions: file.additions || 0,
+          deletions: file.deletions || 0,
+          changes: file.changes || 0,
           owner: data.owner,
           repo: data.repo,
           baseRef: data.baseRef,
@@ -306,7 +304,7 @@
         content.textContent = line.substring(1);
         oldLine++;
       } else {
-        diffLine.className = 'diff-line context';
+        diffLine.className = 'diff-line ctx';
         lineNum.textContent = newLine;
         content.textContent = line.startsWith(' ') ? line.substring(1) : line;
         oldLine++;

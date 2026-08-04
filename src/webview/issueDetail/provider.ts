@@ -319,17 +319,6 @@ export class IssueDetailWebviewProvider extends BaseDetailWebviewProvider<PanelS
     }
   }
 
-  private async _openUserProfile(username: string): Promise<void> {
-    try {
-      const config = await getForgejoConfig();
-      if (!config) throw new Error('No config');
-      const url = `${config.instanceUrl}/${encodeURIComponent(username)}`;
-      void vscode.env.openExternal(vscode.Uri.parse(url));
-    } catch (error) {
-      void vscode.window.showErrorMessage(`Failed to open profile: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
   private _openUrl(url: string): void {
     try {
       void vscode.env.openExternal(vscode.Uri.parse(url));

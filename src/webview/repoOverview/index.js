@@ -13,6 +13,12 @@
     retryBtn.addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
     $('refresh-btn').addEventListener('click', () => vscode.postMessage({ type: 'refresh' }));
     $('open-web-btn').addEventListener('click', () => vscode.postMessage({ type: 'openInBrowser' }));
+    // Route markdown link/image clicks in the README to the host opener.
+    $('readme-content').addEventListener('click', (e) => {
+      const link = e.target.closest('a[href]');
+      if (link && link.href) { e.preventDefault(); vscode.postMessage({ type: 'openInBrowserFromUrl', url: link.href }); }
+      if (e.target.tagName === 'IMG' && e.target.src) { vscode.postMessage({ type: 'openInBrowserFromUrl', url: e.target.src }); }
+    });
     window.addEventListener('message', handleMessage);
     vscode.postMessage({ type: 'ready' });
   }
@@ -32,40 +38,37 @@
       errorEl.style.display = 'none';
       contentEl.style.display = 'block';
     } else if (msg.type === 'theme') {
-      applyTheme(msg.theme);
+      ForgejoTheme.apply(msg.theme);
     }
   }
 
-  function applyTheme(theme) {
-    document.body.className = '';
-    if (theme === 'light') document.body.classList.add('vscode-light');
-    else if (theme === 'dark') document.body.classList.add('vscode-dark');
-    else if (theme === 'high-contrast') document.body.classList.add('vscode-high-contrast');
-  }
-
   function render(data) {
+    // Configure the markdown renderer so relative links in the README resolve
+    // against the instance base and are marked data-internal.
+    if (data.instanceUrl) ForgejoMarkdown.configure({ instanceUrl: data.instanceUrl });
+
     const r = data.repo;
     $('repo-name').textContent = r.full_name;
     $('repo-description').textContent = r.description || '';
     const stats = $('repo-stats');
     stats.innerHTML = '';
-    stats.appendChild(statBadge('\u2B50', r.stars || 0, 'Stars'));
-    stats.appendChild(statBadge('\u{1F4E4}', r.forks_count || 0, 'Forks'));
-    stats.appendChild(statBadge('\u26A0', r.open_issues_count || 0, 'Open issues'));
-    if (r.license && r.license.name) stats.appendChild(statBadge('\u{1F4D6}', r.license.name, 'License'));
-    if (r.default_branch) stats.appendChild(statBadge('\u{1F33F}', r.default_branch, 'Default branch'));
+    stats.appendChild(statBadge('star', r.stars || 0, 'Stars'));
+    stats.appendChild(statBadge('repo-forked', r.forks_count || 0, 'Forks'));
+    stats.appendChild(statBadge('issue-opened', r.open_issues_count || 0, 'Open issues'));
+    if (r.license && r.license.name) stats.appendChild(statBadge('law', r.license.name, 'License'));
+    if (r.default_branch) stats.appendChild(statBadge('git-branch', r.default_branch, 'Default branch'));
 
     renderLanguages(data.languages || {});
     renderFiles(data.topFiles || []);
     renderReadme(data.readmeHtml || '');
-    renderLatestRelease(data.latestRelease, data);
+    renderLatestRelease(data.latestRelease);
     renderContributors(data.contributors || []);
   }
 
-  function statBadge(icon, value, label) {
+  function statBadge(iconName, value, label) {
     const span = document.createElement('span');
     span.className = 'stat-badge';
-    span.innerHTML = `<span class="stat-icon">${icon}</span><span class="stat-value">${ForgejoUtil.escapeHtml(String(value))}</span><span class="stat-label">${ForgejoUtil.escapeHtml(label)}</span>`;
+    span.innerHTML = `<span class="stat-icon codicon codicon-${iconName}" aria-hidden="true"></span><span class="stat-value">${ForgejoUtil.escapeHtml(String(value))}</span><span class="stat-label">${ForgejoUtil.escapeHtml(label)}</span>`;
     return span;
   }
 
@@ -107,7 +110,8 @@
     files.forEach((f) => {
       const li = document.createElement('li');
       li.className = 'file-item';
-      li.innerHTML = `<span class="file-icon">${f.type === 'dir' ? '\u{1F4C1}' : '\u{1F4C4}'}</span><span class="file-name">${ForgejoUtil.escapeHtml(f.name || f.path)}</span>`;
+      const iconCls = f.type === 'dir' ? 'folder' : 'file';
+      li.innerHTML = `<span class="file-icon codicon codicon-${iconCls}" aria-hidden="true"></span><span class="file-name">${ForgejoUtil.escapeHtml(f.name || f.path)}</span>`;
       li.addEventListener('click', () => {
         if (f.type !== 'dir') vscode.postMessage({ type: 'openFile', path: f.path });
       });
@@ -123,7 +127,6 @@
     }
     el.innerHTML = ForgejoMarkdown.render(content);
   }
-
   function renderLatestRelease(release) {
     const section = $('release-section');
     const el = $('latest-release');
@@ -140,6 +143,9 @@
       <strong>${ForgejoUtil.escapeHtml(name)}</strong>
       <span class="release-date">${ForgejoUtil.escapeHtml(date)}</span>
     </div>`;
+    el.querySelector('.release-teaser').addEventListener('click', () => {
+      if (release.id) vscode.postMessage({ type: 'openRelease', releaseId: release.id });
+    });
   }
 
   function renderContributors(contributors) {
@@ -152,7 +158,7 @@
     contributors.forEach((c) => {
       const div = document.createElement('div');
       div.className = 'contributor-item';
-      const avatar = c.avatar_url ? `<img class="contributor-avatar" src="${ForgejoUtil.escapeHtml(c.avatar_url)}" alt="">` : '<span class="contributor-avatar-placeholder">\u{1F464}</span>';
+      const avatar = c.avatar_url ? `<img class="contributor-avatar" src="${ForgejoUtil.escapeHtml(c.avatar_url)}" alt="">` : '<span class="contributor-avatar-placeholder codicon codicon-account" aria-hidden="true"></span>';
       div.innerHTML = `${avatar}<span class="contributor-name">${ForgejoUtil.escapeHtml(c.login)}</span><span class="contributor-count">${c.contributions} commits</span>`;
       div.addEventListener('click', () => vscode.postMessage({ type: 'openContributor', login: c.login }));
       list.appendChild(div);

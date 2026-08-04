@@ -106,8 +106,8 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
-.status-badge.open   { background-color: #2da042; color: #fff; }
-.status-badge.closed { background-color: #8957e5; color: #fff; }
+.status-badge.open   { background-color: var(--forgejo-success); color: var(--forgejo-button-success-fg); }
+.status-badge.closed { background-color: var(--forgejo-danger); color: var(--forgejo-button-danger-fg); }
 
 .issue-author {
   display: flex;
@@ -165,10 +165,10 @@ body {
 .btn:active { transform: scale(0.97); }
 .btn-primary { background-color: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; font-weight: 500; }
 .btn-primary:hover { background-color: var(--vscode-button-hoverBackground); }
-.btn-success { background-color: #2da042; color: #fff; border: none; font-weight: 500; }
-.btn-success:hover { background-color: #238636; }
-.btn-danger { background-color: #f14c4c; color: #fff; border: none; font-weight: 500; }
-.btn-danger:hover { background-color: #c93c3c; }
+.btn-success { background-color: var(--forgejo-button-success-bg); color: var(--forgejo-button-success-fg); border: none; font-weight: 500; }
+.btn-success:hover { filter: brightness(1.1); }
+.btn-danger { background-color: var(--forgejo-button-danger-bg); color: var(--forgejo-button-danger-fg); border: none; font-weight: 500; }
+.btn-danger:hover { filter: brightness(1.1); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 .state-actions { display: flex; gap: 6px; }
 
@@ -490,14 +490,16 @@ section h2 {
 .emoji-option:hover { background-color: var(--vscode-button-secondaryHoverBackground); transform: scale(1.2); }
 
 .activity-actions { margin-left: auto; display: flex; gap: 2px; }
-.icon-btn-small {
+/* Comment hover actions — scoped to avoid colliding with the header
+   .icon-btn-small "add label/assignee" dashed-pill style above. */
+.activity-actions .icon-btn-small {
   background: none; border: none; cursor: pointer;
   font-size: 0.88em; padding: 3px 6px;
   color: var(--vscode-descriptionForeground); opacity: 0;
   transition: opacity 0.15s, background-color 0.15s; border-radius: 4px;
 }
-.activity-item:hover .icon-btn-small { opacity: 0.65; }
-.icon-btn-small:hover { opacity: 1 !important; background-color: var(--vscode-button-secondaryHoverBackground); }
+.activity-item:hover .activity-actions .icon-btn-small { opacity: 0.65; }
+.activity-actions .icon-btn-small:hover { opacity: 1 !important; background-color: var(--vscode-button-secondaryHoverBackground); }
 
 .edit-comment-editor { margin-top: 6px; }
 .edit-comment-textarea {
@@ -515,13 +517,9 @@ section h2 {
 .edit-comment-textarea:focus { outline: none; border-color: var(--vscode-focusBorder); }
 .edit-comment-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
-body.vscode-high-contrast {
-  --vscode-editor-background: #000; --vscode-foreground: #fff;
-  --vscode-button-background: #fff; --vscode-button-foreground: #000;
-  --vscode-button-hoverBackground: #ddd;
-}
+/* High-contrast additions only — never override the real --vscode-* theme vars. */
 body.vscode-high-contrast .status-badge { border: 2px solid currentColor; }
-body.vscode-high-contrast .activity-item { border: 1px solid var(--vscode-foreground); }
+body.vscode-high-contrast .activity-item { border: 1px solid var(--forgejo-fg); }
 
 @media (max-width: 600px) {
   .issue-title-row { flex-direction: column; align-items: flex-start; }

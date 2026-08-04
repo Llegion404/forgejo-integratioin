@@ -1,9 +1,6 @@
-(function() {
+(function () {
   const vscode = acquireVsCodeApi();
   let currentData = null;
-  let isReady = false;
-
-  console.log('[Forgejo Release Webview] Script loaded');
 
   const loadingEl = document.getElementById('loading');
   const errorEl = document.getElementById('error');
@@ -29,7 +26,6 @@
     setupEventListeners();
     setupMessageHandler();
     vscode.postMessage({ type: 'ready' });
-    isReady = true;
   }
 
   function setupEventListeners() {
@@ -40,8 +36,8 @@
     copyUrlBtn.addEventListener('click', () => {
       if (currentData && currentData.release && currentData.release.html_url) {
         navigator.clipboard.writeText(currentData.release.html_url);
-        copyUrlBtn.textContent = '\u2713';
-        setTimeout(() => { copyUrlBtn.textContent = '\u{1F4CB}'; }, 2000);
+        copyUrlBtn.innerHTML = '<span class="codicon codicon-check" aria-hidden="true"></span>';
+        setTimeout(() => { copyUrlBtn.innerHTML = '<span class="codicon codicon-link" aria-hidden="true"></span>'; }, 2000);
       }
     });
 
@@ -57,7 +53,7 @@
 
     if (editBtn) {
       editBtn.addEventListener('click', () => {
-        if (!currentData?.release) return;
+        if (!currentData || !currentData.release) return;
         editName.value = currentData.release.name || '';
         editBody.value = currentData.release.body || '';
         editDialog.style.display = 'flex';
@@ -67,7 +63,8 @@
     if (confirmEditBtn) {
       confirmEditBtn.addEventListener('click', () => {
         vscode.postMessage({ type: 'editRelease', name: editName.value, body: editBody.value });
-        editDialog.style.display = 'none';
+        confirmEditBtn.disabled = true;
+        confirmEditBtn.textContent = 'Saving…';
       });
     }
     if (cancelEditBtn) {
@@ -81,7 +78,7 @@
     }
     if (togglePrereleaseBtn) {
       togglePrereleaseBtn.addEventListener('click', () => {
-        const isPre = currentData?.release?.prerelease === true;
+        const isPre = currentData && currentData.release && currentData.release.prerelease === true;
         vscode.postMessage({ type: 'togglePrerelease', isPrerelease: !isPre });
       });
     }
@@ -93,11 +90,19 @@
       }
     });
 
-    document.addEventListener('click', (e) => {
-      var userLink = e.target.closest('.user-link');
-      if (userLink && userLink.dataset.username) {
+    // Author link → open profile (handled by the base provider router)
+    authorName.addEventListener('click', (e) => {
+      if (authorName.dataset.username) {
         e.preventDefault();
+        vscode.postMessage({ type: 'openUserProfile', username: authorName.dataset.username });
       }
+    });
+
+    // markdown links/images → open externally
+    releaseBody.addEventListener('click', (e) => {
+      var link = e.target.closest('a[href]');
+      if (link && link.href) { e.preventDefault(); vscode.postMessage({ type: 'openInBrowserFromUrl', url: link.href }); }
+      if (e.target.tagName === 'IMG' && e.target.src) { vscode.postMessage({ type: 'openInBrowserFromUrl', url: e.target.src }); }
     });
   }
 
@@ -116,7 +121,14 @@
           showError(message.message);
           break;
         case 'theme':
-          applyTheme(message.theme);
+          ForgejoTheme.apply(message.theme);
+          break;
+        case 'actionComplete':
+          // re-enable the edit Save button after an edit resolves
+          if (message.action === 'editRelease' || !message.action) {
+            const confirmEditBtn = document.getElementById('confirm-edit-btn');
+            if (confirmEditBtn) { confirmEditBtn.disabled = false; confirmEditBtn.textContent = 'Save'; }
+          }
           break;
       }
     });
@@ -142,7 +154,9 @@
   }
 
   function updateReleaseDetails(data) {
-    const { release, owner, repo } = data;
+    const release = data.release;
+    // Configure the markdown renderer so relative links in release notes resolve.
+    if (data.instanceUrl) ForgejoMarkdown.configure({ instanceUrl: data.instanceUrl });
 
     releaseTitle.textContent = release.name || release.tag_name;
 
@@ -151,122 +165,37 @@
     releaseStatusBadge.textContent = statusText;
     releaseStatusBadge.className = 'status-badge ' + statusClass;
 
-    authorName.textContent = release.author ? release.author.login : 'Unknown';
+    const authorLogin = release.author ? release.author.login : 'Unknown';
+    authorName.textContent = authorLogin;
+    authorName.dataset.username = release.author ? release.author.login : '';
 
     if (release.created_at) {
-      releaseDate.textContent = 'released ' + formatTimeAgo(release.created_at);
+      releaseDate.textContent = 'released ' + ForgejoUtil.formatTimeAgo(release.created_at);
     }
 
-    releaseTag.innerHTML = '<code>' + escapeHtml(release.tag_name) + '</code>';
+    releaseTag.innerHTML = '<code>' + ForgejoUtil.escapeHtml(release.tag_name) + '</code>';
 
     if (release.body) {
-      releaseBody.innerHTML = renderMarkdown(release.body);
+      releaseBody.innerHTML = ForgejoMarkdown.render(release.body);
     } else {
-      releaseBody.innerHTML = '<p style="color:var(--vscode-descriptionForeground)">No release notes.</p>';
+      releaseBody.innerHTML = '<p class="release-empty">No release notes.</p>';
     }
 
     if (release.assets && release.assets.length > 0) {
       assetsSection.style.display = 'block';
-      assetsList.innerHTML = release.assets.map(function(asset) {
-        var size = formatFileSize(asset.size);
-        return '<div class="asset-item" data-url="' + escapeHtml(asset.browser_download_url || '') + '">' +
-          '<span class="asset-name">' + escapeHtml(asset.name) + '</span>' +
+      assetsList.innerHTML = release.assets.map(function (asset) {
+        var size = ForgejoUtil.formatBytes(asset.size);
+        return '<div class="asset-item" data-url="' + ForgejoUtil.escapeHtml(asset.browser_download_url || '') + '">' +
+          '<span class="asset-name">' + ForgejoUtil.escapeHtml(asset.name) + '</span>' +
           '<span class="asset-size">' + size + '</span>' +
-          '<span class="asset-download-icon" title="Download">&#x2B07;</span>' +
-        '</div>';
+          '<span class="asset-download-icon codicon codicon-download" title="Download" aria-hidden="true"></span>' +
+          '</div>';
       }).join('');
     } else {
       assetsSection.style.display = 'none';
     }
 
     setLoading(false);
-  }
-
-  function formatTimeAgo(dateString) {
-    if (!dateString) return '';
-    var date = new Date(dateString);
-    var now = new Date();
-    var diffMs = now - date;
-    var diffSecs = Math.floor(diffMs / 1000);
-    var diffMins = Math.floor(diffSecs / 60);
-    var diffHours = Math.floor(diffMins / 60);
-    var diffDays = Math.floor(diffHours / 24);
-    if (diffSecs < 60) return 'just now';
-    if (diffMins < 60) return diffMins + ' minute' + (diffMins > 1 ? 's' : '') + ' ago';
-    if (diffHours < 24) return diffHours + ' hour' + (diffHours > 1 ? 's' : '') + ' ago';
-    if (diffDays < 30) return diffDays + ' day' + (diffDays > 1 ? 's' : '') + ' ago';
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-  }
-
-  function formatFileSize(bytes) {
-    if (!bytes || bytes === 0) return '0 B';
-    var units = ['B', 'KB', 'MB', 'GB'];
-    var i = Math.floor(Math.log(bytes) / Math.log(1024));
-    return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
-  }
-
-  function escapeHtml(text) {
-    if (!text) return '';
-    var div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  function renderMarkdown(text) {
-    if (!text) return '';
-    var html = escapeHtml(text);
-    var codeBlocks = [];
-    html = html.replace(/\`\`\`(\\w*)\\n?([\\s\\S]*?)\`\`\`/g, function(_match, lang, code) {
-      var langAttr = lang ? ' class="language-' + lang + '"' : '';
-      var idx = codeBlocks.length;
-      codeBlocks.push('<pre><code' + langAttr + '>' + code + '</code></pre>');
-      return '\\n%%CODEBLOCK_' + idx + '%%\\n';
-    });
-    var inlineCodes = [];
-    html = html.replace(/\`([^\\x60\\n]+)\`/g, function(_match, code) {
-      var idx = inlineCodes.length;
-      inlineCodes.push('<code>' + code + '</code>');
-      return '%%INLINECODE_' + idx + '%%';
-    });
-    var lines = html.split('\\n');
-    var result = [];
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (line.trim().match(/^%%CODEBLOCK_\\d+%%$/)) {
-        result.push(line.trim());
-        continue;
-      }
-      if (line.match(/^#{1,6}\\s/)) {
-        var level = line.match(/^(#{1,6})/)[1].length;
-        result.push('<h' + level + '>' + line.substring(level + 1) + '</h' + level + '>');
-      } else if (line.match(/^\\s*[-*+]\\s/)) {
-        result.push('<li>' + line.replace(/^\\s*[-*+]\\s/, '') + '</li>');
-      } else if (line.match(/^\\s*\\d+\\.\\s/)) {
-        result.push('<li>' + line.replace(/^\\s*\\d+\\.\\s/, '') + '</li>');
-      } else if (line.match(/^>\\s/)) {
-        result.push('<blockquote>' + line.substring(2) + '</blockquote>');
-      } else if (line.match(/^---+$/)) {
-        result.push('<hr>');
-      } else if (line.match(/\\*\\*(.+)\\*\\*/)) {
-        result.push('<p>' + line.replace(/\\*\\*(.+)\\*\\*/g, '<strong>$1</strong>') + '</p>');
-      } else if (line.trim() === '') {
-        result.push('');
-      } else {
-        result.push('<p>' + line + '</p>');
-      }
-    }
-    html = result.join('\\n');
-    for (var j = 0; j < codeBlocks.length; j++) {
-      html = html.replace('%%CODEBLOCK_' + j + '%%', codeBlocks[j]);
-    }
-    for (var k = 0; k < inlineCodes.length; k++) {
-      html = html.replace('%%INLINECODE_' + k + '%%', inlineCodes[k]);
-    }
-    return html;
-  }
-
-  function applyTheme(theme) {
-    document.body.className = 'theme-' + theme;
   }
 
   init();

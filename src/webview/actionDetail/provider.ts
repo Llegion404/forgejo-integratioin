@@ -35,6 +35,7 @@ export interface ActionDetailViewData {
   jobs: WorkflowJob[];
   owner: string;
   repo: string;
+  jobsWarning?: string;
 }
 
 interface PanelState {
@@ -46,6 +47,7 @@ interface PanelState {
   isReady: boolean;
   pendingData?: ActionDetailViewData | null;
   pendingError?: string | null;
+  pendingJobsWarning?: string;
   lastRequestId: number;
 }
 
@@ -125,52 +127,45 @@ export class ActionDetailWebviewProvider extends BaseDetailWebviewProvider<Panel
       if (!config) throw new Error('Forgejo configuration not found');
 
       const client = new ForgejoClient(config.instanceUrl, config.token);
-      logInfo('Fetching jobs from API...');
 
-      // Use the run data we already have (passed from the tree view)
-      // Convert WorkflowRunListItem to WorkflowRun with default values for timing fields
+      // The list item carries status/conclusion/created_at/updated_at but not
+      // started_at/stopped_at/run_started_at. Approximate honestly: use
+      // created_at for start, and updated_at for stop only when the run is
+      // terminal (conclusion set or a terminal status), so finished runs show
+      // a stable duration instead of an ever-growing timer.
+      const terminalStatuses = ['success', 'failure', 'cancelled', 'skipped'];
+      const isTerminal = !!run.conclusion || terminalStatuses.includes(run.status);
       const fullRun: WorkflowRun = {
         ...run,
         started_at: run.created_at,
-        stopped_at: null,
-        run_started_at: run.created_at
+        run_started_at: run.created_at,
+        stopped_at: isTerminal ? run.updated_at : null
       };
 
-      // Only fetch jobs - the run details API uses incompatible IDs
+      // Fetch jobs; surface a per-section warning instead of silently showing "No jobs".
       let jobs: WorkflowJob[] = [];
+      let jobsWarning = '';
       try {
         const jobsResponse = await client.getWorkflowJobs(owner, repo, run.id);
-        if (requestId !== state.lastRequestId) {
-          logInfo('Action fetch superseded by newer request, ignoring', { requestId });
-          return;
-        }
+        if (requestId !== state.lastRequestId) return;
         jobs = jobsResponse.jobs;
-        logInfo('Jobs fetched:', { jobCount: jobs.length });
       } catch (jobError) {
-        logError('Failed to fetch jobs (will show run without jobs):', jobError);
-        // Continue with empty jobs - at least show the run info
+        logError('Failed to fetch jobs:', jobError);
+        jobsWarning = jobError instanceof Error ? jobError.message : 'Could not load jobs';
       }
 
-      state.pendingData = { run: fullRun, jobs, owner, repo };
-      state.pendingError = null; // Clear any previous error
-      logInfo('pendingData set, isReady:', state.isReady);
+      state.pendingData = { run: fullRun, jobs, owner, repo, jobsWarning: jobsWarning || undefined };
+      state.pendingError = null;
 
       if (state.isReady) {
-        logInfo('Webview is ready, sending data...');
         this._sendDataToPanel(panelKey);
-      } else {
-        logInfo('Webview not ready yet, data will be sent when ready');
       }
     } catch (error) {
       logError('Failed to fetch action data:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to load action details';
       if (state.isReady) {
-        void panel.webview.postMessage({
-          type: 'error',
-          message: errorMessage
-        });
+        void panel.webview.postMessage({ type: 'error', message: errorMessage });
       } else {
-        // Store error to show when webview becomes ready
         state.pendingError = errorMessage;
       }
     }
@@ -203,19 +198,18 @@ export class ActionDetailWebviewProvider extends BaseDetailWebviewProvider<Panel
 
     const { panel, owner, repo, runId } = state;
 
+    // Generic message types (openUserProfile / openInBrowserFromUrl / log / …)
+    if (await this._handleBaseMessage(message, panel.webview)) return;
+
     switch (message.type) {
       case 'ready':
-        logInfo('Webview ready message received, pendingData exists:', !!state.pendingData, 'pendingError:', !!state.pendingError);
         state.isReady = true;
         if (state.pendingError) {
-          logInfo('Showing pending error to webview...');
           void panel.webview.postMessage({ type: 'error', message: state.pendingError });
           state.pendingError = null;
         } else if (state.pendingData) {
-          logInfo('Sending pending data to webview...');
           this._sendDataToPanel(panelKey);
         } else {
-          logInfo('No pending data yet, showing loading state');
           void panel.webview.postMessage({ type: 'loading', show: true });
         }
         break;
@@ -242,6 +236,8 @@ export class ActionDetailWebviewProvider extends BaseDetailWebviewProvider<Panel
   }
 
   private async _rerunWorkflow(owner: string, repo: string, runId: number, panelKey: string): Promise<void> {
+    const confirm = await vscode.window.showWarningMessage('Re-run this workflow?', { modal: true }, 'Re-run');
+    if (confirm !== 'Re-run') return;
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
@@ -255,6 +251,8 @@ export class ActionDetailWebviewProvider extends BaseDetailWebviewProvider<Panel
   }
 
   private async _cancelWorkflow(owner: string, repo: string, runId: number, panelKey: string): Promise<void> {
+    const confirm = await vscode.window.showWarningMessage('Cancel this workflow run?', { modal: true }, 'Cancel run');
+    if (confirm !== 'Cancel run') return;
     try {
       const config = await getForgejoConfig();
       if (!config) throw new Error('No config');
@@ -348,6 +346,7 @@ export class ActionDetailWebviewProvider extends BaseDetailWebviewProvider<Panel
   </div>
 
   <div id="error" class="error" style="display: none;">
+    <span class="error-icon codicon codicon-error" aria-hidden="true"></span>
     <h3>Error</h3>
     <p id="error-message"></p>
     <button id="retry-btn" class="btn btn-primary">Retry</button>
@@ -388,15 +387,16 @@ export class ActionDetailWebviewProvider extends BaseDetailWebviewProvider<Panel
 
     <!-- Action Bar -->
     <nav class="action-bar">
-      <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
-      <button id="rerun-btn" class="btn btn-primary">Re-run Workflow</button>
-      <button id="cancel-btn" class="btn btn-danger" style="display: none;">Cancel Workflow</button>
-      <button id="open-web-btn" class="btn btn-secondary">Open in Browser</button>
+      <button id="refresh-btn" class="btn btn-secondary"><span class="codicon codicon-refresh" aria-hidden="true"></span> Refresh</button>
+      <button id="rerun-btn" class="btn btn-primary"><span class="codicon codicon-run-below" aria-hidden="true"></span> Re-run Workflow</button>
+      <button id="cancel-btn" class="btn btn-danger" style="display: none;"><span class="codicon codicon-stop-circle" aria-hidden="true"></span> Cancel Workflow</button>
+      <button id="open-web-btn" class="btn btn-secondary"><span class="codicon codicon-globe" aria-hidden="true"></span> Open in Browser</button>
     </nav>
 
     <!-- Jobs Section -->
     <section class="jobs-section">
       <h2>Jobs <span id="jobs-count"></span></h2>
+      <div id="jobs-warning" class="jobs-warning" style="display: none;"></div>
       <div id="jobs-list"></div>
     </section>
 

@@ -35,4 +35,24 @@
   --forgejo-button-hover-bg: var(--vscode-button-hoverBackground);
   --forgejo-button-secondary-bg: var(--vscode-button-secondaryBackground);
   --forgejo-button-secondary-fg: var(--vscode-button-secondaryForeground);
+  --forgejo-button-success-bg: var(--vscode-testing-iconPassed, #2da042);
+  --forgejo-button-success-fg: #ffffff;
+  --forgejo-button-danger-bg: var(--vscode-testing-iconFailed, #f14c4c);
+  --forgejo-button-danger-fg: #ffffff;
+}
+
+/*
+ * High-contrast hardening: under forced-colors the translucent *-bg pill
+ * backgrounds render nearly invisible. Bump their opacity so status pills,
+ * diff tints, and badges stay distinguishable. Authors paired these with the
+ * solid status foreground, which already maps to a system color under HC.
+ */
+@media (forced-colors: active) {
+  :root {
+    --forgejo-success-bg: rgba(45, 160, 66, 0.45);
+    --forgejo-danger-bg: rgba(241, 76, 76, 0.45);
+    --forgejo-warning-bg: rgba(204, 172, 0, 0.45);
+    --forgejo-info-bg: rgba(55, 148, 255, 0.45);
+    --forgejo-purple-bg: rgba(137, 87, 229, 0.45);
+  }
 }

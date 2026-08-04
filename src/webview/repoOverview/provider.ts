@@ -9,6 +9,7 @@ export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'refresh' }
   | { type: 'openInBrowser' }
+  | { type: 'openInBrowserFromUrl'; url: string }
   | { type: 'openFile'; path: string }
   | { type: 'openRelease'; releaseId: number }
   | { type: 'openContributor'; login: string };
@@ -157,6 +158,10 @@ export class RepoOverviewWebviewProvider extends BaseDetailWebviewProvider<Panel
     const state = this._panels.get(panelKey);
     if (!state) return;
     const { owner, repo } = state;
+
+    // Generic message types (openUserProfile / openInBrowserFromUrl / log / …)
+    if (await this._handleBaseMessage(message, state.panel.webview)) return;
+
     switch (message.type) {
       case 'ready':
         state.isReady = true;
@@ -166,24 +171,27 @@ export class RepoOverviewWebviewProvider extends BaseDetailWebviewProvider<Panel
       case 'refresh': void this._fetchData(panelKey); break;
       case 'openInBrowser': {
         const config = await getForgejoConfig();
-        if (config) void vscode.env.openExternal(vscode.Uri.parse(`${config.instanceUrl}/${owner}/${repo}`));
+        if (config) this._openExternal(`${config.instanceUrl}/${owner}/${repo}`);
         break;
       }
       case 'openFile': {
         const config = await getForgejoConfig();
         if (config) {
-          void vscode.env.openExternal(vscode.Uri.parse(`${config.instanceUrl}/${owner}/${repo}/src/branch/${encodeURIComponent(state.pendingData?.repo.default_branch || 'main')}/${encodeURIComponent(message.path)}`));
+          this._openExternal(`${config.instanceUrl}/${owner}/${repo}/src/branch/${encodeURIComponent(state.pendingData?.repo.default_branch || 'main')}/${encodeURIComponent(message.path)}`);
         }
         break;
       }
-      case 'openRelease':
-        vscode.commands.executeCommand('forgejo.showReleaseDetails', { release: { id: message.releaseId, tag_name: '' }, owner, repo });
-        break;
-      case 'openContributor': {
-        const config = await getForgejoConfig();
-        if (config) void vscode.env.openExternal(vscode.Uri.parse(`${config.instanceUrl}/${encodeURIComponent(message.login)}`));
+      case 'openRelease': {
+        // Pass the full release object so releaseDetail has the real tag_name.
+        const release = state.pendingData?.latestRelease;
+        if (release) {
+          void vscode.commands.executeCommand('forgejo.showReleaseDetails', { release, owner, repo });
+        }
         break;
       }
+      case 'openContributor':
+        await this._openUserProfile(message.login);
+        break;
     }
   }
 
@@ -211,7 +219,7 @@ export class RepoOverviewWebviewProvider extends BaseDetailWebviewProvider<Panel
     <div class="skeleton skeleton-line short"></div>
   </div>
   <div id="error" class="error" style="display: none;">
-    <div class="error-icon">&#x26A0;&#xFE0F;</div>
+    <span class="error-icon codicon codicon-error" aria-hidden="true"></span>
     <h3>Error</h3>
     <p id="error-message"></p>
     <button id="retry-btn" class="btn btn-primary">Retry</button>
@@ -220,8 +228,8 @@ export class RepoOverviewWebviewProvider extends BaseDetailWebviewProvider<Panel
     <header class="repo-header">
       <div class="repo-title-row">
         <h1 id="repo-name"></h1>
-        <button id="open-web-btn" class="btn btn-secondary btn-small">Open in Browser</button>
-        <button id="refresh-btn" class="btn btn-secondary btn-small">Refresh</button>
+        <button id="open-web-btn" class="btn btn-secondary btn-small"><span class="codicon codicon-globe" aria-hidden="true"></span> Open in Browser</button>
+        <button id="refresh-btn" class="btn btn-secondary btn-small"><span class="codicon codicon-refresh" aria-hidden="true"></span> Refresh</button>
       </div>
       <p id="repo-description" class="repo-description"></p>
       <div id="repo-stats" class="repo-stats"></div>
